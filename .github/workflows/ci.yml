@@ -1,9 +1,17 @@
 name: CI - Test & Validate
 
 on:
+  push:
+    branches:
+      - main
+      - 'claude/**'
+      - 'integrate-**'
+      - 'feature/**'
   pull_request:
     branches:
       - main
+      - integrate-mvp-features
+  workflow_dispatch:
 
 jobs:
   # Job 1: Validate manifest and project structure
