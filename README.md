@@ -1,5 +1,7 @@
 # JobSprint-Extension: Application Accelerator
 
+![CI Status](https://github.com/c0nap/job-sprint-ext/workflows/CI%20-%20Test%20&%20Validate/badge.svg)
+
 This Chrome Extension is designed to automate the repetitive and time-consuming tasks associated with high-volume job applications, providing rapid data extraction, semi-supervised form completion, and seamless logging.
 
 The project utilizes the **Manifest V3** standard.
@@ -63,6 +65,32 @@ We will use the **Jest** testing framework for unit testing our Service Worker a
 **Process in GitHub Actions:**
 
 A dedicated GitHub Actions workflow will run Jest on every pull request. If the unit tests pass (meaning the logic compiles and works with the mock Chrome APIs), the PR is considered stable for review.
+
+</details>
+
+### CI/CD Pipeline
+
+<details>
+<summary><b>Automated Testing on Pull Requests</b></summary>
+
+Every pull request to `main` automatically triggers our GitHub Actions CI pipeline with the following jobs:
+
+1. **Validate Manifest & Structure** - Ensures manifest.json is valid JSON, confirms Manifest V3, and verifies all required files exist
+2. **JavaScript Syntax Check** - Validates all JS files can be parsed correctly (compilation check)
+3. **Test Utility Functions** - Runs Jest tests specifically for utility functions
+4. **Full Test Suite with Coverage** - Runs all tests and generates coverage reports
+5. **Code Quality Check** - Checks for console.log statements, file sizes, and TODO comments
+6. **CI Pipeline Success** - Summary job confirming all checks passed
+
+**Local Testing:** Before pushing, run these commands locally:
+```bash
+npm install               # Install dependencies
+npm test                  # Run tests
+npm run test:coverage     # Run tests with coverage
+node -c service-worker.js # Check syntax
+```
+
+See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed documentation.
 
 </details>
 
