@@ -98,11 +98,34 @@ function handleSaveClipboardMacro(key, value, sendResponse) {
 
 /**
  * Log job data to Google Sheets via Apps Script endpoint
+ * @param {Object} data - Job data to log
+ * @param {Function} sendResponse - Response callback
  */
 function handleLogJobData(data, sendResponse) {
-  // TODO: Replace with actual Google Apps Script Web App URL
-  const endpoint = 'YOUR_APPS_SCRIPT_URL_HERE';
+  // Configuration: Set APPS_SCRIPT_URL in extension settings or replace here
+  const endpoint = getAppsScriptEndpoint();
 
+  // Validate data before sending
+  if (!validateJobData(data)) {
+    console.warn('Invalid job data:', data);
+    sendResponse({
+      success: false,
+      error: 'Invalid job data: missing required fields'
+    });
+    return;
+  }
+
+  // Check if endpoint is configured
+  if (!endpoint || endpoint === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    console.warn('Apps Script endpoint not configured');
+    sendResponse({
+      success: false,
+      error: 'Apps Script endpoint not configured. Please set up your Google Apps Script URL.'
+    });
+    return;
+  }
+
+  // Send data to endpoint
   fetch(endpoint, {
     method: 'POST',
     mode: 'no-cors',
@@ -112,12 +135,73 @@ function handleLogJobData(data, sendResponse) {
     body: JSON.stringify(data)
   })
     .then(() => {
-      sendResponse({ success: true });
+      console.log('Job data logged successfully');
+      sendResponse({ success: true, timestamp: data.timestamp });
     })
     .catch((error) => {
       console.error('Failed to log job data:', error);
-      sendResponse({ success: false, error: error.message });
+      sendResponse({
+        success: false,
+        error: error.message || 'Network error occurred'
+      });
     });
+}
+
+/**
+ * Get Apps Script endpoint URL from storage or environment
+ * @returns {string} Endpoint URL
+ */
+function getAppsScriptEndpoint() {
+  // TODO: In production, retrieve from chrome.storage.sync
+  // For now, use placeholder (developers should replace this)
+  return 'YOUR_APPS_SCRIPT_URL_HERE';
+}
+
+/**
+ * Validate job data before sending
+ * @param {Object} data - Job data to validate
+ * @returns {boolean} True if valid
+ */
+function validateJobData(data) {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  // Check required fields
+  const requiredFields = ['title', 'company', 'location', 'url', 'timestamp'];
+  for (const field of requiredFields) {
+    if (!(field in data)) {
+      console.warn(`Missing required field: ${field}`);
+      return false;
+    }
+  }
+
+  // Validate URL format
+  try {
+    new URL(data.url);
+  } catch {
+    console.warn('Invalid URL format:', data.url);
+    return false;
+  }
+
+  // Validate timestamp format (ISO 8601)
+  if (!isValidTimestamp(data.timestamp)) {
+    console.warn('Invalid timestamp format:', data.timestamp);
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Check if timestamp is valid ISO 8601 format
+ * @param {string} timestamp - Timestamp to validate
+ * @returns {boolean} True if valid
+ */
+function isValidTimestamp(timestamp) {
+  if (typeof timestamp !== 'string') return false;
+  const date = new Date(timestamp);
+  return date instanceof Date && !isNaN(date.getTime());
 }
 
 // ============ AUTOFILL FEATURE ============
