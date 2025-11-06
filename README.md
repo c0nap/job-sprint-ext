@@ -84,7 +84,7 @@ Every pull request to `main` automatically triggers our GitHub Actions CI pipeli
 
 **Local Testing:** Before pushing, run these commands locally:
 ```bash
-npm ci                    # Install dependencies
+npm install               # Install dependencies
 npm test                  # Run tests
 npm run test:coverage     # Run tests with coverage
 node -c service-worker.js # Check syntax
