@@ -8,6 +8,7 @@ const {
   sanitizeText,
   formatDate,
   deepClone,
+  debounce,
   generateId
 } = require('../utils');
 
@@ -63,6 +64,172 @@ describe('Utility Functions', () => {
 
       expect(original.b.c).toBe(2);
       expect(cloned.b.c).toBe(3);
+    });
+  });
+
+  describe('debounce', () => {
+    // Use fake timers for predictable timing control
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    });
+
+    test('should delay function execution', () => {
+      const mockFn = jest.fn();
+      const debouncedFn = debounce(mockFn, 500);
+
+      debouncedFn();
+
+      // Function should not be called immediately
+      expect(mockFn).not.toHaveBeenCalled();
+
+      // Fast-forward time by 500ms
+      jest.advanceTimersByTime(500);
+
+      // Function should now be called
+      expect(mockFn).toHaveBeenCalledTimes(1);
+    });
+
+    test('should cancel previous call when invoked again within wait time', () => {
+      const mockFn = jest.fn();
+      const debouncedFn = debounce(mockFn, 500);
+
+      // Call three times in quick succession
+      debouncedFn();
+      jest.advanceTimersByTime(100);
+      debouncedFn();
+      jest.advanceTimersByTime(100);
+      debouncedFn();
+
+      // Function should not be called yet
+      expect(mockFn).not.toHaveBeenCalled();
+
+      // Fast-forward to complete the last debounce
+      jest.advanceTimersByTime(500);
+
+      // Function should be called only once (last call)
+      expect(mockFn).toHaveBeenCalledTimes(1);
+    });
+
+    test('should pass arguments to debounced function', () => {
+      const mockFn = jest.fn();
+      const debouncedFn = debounce(mockFn, 500);
+
+      debouncedFn('test', 123, { key: 'value' });
+      jest.advanceTimersByTime(500);
+
+      expect(mockFn).toHaveBeenCalledWith('test', 123, { key: 'value' });
+    });
+
+    test('should handle multiple arguments correctly', () => {
+      const mockFn = jest.fn((a, b, c) => a + b + c);
+      const debouncedFn = debounce(mockFn, 500);
+
+      debouncedFn(1, 2, 3);
+      jest.advanceTimersByTime(500);
+
+      expect(mockFn).toHaveBeenCalledWith(1, 2, 3);
+      expect(mockFn).toHaveBeenCalledTimes(1);
+    });
+
+    test('should use most recent arguments when called multiple times', () => {
+      const mockFn = jest.fn();
+      const debouncedFn = debounce(mockFn, 500);
+
+      debouncedFn('first');
+      jest.advanceTimersByTime(100);
+      debouncedFn('second');
+      jest.advanceTimersByTime(100);
+      debouncedFn('third');
+
+      jest.advanceTimersByTime(500);
+
+      // Should be called with the last set of arguments
+      expect(mockFn).toHaveBeenCalledTimes(1);
+      expect(mockFn).toHaveBeenCalledWith('third');
+    });
+
+    test('should work with different wait times', () => {
+      const mockFn = jest.fn();
+      const debouncedShort = debounce(mockFn, 100);
+      const debouncedLong = debounce(mockFn, 1000);
+
+      debouncedShort('short');
+      debouncedLong('long');
+
+      // After 100ms, short should be called
+      jest.advanceTimersByTime(100);
+      expect(mockFn).toHaveBeenCalledTimes(1);
+      expect(mockFn).toHaveBeenCalledWith('short');
+
+      // After another 900ms (total 1000ms), long should be called
+      jest.advanceTimersByTime(900);
+      expect(mockFn).toHaveBeenCalledTimes(2);
+      expect(mockFn).toHaveBeenCalledWith('long');
+    });
+
+    test('should allow function to be called again after wait period', () => {
+      const mockFn = jest.fn();
+      const debouncedFn = debounce(mockFn, 500);
+
+      // First call
+      debouncedFn('first');
+      jest.advanceTimersByTime(500);
+      expect(mockFn).toHaveBeenCalledTimes(1);
+      expect(mockFn).toHaveBeenCalledWith('first');
+
+      // Second call after wait period
+      debouncedFn('second');
+      jest.advanceTimersByTime(500);
+      expect(mockFn).toHaveBeenCalledTimes(2);
+      expect(mockFn).toHaveBeenCalledWith('second');
+    });
+
+    test('should handle rapid consecutive calls', () => {
+      const mockFn = jest.fn();
+      const debouncedFn = debounce(mockFn, 500);
+
+      // Simulate rapid typing (10 calls in 100ms)
+      for (let i = 0; i < 10; i++) {
+        debouncedFn(i);
+        jest.advanceTimersByTime(10);
+      }
+
+      // Function should not be called yet
+      expect(mockFn).not.toHaveBeenCalled();
+
+      // Wait for debounce to complete
+      jest.advanceTimersByTime(500);
+
+      // Should be called only once with last value
+      expect(mockFn).toHaveBeenCalledTimes(1);
+      expect(mockFn).toHaveBeenCalledWith(9);
+    });
+
+    test('should handle empty arguments', () => {
+      const mockFn = jest.fn();
+      const debouncedFn = debounce(mockFn, 500);
+
+      debouncedFn();
+      jest.advanceTimersByTime(500);
+
+      expect(mockFn).toHaveBeenCalledTimes(1);
+      expect(mockFn).toHaveBeenCalledWith();
+    });
+
+    test('should work with functions that return values', () => {
+      const mockFn = jest.fn((x) => x * 2);
+      const debouncedFn = debounce(mockFn, 500);
+
+      debouncedFn(5);
+      jest.advanceTimersByTime(500);
+
+      expect(mockFn).toHaveBeenCalledWith(5);
+      expect(mockFn).toHaveBeenCalledTimes(1);
     });
   });
 
