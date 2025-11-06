@@ -1,19 +1,21 @@
 /**
  * JobSprint Service Worker - Background Logic
  * Handles data storage, message passing, and external API communication
+ * Features: Clipboard macros, job data extraction/logging, Q&A autofill
  */
 
-// Initialize storage on install
+// Initialize storage when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
   console.log('JobSprint Extension installed');
   initializeStorage();
 });
 
 /**
- * Initialize default storage values
+ * Initialize default storage values on first install
+ * Sets up clipboard macros (sync) and Q&A database (local)
  */
 function initializeStorage() {
-  // Initialize clipboard macros in chrome.storage.sync
+  // Setup clipboard macros in sync storage (synced across devices)
   chrome.storage.sync.get(['clipboardMacros'], (result) => {
     if (!result.clipboardMacros) {
       chrome.storage.sync.set({
@@ -27,7 +29,7 @@ function initializeStorage() {
     }
   });
 
-  // Initialize Q&A database in chrome.storage.local
+  // Setup Q&A database in local storage (device-specific, larger capacity)
   chrome.storage.local.get(['qaDatabase'], (result) => {
     if (!result.qaDatabase) {
       chrome.storage.local.set({
@@ -72,7 +74,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ============ CLIPBOARD FEATURE ============
 
 /**
- * Get clipboard macro from storage
+ * Get clipboard macro value from sync storage
+ * @param {string} key - Macro key (phone, email, address, linkedin)
+ * @param {Function} sendResponse - Response callback
  */
 function handleGetClipboardMacro(key, sendResponse) {
   chrome.storage.sync.get(['clipboardMacros'], (result) => {
@@ -82,7 +86,10 @@ function handleGetClipboardMacro(key, sendResponse) {
 }
 
 /**
- * Save clipboard macro to storage
+ * Save clipboard macro value to sync storage
+ * @param {string} key - Macro key (phone, email, address, linkedin)
+ * @param {string} value - Macro value to save
+ * @param {Function} sendResponse - Response callback
  */
 function handleSaveClipboardMacro(key, value, sendResponse) {
   chrome.storage.sync.get(['clipboardMacros'], (result) => {
@@ -207,7 +214,10 @@ function isValidTimestamp(timestamp) {
 // ============ AUTOFILL FEATURE ============
 
 /**
- * Find similar answer from Q&A database using similarity heuristic
+ * Find similar answer from Q&A database using Jaccard similarity
+ * Searches for previously answered questions similar to the current one
+ * @param {string} question - Question to find a match for
+ * @param {Function} sendResponse - Response callback
  */
 function handleFindSimilarAnswer(question, sendResponse) {
   chrome.storage.local.get(['qaDatabase'], (result) => {
@@ -218,7 +228,7 @@ function handleFindSimilarAnswer(question, sendResponse) {
       return;
     }
 
-    // Find best match using similarity calculation
+    // Find best matching question using similarity scoring
     let bestMatch = null;
     let bestSimilarity = 0;
 
@@ -230,8 +240,9 @@ function handleFindSimilarAnswer(question, sendResponse) {
       }
     }
 
-    // Return match if similarity threshold is met (e.g., > 0.6)
-    if (bestSimilarity > 0.6) {
+    // Only return match if similarity exceeds threshold (0.6 = 60% word overlap)
+    const SIMILARITY_THRESHOLD = 0.6;
+    if (bestSimilarity > SIMILARITY_THRESHOLD) {
       sendResponse({
         success: true,
         answer: bestMatch.answer,
@@ -244,7 +255,10 @@ function handleFindSimilarAnswer(question, sendResponse) {
 }
 
 /**
- * Save Q&A pair to database
+ * Save question-answer pair to local database for future autofill
+ * @param {string} question - Question text
+ * @param {string} answer - Answer text
+ * @param {Function} sendResponse - Response callback
  */
 function handleSaveQAPair(question, answer, sendResponse) {
   chrome.storage.local.get(['qaDatabase'], (result) => {
