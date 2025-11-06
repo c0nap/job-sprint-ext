@@ -40,34 +40,46 @@ function initializeStorage() {
 }
 
 /**
- * Handle messages from popup and content script
+ * Message listener for commands from popup and content script
+ * Handles: clipboard macros, job data logging, autofill Q&A
+ *
+ * Return values:
+ * - Returns true for async operations that call sendResponse later
+ * - All handlers use chrome.storage (async) or fetch (async), so all return true
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Service Worker received message:', message);
 
   switch (message.action) {
     case 'getClipboardMacro':
+      // Retrieve saved clipboard macro from storage
       handleGetClipboardMacro(message.key, sendResponse);
-      return true;
+      return true; // Async: chrome.storage.sync.get
 
     case 'saveClipboardMacro':
+      // Save clipboard macro to storage
       handleSaveClipboardMacro(message.key, message.value, sendResponse);
-      return true;
+      return true; // Async: chrome.storage.sync.set
 
     case 'logJobData':
+      // Log job data to Google Sheets via Apps Script
       handleLogJobData(message.data, sendResponse);
-      return true;
+      return true; // Async: fetch to external endpoint
 
     case 'findSimilarAnswer':
+      // Find similar Q&A pair from database for autofill
       handleFindSimilarAnswer(message.question, sendResponse);
-      return true;
+      return true; // Async: chrome.storage.local.get
 
     case 'saveQAPair':
+      // Save new Q&A pair to database
       handleSaveQAPair(message.question, message.answer, sendResponse);
-      return true;
+      return true; // Async: chrome.storage.local.set
 
     default:
-      sendResponse({ success: false, error: 'Unknown action' });
+      // Unknown action - return error
+      sendResponse({ success: false, error: `Unknown action: ${message.action}` });
+      return false; // Synchronous error response
   }
 });
 

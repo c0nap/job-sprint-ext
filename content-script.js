@@ -5,28 +5,40 @@
 
 console.log('JobSprint Content Script loaded');
 
-// Listen for messages from service worker
+/**
+ * Message listener for commands from popup and service worker
+ * Handles: pasteText, extractJobData, startAutofill
+ *
+ * Return values:
+ * - Returns true for synchronous responses (all current handlers are sync)
+ * - Would return true for async if using setTimeout/fetch/etc
+ */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Content Script received message:', message);
 
   switch (message.action) {
     case 'pasteText':
+      // Paste clipboard macro to active input field
       pasteTextToActiveField(message.text);
       sendResponse({ success: true });
-      break;
+      return false; // Synchronous response
 
     case 'extractJobData':
+      // Extract job posting data from current page
       const jobData = extractJobData();
       sendResponse({ success: true, data: jobData });
-      break;
+      return false; // Synchronous response
 
     case 'startAutofill':
+      // Start semi-supervised form autofill process
       startAutofillProcess();
       sendResponse({ success: true });
-      break;
+      return false; // Synchronous response
 
     default:
-      sendResponse({ success: false, error: 'Unknown action' });
+      // Unknown action - return error
+      sendResponse({ success: false, error: `Unknown action: ${message.action}` });
+      return false; // Synchronous response
   }
 });
 
