@@ -70,49 +70,155 @@ function pasteTextToActiveField(text) {
  * @returns {Object} Extracted job data
  */
 function extractJobData() {
-  const data = {
-    title: '',
-    company: '',
-    location: '',
-    url: window.location.href,
-    timestamp: new Date().toISOString()
-  };
+  try {
+    const data = {
+      title: '',
+      company: '',
+      location: '',
+      url: window.location.href,
+      timestamp: new Date().toISOString(),
+      source: extractSource(window.location.href)
+    };
 
-  // TODO: Implement site-specific selectors
-  // Example selectors (will need refinement per job site)
-  const titleSelectors = ['h1', '[data-job-title]', '.job-title', '.jobTitle'];
-  const companySelectors = ['[data-company-name]', '.company-name', '.companyName', '.employer'];
-  const locationSelectors = ['[data-location]', '.location', '.job-location', '.jobLocation'];
+    // Enhanced selectors for popular job boards
+    const titleSelectors = [
+      // Generic
+      'h1',
+      '[data-job-title]',
+      '.job-title',
+      '.jobTitle',
+      // LinkedIn
+      '.topcard__title',
+      '.top-card-layout__title',
+      // Indeed
+      '.jobsearch-JobInfoHeader-title',
+      // Glassdoor
+      '[data-test="job-title"]',
+      // Greenhouse
+      '.app-title',
+      // Lever
+      '.posting-headline h2',
+      // Workday
+      '[data-automation-id="jobPostingHeader"]'
+    ];
 
-  // Try to find title
-  for (const selector of titleSelectors) {
-    const element = document.querySelector(selector);
-    if (element && element.textContent.trim()) {
-      data.title = element.textContent.trim();
-      break;
+    const companySelectors = [
+      // Generic
+      '[data-company-name]',
+      '.company-name',
+      '.companyName',
+      '.employer',
+      // LinkedIn
+      '.topcard__org-name-link',
+      '.top-card-layout__entity-info a',
+      // Indeed
+      '[data-company-name="true"]',
+      // Glassdoor
+      '[data-test="employer-name"]',
+      // Greenhouse
+      '.company-name',
+      // Lever
+      '.posting-categories .posting-category'
+    ];
+
+    const locationSelectors = [
+      // Generic
+      '[data-location]',
+      '.location',
+      '.job-location',
+      '.jobLocation',
+      // LinkedIn
+      '.topcard__flavor--bullet',
+      '.top-card-layout__second-subline',
+      // Indeed
+      '[data-testid="job-location"]',
+      '.jobsearch-JobInfoHeader-subtitle > div',
+      // Glassdoor
+      '[data-test="location"]',
+      // Greenhouse
+      '.location',
+      // Lever
+      '.posting-categories .location',
+      '.sort-by-time posting-category small'
+    ];
+
+    // Extract with validation
+    data.title = extractField(titleSelectors, 'title');
+    data.company = extractField(companySelectors, 'company');
+    data.location = extractField(locationSelectors, 'location');
+
+    // Validate extracted data
+    if (!data.title && !data.company) {
+      console.warn('JobSprint: Could not extract meaningful job data from this page');
+    }
+
+    console.log('Extracted job data:', data);
+    return data;
+  } catch (error) {
+    console.error('Error extracting job data:', error);
+    return {
+      title: '',
+      company: '',
+      location: '',
+      url: window.location.href,
+      timestamp: new Date().toISOString(),
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Extract field using multiple selectors with fallback
+ * @param {Array} selectors - Array of CSS selectors to try
+ * @param {string} fieldName - Name of field being extracted (for logging)
+ * @returns {string} Extracted text or empty string
+ */
+function extractField(selectors, fieldName) {
+  for (const selector of selectors) {
+    try {
+      const element = document.querySelector(selector);
+      if (element && element.textContent.trim()) {
+        const text = element.textContent.trim();
+        // Clean up extracted text
+        return cleanText(text);
+      }
+    } catch (error) {
+      console.debug(`Failed to query selector "${selector}":`, error);
     }
   }
+  return '';
+}
 
-  // Try to find company
-  for (const selector of companySelectors) {
-    const element = document.querySelector(selector);
-    if (element && element.textContent.trim()) {
-      data.company = element.textContent.trim();
-      break;
-    }
+/**
+ * Clean extracted text (remove extra whitespace, newlines, etc.)
+ * @param {string} text - Text to clean
+ * @returns {string} Cleaned text
+ */
+function cleanText(text) {
+  return text
+    .replace(/\s+/g, ' ') // Replace multiple whitespace with single space
+    .replace(/\n+/g, ' ') // Replace newlines with space
+    .trim();
+}
+
+/**
+ * Extract source/job board name from URL
+ * @param {string} url - Current page URL
+ * @returns {string} Source name
+ */
+function extractSource(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    if (hostname.includes('linkedin.com')) return 'LinkedIn';
+    if (hostname.includes('indeed.com')) return 'Indeed';
+    if (hostname.includes('glassdoor.com')) return 'Glassdoor';
+    if (hostname.includes('greenhouse.io')) return 'Greenhouse';
+    if (hostname.includes('lever.co')) return 'Lever';
+    if (hostname.includes('myworkdayjobs.com')) return 'Workday';
+    return hostname;
+  } catch {
+    return 'Unknown';
   }
-
-  // Try to find location
-  for (const selector of locationSelectors) {
-    const element = document.querySelector(selector);
-    if (element && element.textContent.trim()) {
-      data.location = element.textContent.trim();
-      break;
-    }
-  }
-
-  console.log('Extracted job data:', data);
-  return data;
 }
 
 // ============ AUTOFILL FEATURE ============
