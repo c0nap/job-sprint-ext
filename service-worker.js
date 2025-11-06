@@ -46,26 +46,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
     case 'getClipboardMacro':
       handleGetClipboardMacro(message.key, sendResponse);
-      return true;
+      return true; // Async response required
 
     case 'saveClipboardMacro':
       handleSaveClipboardMacro(message.key, message.value, sendResponse);
-      return true;
+      return true; // Async response required
 
     case 'logJobData':
       handleLogJobData(message.data, sendResponse);
-      return true;
+      return true; // Async response required
 
     case 'findSimilarAnswer':
       handleFindSimilarAnswer(message.question, sendResponse);
-      return true;
+      return true; // Async response required
 
     case 'saveQAPair':
       handleSaveQAPair(message.question, message.answer, sendResponse);
-      return true;
+      return true; // Async response required
 
     default:
       sendResponse({ success: false, error: 'Unknown action' });
+      return false; // Synchronous response
   }
 });
 
@@ -222,6 +223,7 @@ function handleFindSimilarAnswer(question, sendResponse) {
     let bestMatch = null;
     let bestSimilarity = 0;
 
+    // Compare the input question against all stored questions
     for (const entry of database) {
       const similarity = calculateSimilarity(question, entry.question);
       if (similarity > bestSimilarity) {
@@ -230,8 +232,10 @@ function handleFindSimilarAnswer(question, sendResponse) {
       }
     }
 
-    // Return match if similarity threshold is met (e.g., > 0.6)
-    if (bestSimilarity > 0.6) {
+    // Return match only if similarity meets threshold (0.6 = 60% match)
+    // This prevents low-quality suggestions from being presented to users
+    const SIMILARITY_THRESHOLD = 0.6;
+    if (bestSimilarity > SIMILARITY_THRESHOLD) {
       sendResponse({
         success: true,
         answer: bestMatch.answer,
@@ -259,20 +263,29 @@ function handleSaveQAPair(question, answer, sendResponse) {
 
 /**
  * Calculate similarity between two strings using Jaccard index
+ * Jaccard index = |intersection| / |union|
+ * Example: "What is your name?" vs "What is your age?"
+ *   - Intersection: {what, is, your} = 3 words
+ *   - Union: {what, is, your, name, age} = 5 words
+ *   - Similarity: 3/5 = 0.6
+ *
  * @param {string} str1 - First string
  * @param {string} str2 - Second string
  * @returns {number} Similarity score between 0 and 1
  */
 function calculateSimilarity(str1, str2) {
-  // Normalize strings
+  // Normalize: convert to lowercase, remove punctuation, split into words
   const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/);
 
   const set1 = new Set(normalize(str1));
   const set2 = new Set(normalize(str2));
 
-  // Calculate Jaccard index: intersection / union
+  // Calculate Jaccard index: size of intersection divided by size of union
   const intersection = new Set([...set1].filter(x => set2.has(x)));
   const union = new Set([...set1, ...set2]);
+
+  // Handle edge case: if both strings are empty, return 0
+  if (union.size === 0) return 0;
 
   return intersection.size / union.size;
 }

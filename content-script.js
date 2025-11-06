@@ -13,20 +13,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'pasteText':
       pasteTextToActiveField(message.text);
       sendResponse({ success: true });
-      break;
+      return false; // Synchronous response
 
     case 'extractJobData':
       const jobData = extractJobData();
       sendResponse({ success: true, data: jobData });
-      break;
+      return false; // Synchronous response
 
     case 'startAutofill':
       startAutofillProcess();
       sendResponse({ success: true });
-      break;
+      return false; // Synchronous response
 
     default:
       sendResponse({ success: false, error: 'Unknown action' });
+      return false; // Synchronous response
   }
 });
 
@@ -67,6 +68,7 @@ function pasteTextToActiveField(text) {
 
 /**
  * Extract job posting data from the current page
+ * Supports multiple job boards including LinkedIn, Indeed, Glassdoor, etc.
  * @returns {Object} Extracted job data
  */
 function extractJobData() {
@@ -263,10 +265,18 @@ function findFormInputs() {
 
 /**
  * Process form inputs sequentially with user confirmation
+ * This implements a semi-supervised autofill flow:
+ * 1. Extract question/label for current input
+ * 2. Find similar answer from database
+ * 3. Present suggestion to user for approval
+ * 4. Fill input if approved, skip if rejected
+ * 5. Move to next input
+ *
  * @param {Array} inputs - Array of input elements
  * @param {number} index - Current index
  */
 function processNextInput(inputs, index) {
+  // Base case: all inputs processed
   if (index >= inputs.length) {
     console.log('Autofill process completed');
     removeApprovalUI();
@@ -276,18 +286,18 @@ function processNextInput(inputs, index) {
   const input = inputs[index];
   const question = extractQuestionForInput(input);
 
+  // Skip inputs without identifiable labels
   if (!question) {
-    // Skip this input and move to next
     processNextInput(inputs, index + 1);
     return;
   }
 
-  // Request suggestion from service worker
+  // Request suggestion from service worker's Q&A database
   chrome.runtime.sendMessage(
     { action: 'findSimilarAnswer', question },
     (response) => {
       if (response.success && response.answer) {
-        // Show approval UI
+        // Show approval UI with suggested answer
         showApprovalUI(input, question, response.answer, () => {
           // User approved - fill the input
           fillInput(input, response.answer);
@@ -297,7 +307,7 @@ function processNextInput(inputs, index) {
           processNextInput(inputs, index + 1);
         });
       } else {
-        // No suggestion found - skip this input
+        // No suggestion found (or similarity too low) - skip this input
         processNextInput(inputs, index + 1);
       }
     }
@@ -352,6 +362,12 @@ function fillInput(input, answer) {
 
 /**
  * Show approval UI overlay for user confirmation
+ * Creates a custom modal overlay for better UX than browser confirm dialog
+ * @param {HTMLElement} input - The input element to fill
+ * @param {string} question - The question/label text
+ * @param {string} answer - The suggested answer
+ * @param {Function} onApprove - Callback when user approves
+ * @param {Function} onReject - Callback when user rejects
  */
 function showApprovalUI(input, question, answer, onApprove, onReject) {
   // Remove any existing approval UI
@@ -599,7 +615,7 @@ function showApprovalUI(input, question, answer, onApprove, onReject) {
 }
 
 /**
- * Remove approval UI overlay
+ * Remove approval UI overlay and clean up styling
  */
 function removeApprovalUI() {
   const overlay = document.getElementById('jobsprint-approval-overlay');

@@ -8,6 +8,7 @@ const {
   sanitizeText,
   formatDate,
   deepClone,
+  debounce,
   generateId
 } = require('../utils');
 
@@ -63,6 +64,50 @@ describe('Utility Functions', () => {
 
       expect(original.b.c).toBe(2);
       expect(cloned.b.c).toBe(3);
+    });
+  });
+
+  describe('debounce', () => {
+    jest.useFakeTimers();
+
+    test('should delay function execution', () => {
+      const mockFn = jest.fn();
+      const debouncedFn = debounce(mockFn, 100);
+
+      debouncedFn();
+      expect(mockFn).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(100);
+      expect(mockFn).toHaveBeenCalledTimes(1);
+    });
+
+    test('should cancel previous call when invoked multiple times', () => {
+      const mockFn = jest.fn();
+      const debouncedFn = debounce(mockFn, 100);
+
+      debouncedFn();
+      jest.advanceTimersByTime(50);
+      debouncedFn();
+      jest.advanceTimersByTime(50);
+
+      expect(mockFn).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(50);
+      expect(mockFn).toHaveBeenCalledTimes(1);
+    });
+
+    test('should pass arguments correctly', () => {
+      const mockFn = jest.fn();
+      const debouncedFn = debounce(mockFn, 100);
+
+      debouncedFn('arg1', 'arg2');
+      jest.advanceTimersByTime(100);
+
+      expect(mockFn).toHaveBeenCalledWith('arg1', 'arg2');
+    });
+
+    afterEach(() => {
+      jest.clearAllTimers();
     });
   });
 
