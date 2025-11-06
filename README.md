@@ -118,7 +118,7 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed do
 **Goal:** Provide instant, one-click pasting of common resume text (phone, address, etc.) into any active form field.
 
 <details>
-<summary><b>Clipboard Macro Implementation</b></summary>
+<summary><b>Overview: Clipboard Macro Implementation</b></summary>
 
 | Component | Responsibility |
 | :--- | :--- |
@@ -129,11 +129,19 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed do
 </details>
 
 <details>
-<summary><b>Implementation Plan & Justification</b></summary>
+<summary><b>Decisions & Justification</b></summary>
 
 * **Action Flow:** User clicks button in **Popup UI** $\rightarrow$ Popup sends a message to the **Service Worker** $\rightarrow$ Service Worker retrieves the stored text from **`chrome.storage.sync`** $\rightarrow$ Service Worker sends a message to the **Content Script** on the active tab $\rightarrow$ Content Script inserts text into the active field.
 * **Crucial Decision: `chrome.storage.sync`:** This storage type is perfect because the clipboard data is small and must be available across multiple devices (e.g., if you switch from a desktop to a laptop).
 * **Insertion Method:** The Content Script will use methods like `document.execCommand('insertText', false, text)` or direct DOM manipulation to reliably insert text into the field currently in focus.
+
+</details>
+
+<details>
+<summary><b>Implementation Details</b></summary>
+
+TODO - Table containing feature-specific helper functions from a single file
+TODO - Another table giving details about a different code file
 
 </details>
 
@@ -142,7 +150,7 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed do
 **Goal:** Capture key data elements (Job Title, Location, Company) from a job posting and securely log them to your private Google Sheet.
 
 <details>
-<summary><b>Data Extraction and Logging</b></summary>
+<summary><b>Overview: Data Extraction and Logging</b></summary>
 
 | Component | Responsibility |
 | :--- | :--- |
@@ -153,11 +161,19 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed do
 </details>
 
 <details>
-<summary><b>Implementation Plan & Justification</b></summary>
+<summary><b>Decisions & Justification</b></summary>
 
 * **Extraction Method:** The **Content Script** will implement selectors targeting common HTML elements (`<h1>`, specific classes/IDs) and text patterns to extract structured data. This will be the most complex and fragile part, requiring continuous refinement during testing.
 * **Logging Method (API):** The **Service Worker** handles the `fetch` request. We avoid direct Google Sheets API calls from the extension for simplicity and security. Instead, we use a custom **Google Apps Script Web App** which acts as a lightweight, private, serverless function (an API endpoint). The Service Worker sends the JSON data to this secure endpoint, and the Apps Script handles the final action of writing a new row to the Sheet. 
 * **Logging Implementation:** The Service Worker will need a hard-coded URL for the Apps Script endpoint. This allows us to keep credentials out of the extension source code.
+
+</details>
+
+<details>
+<summary><b>Implementation Details</b></summary>
+
+TODO - Table containing feature-specific helper functions from a single file
+TODO - Another table giving details about a different code file
 
 </details>
 
@@ -166,7 +182,7 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed do
 **Goal:** Read form survey questions, intelligently suggest and enter answers based on past applications, and require user confirmation to navigate to the next step.
 
 <details>
-<summary><b>Semi-Supervised Autofill</b></summary>
+<summary><b>Overview: Semi-Supervised Autofill</b></summary>
 
 | Component | Responsibility |
 | :--- | :--- |
@@ -177,7 +193,7 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed do
 </details>
 
 <details>
-<summary><b>Implementation Plan & Justification</b></summary>
+<summary><b>Decisions & Justification</b></summary>
 
 * **Data Storage:** The Q&A database will be stored in **`chrome.storage.local`**. This is suitable for large datasets unique to the user's machine and avoids network latency.
 * **Similarity Approach Justification:**
@@ -187,3 +203,12 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed do
 * **Action Flow:** The **Content Script** will be implemented with robust JavaScript logic to traverse the form fields, sending question text to the **Service Worker**. The Service Worker returns the suggested action. The Content Script performs the action and **pauses**, waiting for user input via the injected approval UI before proceeding. This is the **semi-supervised** safety measure.
 
 </details>
+
+<details>
+<summary><b>Implementation Details</b></summary>
+
+TODO - Table containing feature-specific helper functions from a single file
+TODO - Another table giving details about a different code file
+
+</details>
+
