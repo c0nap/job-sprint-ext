@@ -26,6 +26,7 @@ git clone https://github.com/c0nap/job-sprint-ext.git
 
 * Select the **root directory** of your cloned project (the folder containing this `README.md` and `manifest.json`).
 
+
 ### 🔄 Reloading and Debugging
 
 * **Reloading:** After saving code changes, return to **`chrome://extensions`** and click the **"Reload"** circular arrow button on the JobSprint-Extension card.
@@ -41,7 +42,32 @@ git clone https://github.com/c0nap/job-sprint-ext.git
 | **Quality Assurance** | **GitHub Actions** (with Jest) | Automatically run **unit tests** on all logic files (using mocks for the `chrome` API) to ensure non-DOM logic is correct before merging a PR. |
 | **Testing** | **Local Browser** (`chrome://extensions`) | Manual testing and debugging of the Content Script/DOM interaction in a live environment. |
 
-### 🧠 Core Technical Glossary
+
+## 🧪 Testing Framework
+
+### Unit Testing with Jest
+
+<details>
+<summary><b>Justification: easier to emulate Chrome browser</b></summary>
+
+We will use the **Jest** testing framework for unit testing our Service Worker and any pure JavaScript utility functions.
+
+**Why Jest?**
+
+* <b>Superior Mocking:</b> Jest provides advanced, easy-to-use mocking functionality, which is essential for this project. We must be able to **mock the entire `chrome` API** (e.g., simulating a call to `chrome.storage.sync.get()`) to test our isolated application logic without needing a live browser environment.
+
+* <b>Stability:</b> Jest is the industry standard for JavaScript unit testing, offering reliable stability and comprehensive documentation. **Claude is more familiar with its documentation.**
+
+* <b>Simplicity:</b> Jest is an all-in-one framework, including the assertion library, test runner, and mocking tools, which simplifies initial setup and maintenance.
+
+**Process in GitHub Actions:**
+
+A dedicated GitHub Actions workflow will run Jest on every pull request. If the unit tests pass (meaning the logic compiles and works with the mock Chrome APIs), the PR is considered stable for review.
+
+</details>
+
+
+## 🧠 Core Technical Glossary
 
 <details>
 <summary><b>Definitions of Components</b></summary>
@@ -55,7 +81,9 @@ git clone https://github.com/c0nap/job-sprint-ext.git
 
 </details>
 
-## 🚀 Feature Breakdown
+
+
+# 🚀 Feature Breakdown
 
 ### 1. Clipboard
 
@@ -69,6 +97,15 @@ git clone https://github.com/c0nap/job-sprint-ext.git
 | <b>Service Worker</b> | Stores your resume snippets (macros) using **`chrome.storage.sync`**, ensuring the data syncs across all your logged-in Chrome browsers. |
 | <b>Popup UI</b> | Generates the macro buttons dynamically and tells the Service Worker which text snippet to use. |
 | <b>Content Script</b> | Receives the text from the Service Worker and uses a browser command to paste the content into the cursor's active position on the webpage. |
+
+</details>
+
+<details>
+<summary><b>Implementation Plan & Justification</b></summary>
+
+* **Action Flow:** User clicks button in **Popup UI** $\rightarrow$ Popup sends a message to the **Service Worker** $\rightarrow$ Service Worker retrieves the stored text from **`chrome.storage.sync`** $\rightarrow$ Service Worker sends a message to the **Content Script** on the active tab $\rightarrow$ Content Script inserts text into the active field.
+* **Crucial Decision: `chrome.storage.sync`:** This storage type is perfect because the clipboard data is small and must be available across multiple devices (e.g., if you switch from a desktop to a laptop).
+* **Insertion Method:** The Content Script will use methods like `document.execCommand('insertText', false, text)` or direct DOM manipulation to reliably insert text into the field currently in focus.
 
 </details>
 
@@ -87,6 +124,15 @@ git clone https://github.com/c0nap/job-sprint-ext.git
 
 </details>
 
+<details>
+<summary><b>Implementation Plan & Justification</b></summary>
+
+* **Extraction Method:** The **Content Script** will implement selectors targeting common HTML elements (`<h1>`, specific classes/IDs) and text patterns to extract structured data. This will be the most complex and fragile part, requiring continuous refinement during testing.
+* **Logging Method (API):** The **Service Worker** handles the `fetch` request. We avoid direct Google Sheets API calls from the extension for simplicity and security. Instead, we use a custom **Google Apps Script Web App** which acts as a lightweight, private, serverless function (an API endpoint). The Service Worker sends the JSON data to this secure endpoint, and the Apps Script handles the final action of writing a new row to the Sheet. 
+* **Logging Implementation:** The Service Worker will need a hard-coded URL for the Apps Script endpoint. This allows us to keep credentials out of the extension source code.
+
+</details>
+
 ### 3. Autofill
 
 **Goal:** Read form survey questions, intelligently suggest and enter answers based on past applications, and require user confirmation to navigate to the next step.
@@ -102,25 +148,14 @@ git clone https://github.com/c0nap/job-sprint-ext.git
 
 </details>
 
-## 🧪 Testing Framework Justification
-
-### Unit Testing
-
 <details>
-<summary><b>Justification for Jest</b></summary>
+<summary><b>Implementation Plan & Justification</b></summary>
 
-We will use the **Jest** testing framework for unit testing our Service Worker and any pure JavaScript utility functions.
-
-**Why Jest?**
-
-* <b>Stability & Documentation:</b> Jest is the industry standard for JavaScript unit testing, offering reliable stability and comprehensive documentation.
-
-* <b>Superior Mocking:</b> Jest provides advanced, easy-to-use mocking functionality, which is essential for this project. We must be able to **mock the entire `chrome` API** (e.g., simulating a call to `chrome.storage.sync.get()`) to test our isolated application logic without needing a live browser environment.
-
-* <b>Simplicity:</b> Jest is an all-in-one framework, including the assertion library, test runner, and mocking tools, which simplifies initial setup and maintenance.
-
-**Process in GitHub Actions:**
-
-A dedicated GitHub Actions workflow will run Jest on every pull request. If the unit tests pass (meaning the logic compiles and works with the mock Chrome APIs), the PR is considered stable for review.
+* **Data Storage:** The Q&A database will be stored in **`chrome.storage.local`**. This is suitable for large datasets unique to the user's machine and avoids network latency.
+* **Similarity Approach Justification:**
+    * **External ML Services (Unsuitable):** Services like HuggingFace or your own backend API would introduce network latency for *every question*, significantly slowing down the process. They would also require complex API key management.
+    * **In-Browser ML (Too Complex):** While libraries like `transformers.js` can run semantic models in the browser, the extension's file size would increase dramatically, and the initial load time would be slow.
+    * **Proposed Heuristic (Necessary):** The **JavaScript similarity heuristic** (e.g., measuring the overlap of key terms using Jaccard or N-gram repetition) is fast, requires no dependencies, and is easily testable. It's sufficient because application questions are highly repetitive ("Will you require sponsorship?" vs. "Are you authorized to work?").
+* **Action Flow:** The **Content Script** will be implemented with robust JavaScript logic to traverse the form fields, sending question text to the **Service Worker**. The Service Worker returns the suggested action. The Content Script performs the action and **pauses**, waiting for user input via the injected approval UI before proceeding. This is the **semi-supervised** safety measure.
 
 </details>
