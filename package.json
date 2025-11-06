@@ -1,0 +1,31 @@
+{
+  "name": "jobsprint-extension",
+  "version": "1.0.0",
+  "description": "Chrome Extension to automate job application tasks",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "keywords": [
+    "chrome-extension",
+    "job-application",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/__tests__/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "*.js",
+      "!popup.js",
+      "!content-script.js"
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobSprint Extension</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>JobSprint</h1>
+      <p class="subtitle">Application Accelerator</p>
+    </header>
+
+    <!-- Clipboard Macros Section -->
+    <section class="feature-section">
+      <h2>Clipboard Macros</h2>
+      <div class="button-group">
+        <button class="macro-btn" data-key="phone">Phone</button>
+        <button class="macro-btn" data-key="email">Email</button>
+        <button class="macro-btn" data-key="address">Address</button>
+        <button class="macro-btn" data-key="linkedin">LinkedIn</button>
+      </div>
+      <button class="secondary-btn" id="editMacros">Edit Macros</button>
+    </section>
+
+    <!-- Data Extraction Section -->
+    <section class="feature-section">
+      <h2>Job Data Extraction</h2>
+      <button class="primary-btn" id="extractBtn">Extract & Log Job Data</button>
+      <div id="extractionStatus" class="status-message"></div>
+    </section>
+
+    <!-- Autofill Section -->
+    <section class="feature-section">
+      <h2>Smart Autofill</h2>
+      <button class="primary-btn" id="autofillBtn">Start Autofill</button>
+      <div id="autofillStatus" class="status-message"></div>
+    </section>
+
+    <!-- Settings Link -->
+    <footer>
+      <a href="#" id="settingsLink">Settings</a>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
