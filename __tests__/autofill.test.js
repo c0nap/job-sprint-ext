@@ -3,22 +3,10 @@
  * Tests similarity matching and Q&A database functionality
  */
 
+// Import calculateSimilarity from testable module to avoid duplication
+const { calculateSimilarity } = require('../service-worker-testable');
+
 describe('Autofill Feature - Similarity Calculation', () => {
-  /**
-   * Calculate similarity between two strings using Jaccard index
-   * This is a copy of the function from service-worker.js for testing
-   */
-  function calculateSimilarity(str1, str2) {
-    const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/);
-
-    const set1 = new Set(normalize(str1));
-    const set2 = new Set(normalize(str2));
-
-    const intersection = new Set([...set1].filter(x => set2.has(x)));
-    const union = new Set([...set1, ...set2]);
-
-    return intersection.size / union.size;
-  }
 
   describe('calculateSimilarity', () => {
     test('should return 1.0 for identical strings', () => {
@@ -245,15 +233,6 @@ describe('Autofill Feature - Integration Scenarios', () => {
   });
 
   test('should prioritize best match from multiple similar questions', () => {
-    function calculateSimilarity(str1, str2) {
-      const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/);
-      const set1 = new Set(normalize(str1));
-      const set2 = new Set(normalize(str2));
-      const intersection = new Set([...set1].filter(x => set2.has(x)));
-      const union = new Set([...set1, ...set2]);
-      return intersection.size / union.size;
-    }
-
     const database = [
       { question: 'Do you need sponsorship?', answer: 'No' },
       { question: 'What is your phone?', answer: '1234567890' },
@@ -286,15 +265,6 @@ describe('Autofill Feature - Integration Scenarios', () => {
   });
 
   test('should return null when similarity is below threshold', () => {
-    function calculateSimilarity(str1, str2) {
-      const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/);
-      const set1 = new Set(normalize(str1));
-      const set2 = new Set(normalize(str2));
-      const intersection = new Set([...set1].filter(x => set2.has(x)));
-      const union = new Set([...set1, ...set2]);
-      return intersection.size / union.size;
-    }
-
     const database = [
       { question: 'What is your email?', answer: 'test@example.com' }
     ];
