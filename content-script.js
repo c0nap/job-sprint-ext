@@ -354,14 +354,247 @@ function fillInput(input, answer) {
  * Show approval UI overlay for user confirmation
  */
 function showApprovalUI(input, question, answer, onApprove, onReject) {
-  // TODO: Implement approval UI overlay
-  // For now, use simple confirm dialog as placeholder
-  const approved = confirm(`Fill "${question}" with "${answer}"?`);
+  // Remove any existing approval UI
+  removeApprovalUI();
 
-  if (approved) {
-    onApprove();
-  } else {
+  // Create overlay container
+  const overlay = document.createElement('div');
+  overlay.id = 'jobsprint-approval-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 999999;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  `;
+
+  // Create modal card
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: slideIn 0.3s ease-out;
+  `;
+
+  // Add animation keyframes
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideIn {
+      from {
+        transform: translateY(-20px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Create header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    display: flex;
+    align-items: center;
+    margin-bottom: 16px;
+  `;
+
+  const icon = document.createElement('div');
+  icon.style.cssText = `
+    width: 40px;
+    height: 40px;
+    background: #4CAF50;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+    font-size: 20px;
+  `;
+  icon.textContent = '✓';
+  icon.style.color = 'white';
+
+  const title = document.createElement('h3');
+  title.style.cssText = `
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+  `;
+  title.textContent = 'Autofill Suggestion';
+
+  header.appendChild(icon);
+  header.appendChild(title);
+
+  // Create question display
+  const questionDiv = document.createElement('div');
+  questionDiv.style.cssText = `
+    margin-bottom: 12px;
+    padding: 12px;
+    background: #f5f5f5;
+    border-radius: 6px;
+  `;
+
+  const questionLabel = document.createElement('div');
+  questionLabel.style.cssText = `
+    font-size: 12px;
+    font-weight: 600;
+    color: #666;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  `;
+  questionLabel.textContent = 'Question';
+
+  const questionText = document.createElement('div');
+  questionText.style.cssText = `
+    font-size: 14px;
+    color: #333;
+    line-height: 1.4;
+  `;
+  questionText.textContent = question;
+
+  questionDiv.appendChild(questionLabel);
+  questionDiv.appendChild(questionText);
+
+  // Create answer display
+  const answerDiv = document.createElement('div');
+  answerDiv.style.cssText = `
+    margin-bottom: 20px;
+    padding: 12px;
+    background: #e8f5e9;
+    border-radius: 6px;
+    border-left: 3px solid #4CAF50;
+  `;
+
+  const answerLabel = document.createElement('div');
+  answerLabel.style.cssText = `
+    font-size: 12px;
+    font-weight: 600;
+    color: #2e7d32;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  `;
+  answerLabel.textContent = 'Suggested Answer';
+
+  const answerText = document.createElement('div');
+  answerText.style.cssText = `
+    font-size: 15px;
+    color: #1b5e20;
+    font-weight: 500;
+    line-height: 1.4;
+  `;
+  answerText.textContent = answer;
+
+  answerDiv.appendChild(answerLabel);
+  answerDiv.appendChild(answerText);
+
+  // Create button container
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = `
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+  `;
+
+  // Create reject button
+  const rejectBtn = document.createElement('button');
+  rejectBtn.textContent = 'Skip';
+  rejectBtn.style.cssText = `
+    padding: 10px 20px;
+    border: 2px solid #ddd;
+    background: white;
+    color: #666;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  `;
+
+  rejectBtn.onmouseover = () => {
+    rejectBtn.style.background = '#f5f5f5';
+    rejectBtn.style.borderColor = '#999';
+  };
+  rejectBtn.onmouseout = () => {
+    rejectBtn.style.background = 'white';
+    rejectBtn.style.borderColor = '#ddd';
+  };
+
+  rejectBtn.onclick = () => {
+    removeApprovalUI();
     onReject();
+  };
+
+  // Create approve button
+  const approveBtn = document.createElement('button');
+  approveBtn.textContent = 'Apply Answer';
+  approveBtn.style.cssText = `
+    padding: 10px 20px;
+    border: none;
+    background: #4CAF50;
+    color: white;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  `;
+
+  approveBtn.onmouseover = () => {
+    approveBtn.style.background = '#45a049';
+  };
+  approveBtn.onmouseout = () => {
+    approveBtn.style.background = '#4CAF50';
+  };
+
+  approveBtn.onclick = () => {
+    removeApprovalUI();
+    onApprove();
+  };
+
+  buttonContainer.appendChild(rejectBtn);
+  buttonContainer.appendChild(approveBtn);
+
+  // Assemble modal
+  modal.appendChild(header);
+  modal.appendChild(questionDiv);
+  modal.appendChild(answerDiv);
+  modal.appendChild(buttonContainer);
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  // Focus the approve button for keyboard accessibility
+  approveBtn.focus();
+
+  // Allow ESC key to reject
+  const handleKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      removeApprovalUI();
+      onReject();
+      document.removeEventListener('keydown', handleKeyDown);
+    }
+  };
+  document.addEventListener('keydown', handleKeyDown);
+
+  // Highlight the input field being filled
+  if (input) {
+    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    input.style.outline = '3px solid #4CAF50';
+    input.style.outlineOffset = '2px';
   }
 }
 
@@ -369,6 +602,15 @@ function showApprovalUI(input, question, answer, onApprove, onReject) {
  * Remove approval UI overlay
  */
 function removeApprovalUI() {
-  // TODO: Implement UI removal
-  console.log('Approval UI removed');
+  const overlay = document.getElementById('jobsprint-approval-overlay');
+  if (overlay) {
+    overlay.remove();
+  }
+
+  // Remove highlight from all inputs
+  const allInputs = document.querySelectorAll('input, textarea, select');
+  allInputs.forEach(input => {
+    input.style.outline = '';
+    input.style.outlineOffset = '';
+  });
 }
