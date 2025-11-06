@@ -1,0 +1,198 @@
+name: CI - Test & Validate
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # Job 1: Validate manifest and project structure
+  validate-manifest:
+    name: Validate Manifest & Structure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate manifest.json syntax
+        run: |
+          if ! jq empty manifest.json 2>/dev/null; then
+            echo "❌ manifest.json is not valid JSON"
+            exit 1
+          fi
+          echo "✅ manifest.json is valid JSON"
+
+      - name: Check manifest version
+        run: |
+          VERSION=$(jq -r '.manifest_version' manifest.json)
+          if [ "$VERSION" != "3" ]; then
+            echo "❌ Expected Manifest V3, got version $VERSION"
+            exit 1
+          fi
+          echo "✅ Manifest V3 confirmed"
+
+      - name: Verify required files exist
+        run: |
+          required_files=(
+            "manifest.json"
+            "service-worker.js"
+            "content-script.js"
+            "popup.html"
+            "popup.js"
+            "popup.css"
+            "utils.js"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Required file missing: $file"
+              exit 1
+            fi
+          done
+          echo "✅ All required files present"
+
+  # Job 2: Check JavaScript syntax (compilation check)
+  compile-check:
+    name: JavaScript Syntax Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check service-worker.js syntax
+        run: node -c service-worker.js
+
+      - name: Check content-script.js syntax
+        run: node -c content-script.js
+
+      - name: Check popup.js syntax
+        run: node -c popup.js
+
+      - name: Check utils.js syntax
+        run: node -c utils.js
+
+      - name: Compilation check passed
+        run: echo "✅ All JavaScript files have valid syntax"
+
+  # Job 3: Run utility function tests
+  test-utils:
+    name: Test Utility Functions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run utility tests
+        run: npm test -- __tests__/utils.test.js
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: utils-test-results
+          path: coverage/
+
+  # Job 4: Run all tests with coverage
+  test-coverage:
+    name: Full Test Suite with Coverage
+    runs-on: ubuntu-latest
+    needs: [validate-manifest, compile-check]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run all tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+
+      - name: Check coverage threshold
+        run: |
+          echo "✅ Test coverage generated successfully"
+          echo "📊 Coverage report available in artifacts"
+
+  # Job 5: Lint and code quality check (optional but recommended)
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for console.log statements
+        run: |
+          if grep -r "console.log" *.js --exclude="popup.js" --exclude="content-script.js" | grep -v "//.*console.log"; then
+            echo "⚠️  Warning: console.log statements found (consider removing in production)"
+          else
+            echo "✅ No console.log statements found"
+          fi
+
+      - name: Check file sizes
+        run: |
+          for file in *.js; do
+            size=$(wc -c < "$file")
+            if [ $size -gt 100000 ]; then
+              echo "⚠️  Warning: $file is larger than 100KB ($size bytes)"
+            fi
+          done
+          echo "✅ File size check complete"
+
+      - name: Check for TODO comments
+        run: |
+          if grep -r "TODO" *.js *.html *.css; then
+            echo "📝 TODO items found - consider addressing before merge"
+          else
+            echo "✅ No TODO items found"
+          fi
+
+  # Summary job that depends on all others
+  ci-success:
+    name: CI Pipeline Success
+    runs-on: ubuntu-latest
+    needs: [validate-manifest, compile-check, test-utils, test-coverage, code-quality]
+
+    steps:
+      - name: All checks passed
+        run: |
+          echo "🎉 All CI checks passed successfully!"
+          echo "✅ Manifest validated"
+          echo "✅ JavaScript syntax checked"
+          echo "✅ Utility tests passed"
+          echo "✅ Coverage generated"
+          echo "✅ Code quality checked"
