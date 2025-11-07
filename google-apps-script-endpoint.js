@@ -21,9 +21,6 @@
  */
 function doPost(e) {
   try {
-    // Print test message to Google Cloud
-    log('Request received');
-
     // Parse the JSON request body
     var requestData = JSON.parse(e.postData.contents);
 
@@ -35,6 +32,9 @@ function doPost(e) {
         error: validation.error
       }, 400);
     }
+
+    // Print test message to Google Cloud
+    log('Request received', requestData.projectId);
 
     // Log the job data to the spreadsheet
     var result = logJobToSheet(requestData);
@@ -72,7 +72,7 @@ function validateJobData(data) {
   }
 
   // Check all required fields exist and are non-empty strings
-  var requiredFields = ['title', 'company', 'location', 'url', 'timestamp', 'spreadsheetId'];
+  var requiredFields = ['title', 'company', 'location', 'url', 'timestamp', 'spreadsheetId', 'projectId'];
   for (var i = 0; i < requiredFields.length; i++) {
     var field = requiredFields[i];
 
@@ -188,7 +188,8 @@ function testDoPost() {
         url: 'https://example.com/jobs/123',
         timestamp: new Date().toISOString(),
         source: 'Test',
-        spreadsheetId: 'YOUR_SPREADSHEET_ID_HERE'
+        spreadsheetId: 'YOUR_SPREADSHEET_ID_HERE',
+        projectId: 'YOUR_PROJECT_ID_HERE',
       })
     }
   };
@@ -209,7 +210,7 @@ function log(message, severity) {
 
   // Build the structured log payload
   const payload = {
-    logName: 'projects/' + ScriptApp.getProjectId() + '/logs/custom',      // Custom log name visible in Logs Explorer
+    logName: 'projects/' + projectId + '/logs/custom',      // Custom log name visible in Logs Explorer
     resource: { type: 'app_script_function' },          // Resource type used for Apps Script executions
     entries: [{                                         // One or more log entries
       textPayload: String(message),                     // The actual message text

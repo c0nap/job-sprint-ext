@@ -2,6 +2,7 @@
 const CONFIG = {
   APPS_SCRIPT_ENDPOINT: 'https://script.google.com/macros/s/AKfycbx.../exec',
   SPREADSHEET_ID: 'YOUR_SPREADSHEET_ID_HERE',
+  PROJECT_ID: 'YOUR_PROJECT_ID_HERE',
 };
 
 // Expose globally depending on environment

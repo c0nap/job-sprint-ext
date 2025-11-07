@@ -155,8 +155,19 @@ function handleLogJobData(data, sendResponse) {
     return;
   }
 
+  // Get spreadsheet ID from config
+  const projectId = getProjectId();
+  if (!projectId || projectId === 'YOUR_PROJECT_ID_HERE') {
+    console.warn('Project ID not configured');
+    sendResponse({
+      success: false,
+      error: 'Project ID not configured. Please set up your Project ID in config.local.js.'
+    });
+    return;
+  }
+
   // Add spreadsheet ID to the data payload
-  const dataWithSpreadsheetId = { ...data, spreadsheetId };
+  const dataWithSpreadsheetId = { ...data, spreadsheetId, projectId };
 
   // Send data to endpoint
   fetch(endpoint, {
@@ -200,6 +211,16 @@ function getSpreadsheetId() {
   // TODO: In production, retrieve from chrome.storage.sync
   // For now, use from config (developers should replace this in config.local.js)
   return self.APP_CONFIG.SPREADSHEET_ID;
+}
+
+/**
+ * Get Project ID from storage or environment
+ * @returns {string} Spreadsheet ID
+ */
+function getProjectId() {
+  // TODO: In production, retrieve from chrome.storage.sync
+  // For now, use from config (developers should replace this in config.local.js)
+  return self.APP_CONFIG.PROJECT_ID;
 }
 
 /**
