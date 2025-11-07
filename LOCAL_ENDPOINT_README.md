@@ -253,7 +253,8 @@ The MVP version stores data **in-memory only**. This means:
 - ⚠️ Data is lost when the server restarts
 - ⚠️ Not suitable for production use
 
-For production, you should use the real Google Apps Script endpoint that stores data in Google Sheets.
+**For production use,** set up the real Google Apps Script endpoint that stores data permanently in Google Sheets:
+👉 **[See GOOGLE_APPS_SCRIPT_SETUP.md for the complete deployment guide](GOOGLE_APPS_SCRIPT_SETUP.md)**
 
 ## CORS
 

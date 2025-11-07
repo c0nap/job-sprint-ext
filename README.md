@@ -54,9 +54,20 @@ The extension icon should now appear in your toolbar. If you don't see it, click
 Click the extension icon and use the "Edit Macros" button to set your personal information. *(Note: Full settings UI is in development. Current version uses browser storage directly.)*
 
 #### Option B: Google Sheets Logging (optional)
-To enable job data logging:
-1. Create a [Google Apps Script Web App](https://developers.google.com/apps-script/guides/web) that writes to your Google Sheet
-2. Set the endpoint URL in `service-worker.js` line 176 (will be configurable via UI in future release)
+To enable job data logging to your personal Google Sheet:
+
+**🚀 Quick Setup (Recommended):**
+Follow our complete step-by-step guide: **[GOOGLE_APPS_SCRIPT_SETUP.md](GOOGLE_APPS_SCRIPT_SETUP.md)**
+
+This guide includes:
+- ✅ Creating your Google Apps Script (copy & paste, no coding needed)
+- ✅ Deploying it as a web app
+- ✅ Connecting it to the extension
+- ✅ Testing your setup
+- ✅ Troubleshooting common issues
+
+**Alternatively, for local testing only:**
+Run `npm run start:local-endpoint` and see [LOCAL_ENDPOINT_README.md](LOCAL_ENDPOINT_README.md) for details.
 
 ### Step 5: Verify Installation
 
@@ -176,6 +187,8 @@ The Content Script uses two insertion strategies for maximum compatibility:
 ### 2. Job Data Extraction
 
 **Goal:** Capture key data (Job Title, Company, Location) from any job posting and log it to your private Google Sheet.
+
+**📖 Setup Guide:** See [GOOGLE_APPS_SCRIPT_SETUP.md](GOOGLE_APPS_SCRIPT_SETUP.md) for a complete, non-technical walkthrough of setting up your Google Sheet logging endpoint.
 
 <details>
 <summary><b>Overview: How It Works</b></summary>
@@ -437,6 +450,8 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed CI
 
 ## 📚 Additional Documentation
 
+- **[Google Apps Script Setup Guide](GOOGLE_APPS_SCRIPT_SETUP.md)** - Complete, non-technical guide to deploy your job logging endpoint
+- **[Local Endpoint Testing](LOCAL_ENDPOINT_README.md)** - Run a local mock endpoint for development and testing
 - **[CI/CD Workflow Details](.github/workflows/README.md)** - Deep dive into GitHub Actions jobs and troubleshooting
 - **[Icon Assets](icons/README.md)** - Extension icon requirements and temporary workarounds
 
