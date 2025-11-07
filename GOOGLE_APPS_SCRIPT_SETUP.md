@@ -325,3 +325,82 @@ Now that your endpoint is set up, you can:
 ✅ Filter and sort to find jobs you want to apply to
 
 Happy job hunting! 🎉
+
+
+
+
+# TODO: Incorporate the following guide into this page as an expandable section, matching our writing style.
+
+## 🧭 Viewing Logs for Your Google Apps Script Web App
+
+### Quick Fix if “Extensions → Apps Script” Shows 404
+
+If clicking **Extensions → Apps Script** gives a 404:
+
+1. Open an **incognito window** — the script editor should load there.
+2. If not, go to [https://script.google.com/home/projects](https://script.google.com/home/projects)
+   → find your spreadsheet’s bound project in the list.
+3. Open it and click the **“Open spreadsheet”** button to confirm it’s truly bound.
+   (If that button opens your sheet, you’re in the right project.)
+
+---
+
+### Why Google Cloud Logging Is Needed
+
+* The **Executions** page only shows basic status (✅ Completed / ❌ Failed).
+* Full `Logger.log()` or `console.log()` output no longer appears for deployed web-apps.
+* Local runs (via “Run” in the editor) still show complete logs, but web requests don’t.
+* Google now requires linking to a **Google Cloud Project** to access full logs for deployed code.
+
+---
+
+### Enable Cloud Logging (Simple Walkthrough)
+
+1. **Create a Cloud Project**
+
+   * Go to [https://console.cloud.google.com/projectcreate](https://console.cloud.google.com/projectcreate)
+   * Name it anything (e.g. `LogSprint Cloud App`)
+   * Keep “No organization” as the location.
+   * Click **Create**.
+
+2. **Link It to Your Apps Script**
+
+   * In your script editor → ⚙️ **Project Settings**
+   * Under “Google Cloud Platform Project” click **Change project**
+   * Copy the **numeric Project Number** from your new Cloud project and paste it here.
+   * Save changes.
+
+3. **Trigger Your Script**
+
+   * Run your Chrome extension or web app once to generate logs.
+
+4. **View Logs**
+
+   * Open [https://console.cloud.google.com/logs/query](https://console.cloud.google.com/logs/query)
+   * At top left, select your new project.
+   * Paste this query and click **Run Query**:
+
+     ```
+     resource.type="app_script_function"
+     ```
+   * You’ll see all `Logger.log()` / `console.log()` output for your deployed script.
+     *(Optional filter)*
+
+     ```
+     jsonPayload.functionName="doPost"
+     ```
+
+---
+
+### Summary
+
+| Where                                    | What You’ll See                          |
+| ---------------------------------------- | ---------------------------------------- |
+| **Executions page**                      | Only success/failure and uncaught errors |
+| **Apps Script editor (Run → View Logs)** | Full logs for local runs                 |
+| **Google Cloud Logging**                 | Full logs for web-app executions         |
+
+---
+
+**In short:**
+If your deployed web app says “Completed” but you see nothing in Executions, link your script to a Cloud project. Cloud Logging is now the only place Google exposes real-time logs for web-app requests.
