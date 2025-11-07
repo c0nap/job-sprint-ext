@@ -5,7 +5,9 @@
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "start:local-endpoint": "node local-gas-endpoint.js",
+    "test:endpoint": "jest __tests__/local-gas-endpoint.test.js"
   },
   "keywords": [
     "chrome-extension",
@@ -14,10 +16,15 @@
   ],
   "author": "",
   "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  },
   "devDependencies": {
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^30.2.0",
-    "jsdom": "^27.1.0"
+    "jsdom": "^27.1.0",
+    "supertest": "^6.3.3"
   },
   "jest": {
     "testEnvironment": "node",
