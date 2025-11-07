@@ -404,3 +404,9 @@ If clicking **Extensions → Apps Script** gives a 404:
 
 **In short:**
 If your deployed web app says “Completed” but you see nothing in Executions, link your script to a Cloud project. Cloud Logging is now the only place Google exposes real-time logs for web-app requests.
+
+### OAuth
+
+(first time setup - for developers)
+1. complete the Oauth consent screen
+2. Navigate to **Audience** and add yourself as a test user
