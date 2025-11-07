@@ -7,7 +7,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "start:local-endpoint": "node local-gas-endpoint.js",
-    "test:endpoint": "jest __tests__/local-gas-endpoint.test.js"
+    "test:endpoint": "jest tests/local-gas-endpoint.test.js"
   },
   "keywords": [
     "chrome-extension",
@@ -29,7 +29,7 @@
   "jest": {
     "testEnvironment": "node",
     "testMatch": [
-      "**/__tests__/**/*.test.js"
+      "**/tests/**/*.test.js"
     ],
     "collectCoverageFrom": [
       "*.js",

@@ -110,7 +110,7 @@ jobs:
         run: npm install
 
       - name: Run utility tests
-        run: npm test -- __tests__/utils.test.js
+        run: npm test -- tests/utils.test.js
 
       - name: Upload test results
         if: always()
@@ -137,10 +137,10 @@ jobs:
         run: npm install
 
       - name: Run clipboard service worker tests
-        run: npm test -- __tests__/clipboard-service-worker.test.js
+        run: npm test -- tests/clipboard-service-worker.test.js
 
       - name: Run clipboard content script tests
-        run: npm test -- __tests__/clipboard-content-script.test.js
+        run: npm test -- tests/clipboard-content-script.test.js
 
       - name: Upload clipboard test results
         if: always()
@@ -167,7 +167,7 @@ jobs:
         run: npm install
 
       - name: Run extraction tests
-        run: npm test -- __tests__/extraction.test.js
+        run: npm test -- tests/extraction.test.js
 
       - name: Upload extraction test results
         if: always()
@@ -202,7 +202,7 @@ jobs:
         run: npm install
 
       - name: Run autofill tests
-        run: npm test -- __tests__/autofill.test.js
+        run: npm test -- tests/autofill.test.js
 
       - name: Upload test results
         if: always()
@@ -229,7 +229,7 @@ jobs:
         run: npm install
 
       - name: Run service worker autofill tests
-        run: npm test -- __tests__/service-worker-autofill.test.js
+        run: npm test -- tests/service-worker-autofill.test.js
 
       - name: Upload test results
         if: always()
