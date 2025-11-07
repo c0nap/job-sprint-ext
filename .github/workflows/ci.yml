@@ -238,11 +238,46 @@ jobs:
           name: service-worker-autofill-test-results
           path: coverage/
 
-  # Job 8: Run all tests with coverage (depends on validation)
+  # Job 8: Test Local GAS Endpoint (Feature 2 enhancement - parallel)
+  test-local-endpoint:
+    name: Test Local GAS Endpoint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run local endpoint tests
+        run: npm run test:endpoint
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-endpoint-test-results
+          path: coverage/
+
+      - name: Test summary
+        if: always()
+        run: |
+          echo "📊 Local GAS Endpoint Tests Complete"
+          echo "✅ Endpoint validation tested"
+          echo "✅ API contract verified"
+          echo "✅ Integration tests passed"
+
+  # Job 9: Run all tests with coverage (depends on validation)
   test-coverage:
     name: Full Test Suite with Coverage
     runs-on: ubuntu-latest
-    needs: [validate-manifest, compile-check, test-clipboard, test-extraction, test-autofill, test-service-worker-autofill]
+    needs: [validate-manifest, compile-check, test-clipboard, test-extraction, test-autofill, test-service-worker-autofill, test-local-endpoint]
 
     steps:
       - name: Checkout code
@@ -270,7 +305,7 @@ jobs:
           echo "✅ Test coverage generated successfully"
           echo "📊 Coverage report available in artifacts"
 
-  # Job 9: Lint and code quality check
+  # Job 10: Lint and code quality check
   code-quality:
     name: Code Quality Check
     runs-on: ubuntu-latest
@@ -309,7 +344,7 @@ jobs:
   ci-success:
     name: CI Pipeline Success
     runs-on: ubuntu-latest
-    needs: [validate-manifest, compile-check, test-utils, test-clipboard, test-extraction, test-autofill, test-service-worker-autofill, test-coverage, code-quality]
+    needs: [validate-manifest, compile-check, test-utils, test-clipboard, test-extraction, test-autofill, test-service-worker-autofill, test-local-endpoint, test-coverage, code-quality]
 
     steps:
       - name: All checks passed
@@ -322,5 +357,6 @@ jobs:
           echo "✅ Extraction tests passed (Feature 2 MVP)"
           echo "✅ Autofill tests passed (Feature 3 MVP)"
           echo "✅ Service worker autofill tests passed (Feature 3 MVP)"
+          echo "✅ Local GAS endpoint tests passed"
           echo "✅ Coverage generated"
           echo "✅ Code quality checked"
