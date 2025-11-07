@@ -32,7 +32,7 @@ function validateJobData(data) {
   }
 
   // Check all required fields exist and are non-empty strings
-  const requiredFields = ['title', 'company', 'location', 'url', 'timestamp'];
+  const requiredFields = ['title', 'company', 'location', 'url', 'timestamp', 'spreadsheetId'];
   for (const field of requiredFields) {
     if (!(field in data)) {
       return { valid: false, error: `Invalid job data: missing required field '${field}'` };

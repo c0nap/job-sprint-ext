@@ -144,6 +144,20 @@ function handleLogJobData(data, sendResponse) {
     return;
   }
 
+  // Get spreadsheet ID from config
+  const spreadsheetId = getSpreadsheetId();
+  if (!spreadsheetId || spreadsheetId === 'YOUR_SPREADSHEET_ID_HERE') {
+    console.warn('Spreadsheet ID not configured');
+    sendResponse({
+      success: false,
+      error: 'Spreadsheet ID not configured. Please set up your Spreadsheet ID in config.local.js.'
+    });
+    return;
+  }
+
+  // Add spreadsheet ID to the data payload
+  const dataWithSpreadsheetId = { ...data, spreadsheetId };
+
   // Send data to endpoint
   fetch(endpoint, {
     method: 'POST',
@@ -151,7 +165,7 @@ function handleLogJobData(data, sendResponse) {
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(data)
+    body: JSON.stringify(dataWithSpreadsheetId)
   })
     .then(() => {
       console.log('Job data logged successfully');
@@ -176,6 +190,16 @@ function getAppsScriptEndpoint() {
   // TODO: In production, retrieve from chrome.storage.sync
   // For now, use placeholder (developers should replace this)
   return self.APP_CONFIG.APPS_SCRIPT_ENDPOINT;
+}
+
+/**
+ * Get Spreadsheet ID from storage or environment
+ * @returns {string} Spreadsheet ID
+ */
+function getSpreadsheetId() {
+  // TODO: In production, retrieve from chrome.storage.sync
+  // For now, use from config (developers should replace this in config.local.js)
+  return self.APP_CONFIG.SPREADSHEET_ID;
 }
 
 /**

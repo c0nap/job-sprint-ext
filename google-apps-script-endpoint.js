@@ -69,7 +69,7 @@ function validateJobData(data) {
   }
 
   // Check all required fields exist and are non-empty strings
-  var requiredFields = ['title', 'company', 'location', 'url', 'timestamp'];
+  var requiredFields = ['title', 'company', 'location', 'url', 'timestamp', 'spreadsheetId'];
   for (var i = 0; i < requiredFields.length; i++) {
     var field = requiredFields[i];
 
@@ -98,8 +98,8 @@ function validateJobData(data) {
  */
 function logJobToSheet(jobData) {
   try {
-    // Get the active spreadsheet
-    var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    // Open the spreadsheet by ID (required for Web App deployment with "Anyone" access)
+    var spreadsheet = SpreadsheetApp.openById(jobData.spreadsheetId);
 
     // Get or create the "Job Applications" sheet
     var sheet = spreadsheet.getSheetByName('Job Applications');
@@ -184,7 +184,8 @@ function testDoPost() {
         location: 'San Francisco, CA',
         url: 'https://example.com/jobs/123',
         timestamp: new Date().toISOString(),
-        source: 'Test'
+        source: 'Test',
+        spreadsheetId: 'YOUR_SPREADSHEET_ID_HERE'
       })
     }
   };

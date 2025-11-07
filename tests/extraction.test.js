@@ -316,7 +316,8 @@ describe('Feature 2: Extraction - Service Worker Integration', () => {
         company: 'Tech Corp',
         location: 'San Francisco, CA',
         url: 'https://example.com/job/123',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const handleLogJobData = require('../service-worker-testable').handleLogJobData;
@@ -341,7 +342,8 @@ describe('Feature 2: Extraction - Service Worker Integration', () => {
         company: 'Test Co',
         location: 'Test Location',
         url: 'https://test.com',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const handleLogJobData = require('../service-worker-testable').handleLogJobData;
@@ -366,7 +368,8 @@ describe('Feature 2: Extraction - Service Worker Integration', () => {
         company: 'Test Co',
         location: 'Test Location',
         url: 'https://test.com',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const handleLogJobData = require('../service-worker-testable').handleLogJobData;
@@ -391,7 +394,8 @@ describe('Feature 2: Extraction - Service Worker Integration', () => {
         company: 'Data Corp',
         location: 'Seattle, WA',
         url: 'https://example.com/job/456',
-        timestamp: '2025-01-15T10:30:00.000Z'
+        timestamp: '2025-01-15T10:30:00.000Z',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const handleLogJobData = require('../service-worker-testable').handleLogJobData;
