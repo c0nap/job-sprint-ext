@@ -421,3 +421,9 @@ The “Executions” tab in Apps Script loses direct access to the built-in Logs
 The “Cloud logs” / “Cloud errors” options are disabled because log ownership was transferred to your linked GCP project.
 
 (Apps Script’s own lightweight viewer only works for unbound projects.)
+
+```
+logName:"/logs/custom"
+```
+
+

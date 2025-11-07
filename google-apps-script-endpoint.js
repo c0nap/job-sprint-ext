@@ -21,6 +21,9 @@
  */
 function doPost(e) {
   try {
+    // Print test message to Google Cloud
+    log('Request received');
+
     // Parse the JSON request body
     var requestData = JSON.parse(e.postData.contents);
 
@@ -49,7 +52,7 @@ function doPost(e) {
     }
 
   } catch (error) {
-    Logger.log('Error processing request: ' + error.toString());
+    log('Error processing request: ' + error.toString());
     return createJsonResponse({
       success: false,
       error: 'Internal server error: ' + error.toString()
@@ -142,12 +145,12 @@ function logJobToSheet(jobData) {
     // Auto-resize columns for better readability
     sheet.autoResizeColumns(1, 7);
 
-    Logger.log('Successfully logged job: ' + jobData.title + ' at ' + jobData.company);
+    log('Successfully logged job: ' + jobData.title + ' at ' + jobData.company);
 
     return { success: true };
 
   } catch (error) {
-    Logger.log('Error writing to sheet: ' + error.toString());
+    log('Error writing to sheet: ' + error.toString());
     return {
       success: false,
       error: 'Failed to write to spreadsheet: ' + error.toString()
@@ -191,5 +194,37 @@ function testDoPost() {
   };
 
   var response = doPost(testData);
-  Logger.log('Test response: ' + response.getContent());
+  log('Test response: ' + response.getContent());
+}
+
+
+/**
+ * Write log entries directly to Cloud Logging (works for Web App executions too)
+ * @param {string} message - The text message to log
+ * @param {string} [severity] - Optional severity: "INFO", "WARNING", or "ERROR"
+ */
+function log(message, severity) {
+  // Get the bound Cloud Project ID automatically
+  const projectId = ScriptApp.getProjectId();
+
+  // Build the structured log payload
+  const payload = {
+    logName: 'projects/' + ScriptApp.getProjectId() + '/logs/custom',      // Custom log name visible in Logs Explorer
+    resource: { type: 'app_script_function' },          // Resource type used for Apps Script executions
+    entries: [{                                         // One or more log entries
+      textPayload: String(message),                     // The actual message text
+      severity: severity || 'INFO'                      // Default severity is INFO
+    }]
+  };
+
+  // HTTP request options for the Cloud Logging API
+  const options = {
+    method: 'post',                                     // POST to /entries:write
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true                            // Prevent throw if logging fails silently
+  };
+
+  // Send log entry to Cloud Logging REST endpoint
+  UrlFetchApp.fetch('https://logging.googleapis.com/v2/entries:write', options);
 }
