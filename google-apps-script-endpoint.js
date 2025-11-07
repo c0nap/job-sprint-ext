@@ -14,7 +14,7 @@
  * 5. Update the extension's config.local.js with:
  *    - APPS_SCRIPT_ENDPOINT: your deployment URL
  *    - SPREADSHEET_ID: your Google Sheet ID
- *    - PROJECT_ID: your Google Cloud Project ID (optional, for custom logging)
+ *    - PROJECT_ID: your Google Cloud Project ID
  *
  * LOGGING:
  * Logs are sent to Google Cloud Logging using console.log()
@@ -135,8 +135,7 @@ function validateJobData(data) {
   }
 
   // Check all required fields exist and are non-empty strings
-  // Note: projectId is optional but recommended for advanced logging
-  var requiredFields = ['title', 'company', 'location', 'url', 'timestamp', 'spreadsheetId'];
+  var requiredFields = ['title', 'company', 'location', 'url', 'timestamp', 'spreadsheetId', 'projectId'];
   for (var i = 0; i < requiredFields.length; i++) {
     var field = requiredFields[i];
 
@@ -314,7 +313,7 @@ function createJsonResponse(data, statusCode) {
  * Test function - run this to verify the script works
  * This simulates a POST request from the extension
  *
- * BEFORE RUNNING: Replace 'YOUR_SPREADSHEET_ID_HERE' with your actual spreadsheet ID
+ * BEFORE RUNNING: Replace the placeholder IDs below with your actual IDs
  */
 function testDoPost() {
   console.log({
@@ -333,7 +332,7 @@ function testDoPost() {
         timestamp: new Date().toISOString(),
         source: 'Manual Test',
         spreadsheetId: 'YOUR_SPREADSHEET_ID_HERE',  // ← REPLACE THIS
-        projectId: 'YOUR_PROJECT_ID_HERE'  // ← OPTIONAL: for custom logging
+        projectId: 'YOUR_PROJECT_ID_HERE'  // ← REPLACE THIS (your GCP project ID)
       })
     }
   };
@@ -378,8 +377,7 @@ function runDiagnostics() {
     message: 'JobSprint: User context',
     effectiveUser: Session.getEffectiveUser().getEmail(),
     activeUser: Session.getActiveUser().getEmail(),
-    timezone: Session.getScriptTimeZone(),
-    projectId: ScriptApp.getProjectId()
+    timezone: Session.getScriptTimeZone()
   });
 
   // Try to access the spreadsheet
