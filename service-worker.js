@@ -166,6 +166,8 @@ function handleLogJobData(data, sendResponse) {
     });
 }
 
+importScripts('config.local.js');
+
 /**
  * Get Apps Script endpoint URL from storage or environment
  * @returns {string} Endpoint URL
@@ -173,7 +175,7 @@ function handleLogJobData(data, sendResponse) {
 function getAppsScriptEndpoint() {
   // TODO: In production, retrieve from chrome.storage.sync
   // For now, use placeholder (developers should replace this)
-  return 'YOUR_APPS_SCRIPT_URL_HERE';
+  return self.APP_CONFIG.APPS_SCRIPT_ENDPOINT;
 }
 
 /**
