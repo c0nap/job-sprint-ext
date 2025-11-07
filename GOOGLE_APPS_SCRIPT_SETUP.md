@@ -410,3 +410,14 @@ If your deployed web app says “Completed” but you see nothing in Executions,
 (first time setup - for developers)
 1. complete the Oauth consent screen
 2. Navigate to **Audience** and add yourself as a test user
+
+### Updating your code
+After uploading the latest source code, you must create a new deployment -> manage deployments -> edit -> New version. This will require auth. Your URL will not change.
+
+### When you connected your script to a custom GCP project:
+
+The “Executions” tab in Apps Script loses direct access to the built-in Logs Viewer.
+
+The “Cloud logs” / “Cloud errors” options are disabled because log ownership was transferred to your linked GCP project.
+
+(Apps Script’s own lightweight viewer only works for unbound projects.)
