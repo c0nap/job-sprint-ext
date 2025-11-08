@@ -58,7 +58,7 @@ function validateJobData(data) {
   }
 
   // Check all required fields are present
-  const requiredFields = ['title', 'company', 'location', 'url', 'timestamp'];
+  const requiredFields = ['title', 'company', 'location', 'url', 'timestamp', 'spreadsheetId'];
   for (const field of requiredFields) {
     if (!(field in data)) {
       return false;

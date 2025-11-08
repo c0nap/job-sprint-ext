@@ -17,7 +17,8 @@ describe('Local GAS Endpoint - Validation', () => {
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
         timestamp: '2025-01-15T10:30:00.000Z',
-        source: 'LinkedIn'
+        source: 'LinkedIn',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(validData);
@@ -42,7 +43,8 @@ describe('Local GAS Endpoint - Validation', () => {
         company: 'Tech Corp',
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
-        timestamp: '2025-01-15T10:30:00.000Z'
+        timestamp: '2025-01-15T10:30:00.000Z',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(invalidData);
@@ -55,7 +57,8 @@ describe('Local GAS Endpoint - Validation', () => {
         title: 'Software Engineer',
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
-        timestamp: '2025-01-15T10:30:00.000Z'
+        timestamp: '2025-01-15T10:30:00.000Z',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(invalidData);
@@ -68,7 +71,8 @@ describe('Local GAS Endpoint - Validation', () => {
         title: 'Software Engineer',
         company: 'Tech Corp',
         url: 'https://linkedin.com/jobs/123',
-        timestamp: '2025-01-15T10:30:00.000Z'
+        timestamp: '2025-01-15T10:30:00.000Z',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(invalidData);
@@ -81,7 +85,8 @@ describe('Local GAS Endpoint - Validation', () => {
         title: 'Software Engineer',
         company: 'Tech Corp',
         location: 'San Francisco, CA',
-        timestamp: '2025-01-15T10:30:00.000Z'
+        timestamp: '2025-01-15T10:30:00.000Z',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(invalidData);
@@ -94,12 +99,27 @@ describe('Local GAS Endpoint - Validation', () => {
         title: 'Software Engineer',
         company: 'Tech Corp',
         location: 'San Francisco, CA',
-        url: 'https://linkedin.com/jobs/123'
+        url: 'https://linkedin.com/jobs/123',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(invalidData);
       expect(result.valid).toBe(false);
       expect(result.error).toContain('timestamp');
+    });
+
+    test('should reject data missing spreadsheetId', () => {
+      const invalidData = {
+        title: 'Software Engineer',
+        company: 'Tech Corp',
+        location: 'San Francisco, CA',
+        url: 'https://linkedin.com/jobs/123',
+        timestamp: '2025-01-15T10:30:00.000Z'
+      };
+
+      const result = validateJobData(invalidData);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('spreadsheetId');
     });
 
     test('should reject empty string fields', () => {
@@ -108,7 +128,8 @@ describe('Local GAS Endpoint - Validation', () => {
         company: 'Tech Corp',
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
-        timestamp: '2025-01-15T10:30:00.000Z'
+        timestamp: '2025-01-15T10:30:00.000Z',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(invalidData);
@@ -122,7 +143,8 @@ describe('Local GAS Endpoint - Validation', () => {
         company: 'Tech Corp',
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
-        timestamp: '2025-01-15T10:30:00.000Z'
+        timestamp: '2025-01-15T10:30:00.000Z',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(invalidData);
@@ -136,7 +158,8 @@ describe('Local GAS Endpoint - Validation', () => {
         company: 'Tech Corp',
         location: 'San Francisco, CA',
         url: 'not-a-valid-url',
-        timestamp: '2025-01-15T10:30:00.000Z'
+        timestamp: '2025-01-15T10:30:00.000Z',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(invalidData);
@@ -150,7 +173,8 @@ describe('Local GAS Endpoint - Validation', () => {
         company: 'Tech Corp',
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
-        timestamp: 'not-a-valid-timestamp'
+        timestamp: 'not-a-valid-timestamp',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(invalidData);
@@ -165,7 +189,8 @@ describe('Local GAS Endpoint - Validation', () => {
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
         timestamp: '2025-01-15T10:30:00.000Z',
-        source: 'LinkedIn'
+        source: 'LinkedIn',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(validData);
@@ -178,7 +203,8 @@ describe('Local GAS Endpoint - Validation', () => {
         company: 'Tech Corp',
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
-        timestamp: '2025-01-15T10:30:00.000Z'
+        timestamp: '2025-01-15T10:30:00.000Z',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const result = validateJobData(validData);
@@ -202,7 +228,8 @@ describe('Local GAS Endpoint - API', () => {
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
         timestamp: '2025-01-15T10:30:00.000Z',
-        source: 'LinkedIn'
+        source: 'LinkedIn',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const response = await request(app)
@@ -241,7 +268,8 @@ describe('Local GAS Endpoint - API', () => {
         company: 'Tech Corp',
         location: 'San Francisco, CA',
         url: 'invalid-url',
-        timestamp: '2025-01-15T10:30:00.000Z'
+        timestamp: '2025-01-15T10:30:00.000Z',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const response = await request(app)
@@ -260,7 +288,8 @@ describe('Local GAS Endpoint - API', () => {
         company: 'Tech Corp',
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
-        timestamp: 'invalid-timestamp'
+        timestamp: 'invalid-timestamp',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const response = await request(app)
@@ -281,7 +310,8 @@ describe('Local GAS Endpoint - API', () => {
           location: 'San Francisco, CA',
           url: 'https://linkedin.com/jobs/123',
           timestamp: '2025-01-15T10:30:00.000Z',
-          source: 'LinkedIn'
+          source: 'LinkedIn',
+          spreadsheetId: 'test-spreadsheet-id-123'
         },
         {
           title: 'Product Manager',
@@ -289,7 +319,8 @@ describe('Local GAS Endpoint - API', () => {
           location: 'New York, NY',
           url: 'https://indeed.com/jobs/456',
           timestamp: '2025-01-15T11:00:00.000Z',
-          source: 'Indeed'
+          source: 'Indeed',
+          spreadsheetId: 'test-spreadsheet-id-123'
         }
       ];
 
@@ -311,7 +342,8 @@ describe('Local GAS Endpoint - API', () => {
         location: 'São Paulo, Brazil',
         url: 'https://example.com/jobs/123?ref=test&source=linkedin',
         timestamp: '2025-01-15T10:30:00.000Z',
-        source: 'LinkedIn'
+        source: 'LinkedIn',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const response = await request(app)
@@ -345,7 +377,8 @@ describe('Local GAS Endpoint - API', () => {
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
         timestamp: '2025-01-15T10:30:00.000Z',
-        source: 'LinkedIn'
+        source: 'LinkedIn',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const job2 = {
@@ -354,7 +387,8 @@ describe('Local GAS Endpoint - API', () => {
         location: 'New York, NY',
         url: 'https://indeed.com/jobs/456',
         timestamp: '2025-01-15T11:00:00.000Z',
-        source: 'Indeed'
+        source: 'Indeed',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       await request(app).post('/log-job').send(job1);
@@ -391,7 +425,8 @@ describe('Local GAS Endpoint - API', () => {
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
         timestamp: '2025-01-15T10:30:00.000Z',
-        source: 'LinkedIn'
+        source: 'LinkedIn',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       const job2 = {
@@ -400,7 +435,8 @@ describe('Local GAS Endpoint - API', () => {
         location: 'New York, NY',
         url: 'https://indeed.com/jobs/456',
         timestamp: '2025-01-15T11:00:00.000Z',
-        source: 'Indeed'
+        source: 'Indeed',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       await request(app).post('/log-job').send(job1);
@@ -425,7 +461,8 @@ describe('Local GAS Endpoint - API', () => {
         location: 'San Francisco, CA',
         url: 'https://linkedin.com/jobs/123',
         timestamp: '2025-01-15T10:30:00.000Z',
-        source: 'LinkedIn'
+        source: 'LinkedIn',
+        spreadsheetId: 'test-spreadsheet-id-123'
       };
 
       await request(app).post('/log-job').send(job);
@@ -510,7 +547,8 @@ describe('Local GAS Endpoint - Integration', () => {
       location: 'San Francisco, CA',
       url: 'https://linkedin.com/jobs/123',
       timestamp: '2025-01-15T10:30:00.000Z',
-      source: 'LinkedIn'
+      source: 'LinkedIn',
+      spreadsheetId: 'test-spreadsheet-id-123'
     };
 
     const response = await request(app)
@@ -535,7 +573,8 @@ describe('Local GAS Endpoint - Integration', () => {
       location: 'Mountain View, CA',
       url: 'https://careers.google.com/jobs/123',
       timestamp: new Date().toISOString(),
-      source: 'Google Careers'
+      source: 'Google Careers',
+      spreadsheetId: 'test-spreadsheet-id-123'
     };
 
     // Step 2: Log to endpoint
