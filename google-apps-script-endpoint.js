@@ -21,8 +21,9 @@
  * View them at: https://console.cloud.google.com/logs/query
  *
  * Use this query to see all log levels (INFO, WARNING, ERROR):
- * resource.type="app_script_function" AND resource.labels.function_name="doPost"
- * AND (jsonPayload.message=~"JobSprint:.*" OR textPayload=~"JobSprint:.*" OR jsonPayload=~".*JobSprint.*")
+ * resource.type="app_script_function" AND resource.labels.function_name="doPost" AND jsonPayload.message=~"JobSprint:.*"
+ *
+ * If WARNING/ERROR logs don't show, check the severity filter dropdown (select "All severities")
  *
  * See GOOGLE_APPS_SCRIPT_SETUP.md for detailed instructions.
  */

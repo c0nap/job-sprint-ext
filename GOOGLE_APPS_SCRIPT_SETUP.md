@@ -383,15 +383,14 @@ If clicking **Extensions → Apps Script** gives a 404:
      ```
      resource.type="app_script_function"
      AND resource.labels.function_name="doPost"
-     AND (
-       jsonPayload.message=~"JobSprint:.*"
-       OR textPayload=~"JobSprint:.*"
-       OR jsonPayload=~".*JobSprint.*"
-     )
+     AND jsonPayload.message=~"JobSprint:.*"
      ```
    * You'll see all `console.log()` / `console.info()` / `console.warn()` / `console.error()` output for your deployed script.
 
-   **⚠️ Important:** The query above uses multiple conditions to catch all log levels (INFO, WARNING, ERROR) since different severity levels may format differently in Cloud Logging. If you only see INFO logs, the broader query ensures WARNING and ERROR logs are also captured.
+   **⚠️ Important:** If you don't see WARNING or ERROR logs:
+   - Check the **severity filter** dropdown at the top of the logs page - make sure "All severities" is selected
+   - The query searches for logs with `jsonPayload.message` starting with "JobSprint:"
+   - All console methods (info, warn, error) create the same structured log format
 
 ---
 
