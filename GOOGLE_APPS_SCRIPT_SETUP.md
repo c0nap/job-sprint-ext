@@ -158,6 +158,8 @@ After logging your first job, you'll see a sheet with these columns:
 | **Source** | Which job board it came from (LinkedIn, Indeed, etc.) |
 | **Date Added** | When the extension logged it to your sheet |
 
+**📝 MVP Note:** If the extension can't extract certain fields from a job page (e.g., company name isn't found), you'll see placeholder values like "(No company)" or "(No title)" in those cells. This ensures you don't lose the job listing entirely, and you can manually fill in the missing information later.
+
 You can:
 - ✅ Sort by any column
 - ✅ Add your own columns (Status, Notes, Applied Date, etc.)
@@ -195,14 +197,16 @@ You can:
 
 ---
 
-### "Invalid job data: missing required field"
+### "Invalid job data" or "Configuration not set up"
 
-**Cause:** The page you're on doesn't have recognizable job posting data
+**Cause:** Either the extension configuration (spreadsheet ID, project ID) is missing, or you haven't set up config.local.js
 
 **How to fix:**
-- Make sure you're on an actual job posting page (not search results)
-- Try a different job board (LinkedIn, Indeed, Glassdoor are best supported)
-- The extension works best on job detail pages, not list views
+- Create `config.local.js` from `config.example.js` and fill in your values
+- Make sure `SPREADSHEET_ID` and `PROJECT_ID` are set correctly
+- Reload the extension after updating config
+
+**Note:** For the MVP, the extension will accept and log whatever job data it can extract from the page, even if some fields are missing. Missing values will show as "(No company)" or "(No title)" in your sheet. This allows capturing data from pages with incomplete extraction.
 
 ---
 

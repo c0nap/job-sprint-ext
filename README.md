@@ -216,8 +216,8 @@ Job boards use different HTML structures and frequently update their layouts. Mu
 **Supported platforms:**
 LinkedIn, Indeed, Glassdoor, Greenhouse, Lever, Workday, plus generic selectors for smaller job boards.
 
-**Validation strategy:**
-All job data is validated before sending (URL format check, required fields check, timestamp format) to prevent logging incomplete or malformed data.
+**Validation strategy (MVP):**
+For the MVP, the extension accepts partial or incomplete job data and logs whatever information is available. Only configuration fields (`spreadsheetId`, `projectId`) are strictly required. Missing job fields (title, company, location) are logged with placeholder values like "(No company)" to ensure data capture even from pages with incomplete extraction.
 
 </details>
 
@@ -239,10 +239,11 @@ All job data is validated before sending (URL format check, required fields chec
 
 | Function | Purpose |
 | :--- | :--- |
-| `handleLogJobData(data, sendResponse)` | Validates data and sends POST request to Apps Script endpoint |
-| `validateJobData(data)` | Ensures all required fields are present and properly formatted |
-| `isValidTimestamp(timestamp)` | Verifies ISO 8601 timestamp format |
-| `getAppsScriptEndpoint()` | Returns configured endpoint URL |
+| `handleLogJobData(data, sendResponse)` | Validates configuration fields and sends POST request to Apps Script endpoint |
+| `validateJobData(data)` | MVP: Minimal validation - accepts any valid object (Apps Script handles missing fields) |
+| `getAppsScriptEndpoint()` | Returns configured endpoint URL from config.local.js |
+| `getSpreadsheetId()` | Returns configured spreadsheet ID from config.local.js |
+| `getProjectId()` | Returns configured Google Cloud project ID from config.local.js |
 
 #### `popup.js` - UI Coordination
 

@@ -124,12 +124,12 @@ function handleLogJobData(data, sendResponse) {
   // Configuration: Set APPS_SCRIPT_URL in extension settings or replace here
   const endpoint = getAppsScriptEndpoint();
 
-  // Validate data before sending
+  // Validate data before sending (MVP: just checks it's a valid object)
   if (!validateJobData(data)) {
     console.warn('Invalid job data:', data);
     sendResponse({
       success: false,
-      error: 'Invalid job data: missing required fields'
+      error: 'Invalid job data: must be a valid object'
     });
     return;
   }

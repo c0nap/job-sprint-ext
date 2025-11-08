@@ -25,6 +25,11 @@
  *
  * If WARNING/ERROR logs don't show, check the severity filter dropdown (select "All severities")
  *
+ * MVP BEHAVIOR:
+ * This script accepts partial/incomplete job data. Only spreadsheetId and projectId are required.
+ * Missing job fields (title, company, location, etc.) are filled with defaults like "(No company)".
+ * This allows capturing whatever data is available from each page.
+ *
  * See GOOGLE_APPS_SCRIPT_SETUP.md for detailed instructions.
  */
 
