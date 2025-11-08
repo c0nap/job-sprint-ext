@@ -248,28 +248,9 @@ function validateJobData(data) {
     return false;
   }
 
-  // Check required fields
-  const requiredFields = ['title', 'company', 'location', 'url', 'timestamp'];
-  for (const field of requiredFields) {
-    if (!(field in data)) {
-      console.warn(`Missing required field: ${field}`);
-      return false;
-    }
-  }
-
-  // Validate URL format
-  try {
-    new URL(data.url);
-  } catch {
-    console.warn('Invalid URL format:', data.url);
-    return false;
-  }
-
-  // Validate timestamp format (ISO 8601)
-  if (!isValidTimestamp(data.timestamp)) {
-    console.warn('Invalid timestamp format:', data.timestamp);
-    return false;
-  }
+  // MVP: Accept partial data - just check that it's a valid object
+  // The Apps Script endpoint will handle missing fields with defaults
+  // This allows us to capture whatever data is available from the page
 
   return true;
 }

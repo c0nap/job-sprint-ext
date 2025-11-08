@@ -51,8 +51,8 @@ function doPost(e) {
     console.log({
       message: 'JobSprint: Request parsed',
       requestId: requestId,
-      jobTitle: requestData.title,
-      company: requestData.company,
+      hasTitle: !!requestData.title,
+      hasCompany: !!requestData.company,
       hasSpreadsheetId: !!requestData.spreadsheetId,
       hasProjectId: !!requestData.projectId
     });
@@ -81,8 +81,8 @@ function doPost(e) {
       console.info({
         message: 'JobSprint: Successfully logged job',
         requestId: requestId,
-        jobTitle: requestData.title,
-        company: requestData.company,
+        jobTitle: requestData.title || '(No title)',
+        company: requestData.company || '(No company)',
         durationMs: duration
       });
 
@@ -122,6 +122,7 @@ function doPost(e) {
 
 /**
  * Validates job data according to the API contract
+ * For MVP: Only require config fields (spreadsheetId, projectId), allow partial job data
  * @param {Object} data - Job data to validate
  * @returns {Object} { valid: boolean, error?: string }
  */
@@ -131,10 +132,10 @@ function validateJobData(data) {
     return { valid: false, error: 'Invalid job data: data must be an object' };
   }
 
-  // Check all required fields exist and are non-empty strings
-  var requiredFields = ['title', 'company', 'location', 'url', 'timestamp', 'spreadsheetId', 'projectId'];
-  for (var i = 0; i < requiredFields.length; i++) {
-    var field = requiredFields[i];
+  // Only require config fields - these are essential for the script to work
+  var requiredConfigFields = ['spreadsheetId', 'projectId'];
+  for (var i = 0; i < requiredConfigFields.length; i++) {
+    var field = requiredConfigFields[i];
 
     if (!(field in data)) {
       return { valid: false, error: 'Invalid job data: missing required field "' + field + '"' };
@@ -145,11 +146,8 @@ function validateJobData(data) {
     }
   }
 
-  // Validate timestamp format (ISO 8601)
-  var timestamp = new Date(data.timestamp);
-  if (isNaN(timestamp.getTime())) {
-    return { valid: false, error: 'Invalid job data: timestamp must be a valid ISO 8601 date string' };
-  }
+  // For MVP: Job data fields are optional - we'll log whatever we have
+  // This allows us to capture partial data from pages with incomplete extraction
 
   return { valid: true };
 }
@@ -209,13 +207,13 @@ function logJobToSheet(jobData, requestId) {
       sheet.setFrozenRows(1);
     }
 
-    // Prepare the row data
+    // Prepare the row data - use defaults for missing/empty fields (MVP: accept partial data)
     var rowData = [
-      jobData.timestamp,
-      jobData.title,
-      jobData.company,
-      jobData.location,
-      jobData.url,
+      jobData.timestamp || new Date().toISOString(),
+      jobData.title || '(No title)',
+      jobData.company || '(No company)',
+      jobData.location || '(No location)',
+      jobData.url || '',
       jobData.source || '',
       new Date().toISOString()
     ];
@@ -236,8 +234,8 @@ function logJobToSheet(jobData, requestId) {
     console.info({
       message: 'JobSprint: Job logged to sheet successfully',
       requestId: requestId,
-      jobTitle: jobData.title,
-      company: jobData.company,
+      jobTitle: jobData.title || '(No title)',
+      company: jobData.company || '(No company)',
       newRowNumber: sheet.getLastRow()
     });
 
