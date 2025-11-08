@@ -36,8 +36,7 @@ function doPost(e) {
 
   try {
     // Log incoming request
-    console.log({
-      severity: 'INFO',
+    console.info({
       message: 'JobSprint: Incoming request',
       requestId: requestId,
       timestamp: startTime.toISOString()
@@ -47,20 +46,18 @@ function doPost(e) {
     var requestData = JSON.parse(e.postData.contents);
 
     console.log({
-      severity: 'DEBUG',
       message: 'JobSprint: Request parsed',
       requestId: requestId,
       jobTitle: requestData.title,
       company: requestData.company,
-      spreadsheetId: requestData.spreadsheetId ? requestData.spreadsheetId.substring(0, 8) + '...' : 'MISSING',
+      hasSpreadsheetId: !!requestData.spreadsheetId,
       hasProjectId: !!requestData.projectId
     });
 
     // Validate the incoming data
     var validation = validateJobData(requestData);
     if (!validation.valid) {
-      console.log({
-        severity: 'WARNING',
+      console.warn({
         message: 'JobSprint: Validation failed',
         requestId: requestId,
         error: validation.error,
@@ -78,8 +75,7 @@ function doPost(e) {
 
     if (result.success) {
       var duration = new Date() - startTime;
-      console.log({
-        severity: 'INFO',
+      console.info({
         message: 'JobSprint: Successfully logged job',
         requestId: requestId,
         jobTitle: requestData.title,
@@ -92,8 +88,7 @@ function doPost(e) {
         timestamp: requestData.timestamp
       }, 200);
     } else {
-      console.log({
-        severity: 'ERROR',
+      console.error({
         message: 'JobSprint: Failed to log job',
         requestId: requestId,
         error: result.error,
@@ -107,8 +102,7 @@ function doPost(e) {
     }
 
   } catch (error) {
-    console.log({
-      severity: 'ERROR',
+    console.error({
       message: 'JobSprint: Uncaught error in doPost',
       requestId: requestId,
       error: error.toString(),
@@ -169,30 +163,24 @@ function logJobToSheet(jobData, requestId) {
 
   try {
     console.log({
-      severity: 'DEBUG',
       message: 'JobSprint: Attempting to open spreadsheet',
       requestId: requestId,
-      spreadsheetId: jobData.spreadsheetId.substring(0, 8) + '...',
-      effectiveUser: Session.getEffectiveUser().getEmail(),
-      activeUser: Session.getActiveUser().getEmail()
+      hasSpreadsheetId: !!jobData.spreadsheetId
     });
 
     // Open the spreadsheet by ID (required for Web App deployment with "Anyone" access)
     spreadsheet = SpreadsheetApp.openById(jobData.spreadsheetId);
 
     console.log({
-      severity: 'DEBUG',
       message: 'JobSprint: Spreadsheet opened successfully',
       requestId: requestId,
-      spreadsheetName: spreadsheet.getName(),
-      spreadsheetUrl: spreadsheet.getUrl()
+      spreadsheetName: spreadsheet.getName()
     });
 
     // Get or create the "Job Applications" sheet
     sheet = spreadsheet.getSheetByName('Job Applications');
     if (!sheet) {
-      console.log({
-        severity: 'INFO',
+      console.info({
         message: 'JobSprint: Creating new Job Applications sheet',
         requestId: requestId
       });
@@ -230,11 +218,10 @@ function logJobToSheet(jobData, requestId) {
     ];
 
     console.log({
-      severity: 'DEBUG',
       message: 'JobSprint: Appending row to sheet',
       requestId: requestId,
       sheetName: sheet.getName(),
-      rowCount: sheet.getLastRow()
+      currentRowCount: sheet.getLastRow()
     });
 
     // Append the data to the sheet
@@ -243,8 +230,7 @@ function logJobToSheet(jobData, requestId) {
     // Auto-resize columns for better readability
     sheet.autoResizeColumns(1, 7);
 
-    console.log({
-      severity: 'INFO',
+    console.info({
       message: 'JobSprint: Job logged to sheet successfully',
       requestId: requestId,
       jobTitle: jobData.title,
@@ -259,17 +245,11 @@ function logJobToSheet(jobData, requestId) {
     var errorDetails = {
       errorMessage: error.toString(),
       errorName: error.name,
-      errorStack: error.stack,
-      spreadsheetId: jobData.spreadsheetId,
-      attemptedSpreadsheetAccess: !!spreadsheet,
-      attemptedSheetAccess: !!sheet,
-      effectiveUser: Session.getEffectiveUser().getEmail(),
-      activeUser: Session.getActiveUser().getEmail(),
-      scriptTimezone: Session.getScriptTimeZone()
+      hasSpreadsheet: !!spreadsheet,
+      hasSheet: !!sheet
     };
 
-    console.log({
-      severity: 'ERROR',
+    console.error({
       message: 'JobSprint: Error writing to spreadsheet',
       requestId: requestId,
       error: error.toString(),
@@ -316,8 +296,7 @@ function createJsonResponse(data, statusCode) {
  * BEFORE RUNNING: Replace the placeholder IDs below with your actual IDs
  */
 function testDoPost() {
-  console.log({
-    severity: 'INFO',
+  console.info({
     message: 'JobSprint: Running test function',
     timestamp: new Date().toISOString()
   });
@@ -340,17 +319,15 @@ function testDoPost() {
   var response = doPost(testData);
   var responseData = JSON.parse(response.getContent());
 
-  console.log({
-    severity: 'INFO',
+  console.info({
     message: 'JobSprint: Test completed',
-    success: responseData.success,
-    response: responseData
+    success: responseData.success
   });
 
   if (responseData.success) {
-    console.log('✅ TEST PASSED: Job logged successfully');
+    console.info('✅ TEST PASSED: Job logged successfully');
   } else {
-    console.log('❌ TEST FAILED: ' + responseData.error);
+    console.error('❌ TEST FAILED: ' + responseData.error);
   }
 
   return responseData;
@@ -365,79 +342,70 @@ function testDoPost() {
 function runDiagnostics() {
   var spreadsheetId = 'YOUR_SPREADSHEET_ID_HERE';  // ← REPLACE THIS
 
-  console.log({
-    severity: 'INFO',
+  console.info({
     message: 'JobSprint: Running diagnostics',
     timestamp: new Date().toISOString()
   });
 
   // Check user context
-  console.log({
-    severity: 'INFO',
+  console.info({
     message: 'JobSprint: User context',
-    effectiveUser: Session.getEffectiveUser().getEmail(),
-    activeUser: Session.getActiveUser().getEmail(),
+    hasEffectiveUser: !!Session.getEffectiveUser().getEmail(),
+    hasActiveUser: !!Session.getActiveUser().getEmail(),
     timezone: Session.getScriptTimeZone()
   });
 
   // Try to access the spreadsheet
   try {
     console.log({
-      severity: 'INFO',
       message: 'JobSprint: Attempting to access spreadsheet',
-      spreadsheetId: spreadsheetId
+      hasSpreadsheetId: !!spreadsheetId
     });
 
     var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
 
-    console.log({
-      severity: 'INFO',
+    console.info({
       message: '✅ Spreadsheet access successful',
       spreadsheetName: spreadsheet.getName(),
-      spreadsheetUrl: spreadsheet.getUrl(),
-      owner: spreadsheet.getOwner().getEmail(),
-      editors: spreadsheet.getEditors().map(function(e) { return e.getEmail(); }),
-      viewers: spreadsheet.getViewers().map(function(v) { return v.getEmail(); })
+      hasOwner: !!spreadsheet.getOwner(),
+      editorCount: spreadsheet.getEditors().length,
+      viewerCount: spreadsheet.getViewers().length
     });
 
     // Try to get or create sheet
     var sheet = spreadsheet.getSheetByName('Job Applications');
     if (sheet) {
-      console.log({
-        severity: 'INFO',
+      console.info({
         message: '✅ Job Applications sheet exists',
         rowCount: sheet.getLastRow(),
         columnCount: sheet.getLastColumn()
       });
     } else {
-      console.log({
-        severity: 'WARNING',
+      console.warn({
         message: 'Job Applications sheet does not exist (will be created on first job log)'
       });
     }
 
-    console.log('✅ DIAGNOSTICS PASSED: All permissions OK');
+    console.info('✅ DIAGNOSTICS PASSED: All permissions OK');
     return { success: true, message: 'All permissions OK' };
 
   } catch (error) {
-    console.log({
-      severity: 'ERROR',
+    console.error({
       message: '❌ Spreadsheet access failed',
       error: error.toString(),
       errorName: error.name,
-      errorStack: error.stack,
-      spreadsheetId: spreadsheetId
+      hasSpreadsheetId: !!spreadsheetId
     });
 
-    console.log('❌ DIAGNOSTICS FAILED: ' + error.toString());
+    console.error('❌ DIAGNOSTICS FAILED: ' + error.toString());
 
     if (error.toString().indexOf('Authorization') !== -1 || error.toString().indexOf('Permission') !== -1) {
-      console.log('\n🔧 TROUBLESHOOTING STEPS:');
-      console.log('1. Verify the spreadsheet ID is correct');
-      console.log('2. Ensure the script owner (' + Session.getEffectiveUser().getEmail() + ') has edit access to the spreadsheet');
-      console.log('3. Try opening the spreadsheet URL directly to confirm access');
-      console.log('4. If recently deployed, wait a few minutes for permissions to propagate');
-      console.log('5. Redeploy the Web App as a new version');
+      console.warn('🔧 TROUBLESHOOTING STEPS:');
+      console.warn('1. Verify the spreadsheet ID is correct');
+      console.warn('2. Ensure the script owner has edit access to the spreadsheet');
+      console.warn('3. Try opening the spreadsheet URL directly to confirm access');
+      console.warn('4. If recently deployed, wait a few minutes for permissions to propagate');
+      console.warn('5. Redeploy the Web App as a new version');
     }
 
     return { success: false, error: error.toString() };
