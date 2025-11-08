@@ -166,21 +166,36 @@ function handleLogJobData(data, sendResponse) {
     return;
   }
 
-  // Add spreadsheet ID to the data payload
-  const dataWithSpreadsheetId = { ...data, spreadsheetId, projectId };
+  // Add spreadsheet ID and project ID to the data payload
+  const dataWithIds = { ...data, spreadsheetId, projectId };
 
   // Send data to endpoint
+  // Note: Apps Script Web Apps support CORS, so we don't need 'no-cors' mode
   fetch(endpoint, {
     method: 'POST',
-    mode: 'no-cors',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(dataWithSpreadsheetId)
+    body: JSON.stringify(dataWithIds)
   })
-    .then(() => {
-      console.log('Job data logged successfully');
-      sendResponse({ success: true, timestamp: data.timestamp });
+    .then((response) => {
+      // Check if the response is ok (status 200-299)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then((responseData) => {
+      if (responseData.success) {
+        console.log('Job data logged successfully');
+        sendResponse({ success: true, timestamp: data.timestamp });
+      } else {
+        console.error('Apps Script returned error:', responseData.error);
+        sendResponse({
+          success: false,
+          error: responseData.error || 'Unknown error from Apps Script'
+        });
+      }
     })
     .catch((error) => {
       console.error('Failed to log job data:', error);

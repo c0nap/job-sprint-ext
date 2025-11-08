@@ -17,12 +17,14 @@
  *    - PROJECT_ID: your Google Cloud Project ID
  *
  * LOGGING:
- * Logs are sent to Google Cloud Logging using console.log()
+ * Logs are sent to Google Cloud Logging using console.info(), console.warn(), console.error()
  * View them at: https://console.cloud.google.com/logs/query
  *
- * Filter by: resource.type="app_script_function" AND jsonPayload.message=~"JobSprint:.*"
+ * Use this query to see all log levels (INFO, WARNING, ERROR):
+ * resource.type="app_script_function" AND resource.labels.function_name="doPost"
+ * AND (jsonPayload.message=~"JobSprint:.*" OR textPayload=~"JobSprint:.*" OR jsonPayload=~".*JobSprint.*")
  *
- * See GOOGLE_APPS_SCRIPT_SETUP.md and CLOUD_LOGGING.md for detailed instructions.
+ * See GOOGLE_APPS_SCRIPT_SETUP.md for detailed instructions.
  */
 
 /**
