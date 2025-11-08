@@ -47,6 +47,12 @@ function setupEventListeners() {
   // Reset button
   document.getElementById('resetSettings').addEventListener('click', resetSettings);
 
+  // Upload config button
+  document.getElementById('uploadConfig').addEventListener('click', uploadConfig);
+
+  // File input change handler
+  document.getElementById('configFileInput').addEventListener('change', handleConfigFileUpload);
+
   // Download config button
   document.getElementById('downloadConfig').addEventListener('click', downloadConfig);
 
@@ -102,6 +108,110 @@ async function resetSettings() {
     console.error('Error resetting settings:', error);
     showStatus('Error resetting settings: ' + error.message, 'error');
   }
+}
+
+// Upload config.local.js file
+function uploadConfig() {
+  // Trigger the hidden file input
+  document.getElementById('configFileInput').click();
+}
+
+// Handle config file upload
+async function handleConfigFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // Check file extension
+  if (!file.name.endsWith('.js')) {
+    showStatus('Please select a valid .js file', 'error');
+    return;
+  }
+
+  try {
+    // Read file content
+    const content = await file.text();
+
+    // Parse the config from the file
+    const config = parseConfigFile(content);
+
+    if (!config) {
+      showStatus('Invalid config file format', 'error');
+      return;
+    }
+
+    // Populate form fields
+    document.getElementById('appsScriptEndpoint').value = config.APPS_SCRIPT_ENDPOINT || '';
+    document.getElementById('spreadsheetId').value = config.SPREADSHEET_ID || '';
+    document.getElementById('projectId').value = config.PROJECT_ID || '';
+
+    // Update connection status
+    updateConnectionStatusFromInputs();
+
+    // Auto-save to chrome.storage
+    const settings = {
+      APPS_SCRIPT_ENDPOINT: config.APPS_SCRIPT_ENDPOINT || '',
+      SPREADSHEET_ID: config.SPREADSHEET_ID || '',
+      PROJECT_ID: config.PROJECT_ID || '',
+      ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked
+    };
+
+    await chrome.storage.sync.set(settings);
+
+    showStatus('Configuration loaded from file and saved successfully!', 'success');
+
+    // Notify service worker
+    chrome.runtime.sendMessage({ action: 'configUpdated' });
+
+  } catch (error) {
+    console.error('Error reading config file:', error);
+    showStatus('Error reading config file: ' + error.message, 'error');
+  }
+
+  // Clear the file input so the same file can be selected again
+  event.target.value = '';
+}
+
+// Parse config.local.js file content
+function parseConfigFile(content) {
+  try {
+    // Remove comments and whitespace
+    const cleanContent = content
+      .split('\n')
+      .filter(line => !line.trim().startsWith('//'))
+      .join('\n');
+
+    // Extract CONFIG object using regex
+    // Look for const CONFIG = { ... }; or var CONFIG = { ... };
+    const configMatch = cleanContent.match(/(?:const|var|let)\s+CONFIG\s*=\s*\{([^}]+)\}/s);
+
+    if (!configMatch) {
+      return null;
+    }
+
+    const configBody = configMatch[1];
+
+    // Extract individual values
+    const endpoint = extractConfigValue(configBody, 'APPS_SCRIPT_ENDPOINT');
+    const spreadsheetId = extractConfigValue(configBody, 'SPREADSHEET_ID');
+    const projectId = extractConfigValue(configBody, 'PROJECT_ID');
+
+    return {
+      APPS_SCRIPT_ENDPOINT: endpoint,
+      SPREADSHEET_ID: spreadsheetId,
+      PROJECT_ID: projectId
+    };
+
+  } catch (error) {
+    console.error('Error parsing config file:', error);
+    return null;
+  }
+}
+
+// Extract a config value from the config body
+function extractConfigValue(configBody, key) {
+  const regex = new RegExp(`${key}\\s*:\\s*['"]([^'"]+)['"]`);
+  const match = configBody.match(regex);
+  return match ? match[1] : '';
 }
 
 // Download config.local.js file

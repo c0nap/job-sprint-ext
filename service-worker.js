@@ -28,6 +28,7 @@ chrome.runtime.onStartup.addListener(() => {
 /**
  * Load configuration from chrome.storage (priority) or config.local.js (fallback)
  * Caches the configuration for quick access
+ * If loading from config.local.js, auto-saves to chrome.storage for future use
  */
 async function loadConfiguration() {
   try {
@@ -59,6 +60,24 @@ async function loadConfiguration() {
         configCache.SPREADSHEET_ID = self.APP_CONFIG.SPREADSHEET_ID || '';
         configCache.PROJECT_ID = self.APP_CONFIG.PROJECT_ID || '';
         console.log('Configuration loaded from config.local.js');
+
+        // Auto-save to chrome.storage for future use (if we have valid config)
+        const hasValidConfig = configCache.APPS_SCRIPT_ENDPOINT &&
+                               configCache.APPS_SCRIPT_ENDPOINT !== 'YOUR_APPS_SCRIPT_URL_HERE';
+
+        if (hasValidConfig) {
+          try {
+            await chrome.storage.sync.set({
+              APPS_SCRIPT_ENDPOINT: configCache.APPS_SCRIPT_ENDPOINT,
+              SPREADSHEET_ID: configCache.SPREADSHEET_ID,
+              PROJECT_ID: configCache.PROJECT_ID,
+              ENABLE_MANUAL_ENTRY: configCache.ENABLE_MANUAL_ENTRY
+            });
+            console.log('Configuration auto-saved to chrome.storage from config.local.js');
+          } catch (saveError) {
+            console.warn('Could not auto-save config to storage:', saveError);
+          }
+        }
       } else {
         console.warn('No configuration found in storage or config.local.js');
       }
@@ -71,6 +90,24 @@ async function loadConfiguration() {
       configCache.SPREADSHEET_ID = self.APP_CONFIG.SPREADSHEET_ID || '';
       configCache.PROJECT_ID = self.APP_CONFIG.PROJECT_ID || '';
       console.log('Configuration loaded from config.local.js (fallback)');
+
+      // Auto-save to chrome.storage (if we have valid config)
+      const hasValidConfig = configCache.APPS_SCRIPT_ENDPOINT &&
+                             configCache.APPS_SCRIPT_ENDPOINT !== 'YOUR_APPS_SCRIPT_URL_HERE';
+
+      if (hasValidConfig) {
+        try {
+          await chrome.storage.sync.set({
+            APPS_SCRIPT_ENDPOINT: configCache.APPS_SCRIPT_ENDPOINT,
+            SPREADSHEET_ID: configCache.SPREADSHEET_ID,
+            PROJECT_ID: configCache.PROJECT_ID,
+            ENABLE_MANUAL_ENTRY: configCache.ENABLE_MANUAL_ENTRY
+          });
+          console.log('Configuration auto-saved to chrome.storage from config.local.js (fallback)');
+        } catch (saveError) {
+          console.warn('Could not auto-save config to storage:', saveError);
+        }
+      }
     }
   }
 }

@@ -263,9 +263,15 @@
             </div>
 
             <div class="config-download">
+                <button id="uploadConfig" class="btn-secondary" style="margin-bottom: 10px;">Upload config.local.js</button>
+                <small style="display: block; margin-bottom: 15px;">Upload an existing config.local.js file to populate settings</small>
+
                 <button id="downloadConfig" class="btn-secondary">Download config.local.js</button>
                 <small style="display: block; margin-top: 8px;">Download the configuration file to use with the extension</small>
             </div>
+
+            <!-- Hidden file input for upload -->
+            <input type="file" id="configFileInput" accept=".js" style="display: none;">
         </div>
 
         <!-- Save Buttons -->
