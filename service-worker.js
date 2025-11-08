@@ -4,11 +4,76 @@
  * Features: Clipboard macros, job data extraction/logging, Q&A autofill
  */
 
+// Cache for configuration loaded from chrome.storage or config.local.js
+let configCache = {
+  APPS_SCRIPT_ENDPOINT: '',
+  SPREADSHEET_ID: '',
+  PROJECT_ID: '',
+  ENABLE_MANUAL_ENTRY: true
+};
+
 // Initialize storage when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
   console.log('JobSprint Extension installed');
   initializeStorage();
+  loadConfiguration();
 });
+
+// Load configuration on startup
+chrome.runtime.onStartup.addListener(() => {
+  console.log('JobSprint Extension starting up');
+  loadConfiguration();
+});
+
+/**
+ * Load configuration from chrome.storage (priority) or config.local.js (fallback)
+ * Caches the configuration for quick access
+ */
+async function loadConfiguration() {
+  try {
+    // Try to load from chrome.storage first
+    const storageConfig = await chrome.storage.sync.get([
+      'APPS_SCRIPT_ENDPOINT',
+      'SPREADSHEET_ID',
+      'PROJECT_ID',
+      'ENABLE_MANUAL_ENTRY'
+    ]);
+
+    // Check if we have values in storage
+    const hasStorageConfig = storageConfig.APPS_SCRIPT_ENDPOINT ||
+                             storageConfig.SPREADSHEET_ID ||
+                             storageConfig.PROJECT_ID;
+
+    if (hasStorageConfig) {
+      // Use chrome.storage values
+      configCache.APPS_SCRIPT_ENDPOINT = storageConfig.APPS_SCRIPT_ENDPOINT || '';
+      configCache.SPREADSHEET_ID = storageConfig.SPREADSHEET_ID || '';
+      configCache.PROJECT_ID = storageConfig.PROJECT_ID || '';
+      configCache.ENABLE_MANUAL_ENTRY =
+        storageConfig.ENABLE_MANUAL_ENTRY !== undefined ? storageConfig.ENABLE_MANUAL_ENTRY : true;
+      console.log('Configuration loaded from chrome.storage');
+    } else {
+      // Fallback to config.local.js
+      if (typeof self.APP_CONFIG !== 'undefined') {
+        configCache.APPS_SCRIPT_ENDPOINT = self.APP_CONFIG.APPS_SCRIPT_ENDPOINT || '';
+        configCache.SPREADSHEET_ID = self.APP_CONFIG.SPREADSHEET_ID || '';
+        configCache.PROJECT_ID = self.APP_CONFIG.PROJECT_ID || '';
+        console.log('Configuration loaded from config.local.js');
+      } else {
+        console.warn('No configuration found in storage or config.local.js');
+      }
+    }
+  } catch (error) {
+    console.error('Error loading configuration:', error);
+    // Try fallback to config.local.js
+    if (typeof self.APP_CONFIG !== 'undefined') {
+      configCache.APPS_SCRIPT_ENDPOINT = self.APP_CONFIG.APPS_SCRIPT_ENDPOINT || '';
+      configCache.SPREADSHEET_ID = self.APP_CONFIG.SPREADSHEET_ID || '';
+      configCache.PROJECT_ID = self.APP_CONFIG.PROJECT_ID || '';
+      console.log('Configuration loaded from config.local.js (fallback)');
+    }
+  }
+}
 
 /**
  * Initialize default storage values on first install
@@ -75,6 +140,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Save new Q&A pair to database
       handleSaveQAPair(message.question, message.answer, sendResponse);
       return true; // Async: chrome.storage.local.set
+
+    case 'configUpdated':
+      // Reload configuration when settings are updated
+      loadConfiguration().then(() => {
+        sendResponse({ success: true });
+      }).catch(error => {
+        sendResponse({ success: false, error: error.message });
+      });
+      return true; // Async: loadConfiguration
+
+    case 'getConfig':
+      // Get current configuration
+      sendResponse({
+        success: true,
+        config: configCache
+      });
+      return false; // Synchronous
 
     default:
       // Unknown action - return error
@@ -206,36 +288,43 @@ function handleLogJobData(data, sendResponse) {
     });
 }
 
-importScripts('config.local.js');
+// Try to import config.local.js (will fail silently if not present)
+try {
+  importScripts('config.local.js');
+} catch (error) {
+  console.log('config.local.js not found, using chrome.storage for configuration');
+}
 
 /**
- * Get Apps Script endpoint URL from storage or environment
+ * Get Apps Script endpoint URL from cached configuration
  * @returns {string} Endpoint URL
  */
 function getAppsScriptEndpoint() {
-  // TODO: In production, retrieve from chrome.storage.sync
-  // For now, use placeholder (developers should replace this)
-  return self.APP_CONFIG.APPS_SCRIPT_ENDPOINT;
+  return configCache.APPS_SCRIPT_ENDPOINT;
 }
 
 /**
- * Get Spreadsheet ID from storage or environment
+ * Get Spreadsheet ID from cached configuration
  * @returns {string} Spreadsheet ID
  */
 function getSpreadsheetId() {
-  // TODO: In production, retrieve from chrome.storage.sync
-  // For now, use from config (developers should replace this in config.local.js)
-  return self.APP_CONFIG.SPREADSHEET_ID;
+  return configCache.SPREADSHEET_ID;
 }
 
 /**
- * Get Project ID from storage or environment
- * @returns {string} Spreadsheet ID
+ * Get Project ID from cached configuration
+ * @returns {string} Project ID
  */
 function getProjectId() {
-  // TODO: In production, retrieve from chrome.storage.sync
-  // For now, use from config (developers should replace this in config.local.js)
-  return self.APP_CONFIG.PROJECT_ID;
+  return configCache.PROJECT_ID;
+}
+
+/**
+ * Check if manual entry is enabled
+ * @returns {boolean} True if manual entry is enabled
+ */
+function isManualEntryEnabled() {
+  return configCache.ENABLE_MANUAL_ENTRY;
 }
 
 /**

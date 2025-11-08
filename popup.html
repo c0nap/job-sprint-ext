@@ -45,6 +45,46 @@
     </footer>
   </div>
 
+  <!-- Manual Data Entry Modal -->
+  <div id="manualEntryModal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Review Job Data</h3>
+        <button class="modal-close" id="closeModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-info">Some job details couldn't be extracted automatically. Please review and fill in the missing information:</p>
+
+        <form id="manualEntryForm">
+          <div class="form-field">
+            <label for="manualJobTitle">Job Title *</label>
+            <input type="text" id="manualJobTitle" placeholder="e.g., Software Engineer" required>
+          </div>
+
+          <div class="form-field">
+            <label for="manualCompany">Company *</label>
+            <input type="text" id="manualCompany" placeholder="e.g., Google" required>
+          </div>
+
+          <div class="form-field">
+            <label for="manualLocation">Location</label>
+            <input type="text" id="manualLocation" placeholder="e.g., San Francisco, CA">
+          </div>
+
+          <div class="form-field">
+            <label for="manualUrl">Job URL *</label>
+            <input type="url" id="manualUrl" placeholder="https://..." readonly>
+          </div>
+
+          <div class="modal-actions">
+            <button type="submit" class="btn-submit">Submit Job Data</button>
+            <button type="button" class="btn-cancel" id="cancelModal">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>

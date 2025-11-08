@@ -12,7 +12,10 @@ Built for Chrome using **Manifest V3**, this extension speeds up high-volume job
 
 1. **Clipboard Macros** - Instantly paste common resume text (phone, email, address, LinkedIn) into any form field with one click
 2. **Job Data Extraction** - Capture and log job details (title, company, location) from any posting to your private Google Sheet
+   - **NEW:** Manual data entry popup - Review and fill missing fields before submitting
+   - **NEW:** Configurable via Settings page - No more editing code files!
 3. **Semi-Supervised Autofill** - Automatically fill application forms based on past answers, with approval prompts for every field
+4. **Settings Page** - Easy configuration of Google Sheets credentials, manual entry preferences, and more
 
 ---
 
@@ -50,10 +53,17 @@ The extension icon should now appear in your toolbar. If you don't see it, click
 
 ### Step 4: Configure Extension
 
-#### Option A: Clipboard Macros
-Click the extension icon and use the "Edit Macros" button to set your personal information. *(Note: Full settings UI is in development. Current version uses browser storage directly.)*
+#### Using the Settings Page (Recommended)
 
-#### Option B: Google Sheets Logging (optional)
+1. Click the JobSprint extension icon in your toolbar
+2. Click **"Settings"** at the bottom of the popup
+3. Configure your preferences:
+   - **Google Sheets Configuration:** Enter your Apps Script URL, Spreadsheet ID, and Project ID
+   - **Job Data Extraction:** Enable/disable manual entry popup for missing data
+   - **Download Config:** Export your settings as a backup file
+
+#### Setting Up Google Sheets Logging
+
 To enable job data logging to your personal Google Sheet:
 
 **🚀 Quick Setup (Recommended):**
@@ -61,8 +71,10 @@ Follow our complete step-by-step guide: **[GOOGLE_APPS_SCRIPT_SETUP.md](GOOGLE_A
 
 This guide includes:
 - ✅ Creating your Google Apps Script (copy & paste, no coding needed)
+- ✅ Using the new `setupConfiguration()` function for easier testing
 - ✅ Deploying it as a web app
-- ✅ Connecting it to the extension
+- ✅ Configuring the extension via the Settings page (no code editing needed!)
+- ✅ Manual data entry popup for incomplete extractions
 - ✅ Testing your setup
 - ✅ Troubleshooting common issues
 

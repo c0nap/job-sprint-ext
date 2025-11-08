@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobSprint Settings</title>
+    <link rel="stylesheet" href="popup.css">
+    <style>
+        body {
+            width: 500px;
+            min-height: 600px;
+        }
+
+        .settings-section {
+            margin-bottom: 25px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .settings-section h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #2c3e50;
+            font-size: 16px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #34495e;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="url"] {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 13px;
+            box-sizing: border-box;
+            font-family: 'Courier New', monospace;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #7f8c8d;
+            font-size: 12px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .checkbox-group label {
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn-primary {
+            flex: 1;
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+
+        .btn-secondary {
+            flex: 1;
+            background: #95a5a6;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+
+        .btn-link {
+            background: #27ae60;
+            color: white;
+            text-decoration: none;
+            padding: 10px;
+            border-radius: 4px;
+            display: inline-block;
+            text-align: center;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .btn-link:hover {
+            background: #229954;
+        }
+
+        .btn-link.disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .sheet-connection {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .connection-status {
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .connection-status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .connection-status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 15px;
+            color: #3498db;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .config-download {
+            margin-top: 10px;
+        }
+
+        .config-download button {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="popup.html" class="back-link">← Back to Main</a>
+
+        <header>
+            <h1>Settings</h1>
+        </header>
+
+        <!-- Google Sheets Configuration -->
+        <div class="settings-section">
+            <h3>Google Sheets Configuration</h3>
+
+            <div class="form-group">
+                <label for="appsScriptEndpoint">Apps Script Endpoint URL</label>
+                <input type="url" id="appsScriptEndpoint" placeholder="https://script.google.com/macros/s/.../exec">
+                <small>The URL of your deployed Google Apps Script web app</small>
+            </div>
+
+            <div class="form-group">
+                <label for="spreadsheetId">Google Spreadsheet ID</label>
+                <input type="text" id="spreadsheetId" placeholder="1a2B3c4D5e6F7g8H9i0J...">
+                <small>Found in the URL: docs.google.com/spreadsheets/d/<strong>SPREADSHEET_ID</strong>/edit</small>
+            </div>
+
+            <div class="form-group">
+                <label for="projectId">Google Cloud Project ID</label>
+                <input type="text" id="projectId" placeholder="123456789012">
+                <small>Your Google Cloud numeric project ID</small>
+            </div>
+
+            <div class="sheet-connection">
+                <div id="connectionStatus" class="connection-status disconnected">
+                    Not connected to Google Sheets
+                </div>
+                <a id="openSheetLink" href="#" class="btn-link disabled">Open Google Sheet</a>
+            </div>
+        </div>
+
+        <!-- Job Data Extraction Settings -->
+        <div class="settings-section">
+            <h3>Job Data Extraction</h3>
+
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="enableManualEntry" checked>
+                    <label for="enableManualEntry">Show manual entry form when extraction fails</label>
+                </div>
+                <small style="margin-left: 28px;">When enabled, you can manually fill in missing job data before submitting</small>
+            </div>
+        </div>
+
+        <!-- Configuration File Management -->
+        <div class="settings-section">
+            <h3>Configuration File</h3>
+
+            <div class="alert alert-info">
+                Settings are stored in Chrome sync storage and can be exported to <code>config.local.js</code> for the service worker.
+            </div>
+
+            <div class="config-download">
+                <button id="downloadConfig" class="btn-secondary">Download config.local.js</button>
+                <small style="display: block; margin-top: 8px;">Download the configuration file to use with the extension</small>
+            </div>
+        </div>
+
+        <!-- Save Buttons -->
+        <div class="button-group">
+            <button id="saveSettings" class="btn-primary">Save Settings</button>
+            <button id="resetSettings" class="btn-secondary">Reset to Defaults</button>
+        </div>
+
+        <div id="saveStatus" class="status-message" style="margin-top: 15px;"></div>
+    </div>
+
+    <script src="settings.js"></script>
+</body>
+</html>

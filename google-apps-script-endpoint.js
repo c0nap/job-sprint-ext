@@ -296,16 +296,88 @@ function createJsonResponse(data, statusCode) {
 }
 
 /**
+ * Setup function - run this FIRST to configure your spreadsheet and project IDs
+ * This stores the configuration in Script Properties so you don't need to hardcode values
+ *
+ * BEFORE RUNNING: Replace the placeholder IDs below with your actual IDs
+ */
+function setupConfiguration() {
+  var spreadsheetId = 'YOUR_SPREADSHEET_ID_HERE';  // ← REPLACE THIS
+  var projectId = 'YOUR_PROJECT_ID_HERE';  // ← REPLACE THIS (your GCP project ID)
+
+  // Validate inputs
+  if (spreadsheetId === 'YOUR_SPREADSHEET_ID_HERE' || projectId === 'YOUR_PROJECT_ID_HERE') {
+    console.error('❌ ERROR: Please replace the placeholder IDs with your actual IDs first!');
+    console.error('Edit this function and update spreadsheetId and projectId before running.');
+    return { success: false, error: 'Configuration not updated - placeholder values detected' };
+  }
+
+  try {
+    // Store in Script Properties
+    var scriptProperties = PropertiesService.getScriptProperties();
+    scriptProperties.setProperties({
+      'SPREADSHEET_ID': spreadsheetId,
+      'PROJECT_ID': projectId
+    });
+
+    console.info('✅ Configuration saved successfully!');
+    console.info({
+      message: 'JobSprint: Configuration saved',
+      spreadsheetId: spreadsheetId,
+      projectId: projectId
+    });
+
+    return {
+      success: true,
+      message: 'Configuration saved. You can now run testDoPost() and runDiagnostics() without editing them.',
+      spreadsheetId: spreadsheetId,
+      projectId: projectId
+    };
+  } catch (error) {
+    console.error('❌ Failed to save configuration: ' + error.toString());
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Get configuration from Script Properties
+ * Returns stored spreadsheet and project IDs
+ */
+function getConfiguration() {
+  var scriptProperties = PropertiesService.getScriptProperties();
+  var spreadsheetId = scriptProperties.getProperty('SPREADSHEET_ID');
+  var projectId = scriptProperties.getProperty('PROJECT_ID');
+
+  if (!spreadsheetId || !projectId) {
+    console.warn('⚠️ Configuration not found. Please run setupConfiguration() first.');
+    return null;
+  }
+
+  return {
+    spreadsheetId: spreadsheetId,
+    projectId: projectId
+  };
+}
+
+/**
  * Test function - run this to verify the script works
  * This simulates a POST request from the extension
  *
- * BEFORE RUNNING: Replace the placeholder IDs below with your actual IDs
+ * SETUP: Run setupConfiguration() FIRST to set your IDs, then you can run this test anytime
  */
 function testDoPost() {
   console.info({
     message: 'JobSprint: Running test function',
     timestamp: new Date().toISOString()
   });
+
+  // Get configuration from Script Properties
+  var config = getConfiguration();
+  if (!config) {
+    console.error('❌ TEST FAILED: No configuration found.');
+    console.error('Please run setupConfiguration() first to set your spreadsheet and project IDs.');
+    return { success: false, error: 'Configuration not set. Run setupConfiguration() first.' };
+  }
 
   var testData = {
     postData: {
@@ -316,8 +388,8 @@ function testDoPost() {
         url: 'https://example.com/jobs/test-123',
         timestamp: new Date().toISOString(),
         source: 'Manual Test',
-        spreadsheetId: 'YOUR_SPREADSHEET_ID_HERE',  // ← REPLACE THIS
-        projectId: 'YOUR_PROJECT_ID_HERE'  // ← REPLACE THIS (your GCP project ID)
+        spreadsheetId: config.spreadsheetId,
+        projectId: config.projectId
       })
     }
   };
@@ -327,11 +399,13 @@ function testDoPost() {
 
   console.info({
     message: 'JobSprint: Test completed',
-    success: responseData.success
+    success: responseData.success,
+    config: config
   });
 
   if (responseData.success) {
     console.info('✅ TEST PASSED: Job logged successfully');
+    console.info('You can now use the Chrome extension with confidence!');
   } else {
     console.error('❌ TEST FAILED: ' + responseData.error);
   }
@@ -343,14 +417,28 @@ function testDoPost() {
  * Diagnostic function - run this to check permissions and configuration
  * This helps troubleshoot authorization issues
  *
- * BEFORE RUNNING: Replace 'YOUR_SPREADSHEET_ID_HERE' with your actual spreadsheet ID
+ * SETUP: Run setupConfiguration() FIRST, then this function will automatically use your saved IDs
  */
 function runDiagnostics() {
-  var spreadsheetId = 'YOUR_SPREADSHEET_ID_HERE';  // ← REPLACE THIS
-
   console.info({
     message: 'JobSprint: Running diagnostics',
     timestamp: new Date().toISOString()
+  });
+
+  // Get configuration from Script Properties
+  var config = getConfiguration();
+  if (!config) {
+    console.error('❌ DIAGNOSTICS FAILED: No configuration found.');
+    console.error('Please run setupConfiguration() first to set your spreadsheet and project IDs.');
+    return { success: false, error: 'Configuration not set. Run setupConfiguration() first.' };
+  }
+
+  var spreadsheetId = config.spreadsheetId;
+
+  console.info({
+    message: 'JobSprint: Using configuration',
+    spreadsheetId: spreadsheetId,
+    projectId: config.projectId
   });
 
   // Check user context
@@ -373,6 +461,7 @@ function runDiagnostics() {
     console.info({
       message: '✅ Spreadsheet access successful',
       spreadsheetName: spreadsheet.getName(),
+      spreadsheetUrl: spreadsheet.getUrl(),
       hasOwner: !!spreadsheet.getOwner(),
       editorCount: spreadsheet.getEditors().length,
       viewerCount: spreadsheet.getViewers().length
@@ -393,7 +482,13 @@ function runDiagnostics() {
     }
 
     console.info('✅ DIAGNOSTICS PASSED: All permissions OK');
-    return { success: true, message: 'All permissions OK' };
+    console.info('You can now deploy this script as a Web App and use it with the Chrome extension!');
+    return {
+      success: true,
+      message: 'All permissions OK',
+      spreadsheetUrl: spreadsheet.getUrl(),
+      spreadsheetName: spreadsheet.getName()
+    };
 
   } catch (error) {
     console.error({
@@ -407,9 +502,10 @@ function runDiagnostics() {
 
     if (error.toString().indexOf('Authorization') !== -1 || error.toString().indexOf('Permission') !== -1) {
       console.warn('🔧 TROUBLESHOOTING STEPS:');
-      console.warn('1. Verify the spreadsheet ID is correct');
+      console.warn('1. Verify the spreadsheet ID is correct in setupConfiguration()');
       console.warn('2. Ensure the script owner has edit access to the spreadsheet');
-      console.warn('3. Try opening the spreadsheet URL directly to confirm access');
+      console.warn('3. Try opening the spreadsheet URL directly to confirm access:');
+      console.warn('   https://docs.google.com/spreadsheets/d/' + spreadsheetId + '/edit');
       console.warn('4. If recently deployed, wait a few minutes for permissions to propagate');
       console.warn('5. Redeploy the Web App as a new version');
     }
