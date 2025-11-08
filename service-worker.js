@@ -124,12 +124,12 @@ function handleLogJobData(data, sendResponse) {
   // Configuration: Set APPS_SCRIPT_URL in extension settings or replace here
   const endpoint = getAppsScriptEndpoint();
 
-  // Validate data before sending
+  // Validate data before sending (MVP: just checks it's a valid object)
   if (!validateJobData(data)) {
     console.warn('Invalid job data:', data);
     sendResponse({
       success: false,
-      error: 'Invalid job data: missing required fields'
+      error: 'Invalid job data: must be a valid object'
     });
     return;
   }
@@ -144,18 +144,58 @@ function handleLogJobData(data, sendResponse) {
     return;
   }
 
+  // Get spreadsheet ID from config
+  const spreadsheetId = getSpreadsheetId();
+  if (!spreadsheetId || spreadsheetId === 'YOUR_SPREADSHEET_ID_HERE') {
+    console.warn('Spreadsheet ID not configured');
+    sendResponse({
+      success: false,
+      error: 'Spreadsheet ID not configured. Please set up your Spreadsheet ID in config.local.js.'
+    });
+    return;
+  }
+
+  // Get spreadsheet ID from config
+  const projectId = getProjectId();
+  if (!projectId || projectId === 'YOUR_PROJECT_ID_HERE') {
+    console.warn('Project ID not configured');
+    sendResponse({
+      success: false,
+      error: 'Project ID not configured. Please set up your Project ID in config.local.js.'
+    });
+    return;
+  }
+
+  // Add spreadsheet ID and project ID to the data payload
+  const dataWithIds = { ...data, spreadsheetId, projectId };
+
   // Send data to endpoint
+  // Note: Apps Script Web Apps support CORS, so we don't need 'no-cors' mode
   fetch(endpoint, {
     method: 'POST',
-    mode: 'no-cors',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(data)
+    body: JSON.stringify(dataWithIds)
   })
-    .then(() => {
-      console.log('Job data logged successfully');
-      sendResponse({ success: true, timestamp: data.timestamp });
+    .then((response) => {
+      // Check if the response is ok (status 200-299)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then((responseData) => {
+      if (responseData.success) {
+        console.log('Job data logged successfully');
+        sendResponse({ success: true, timestamp: data.timestamp });
+      } else {
+        console.error('Apps Script returned error:', responseData.error);
+        sendResponse({
+          success: false,
+          error: responseData.error || 'Unknown error from Apps Script'
+        });
+      }
     })
     .catch((error) => {
       console.error('Failed to log job data:', error);
@@ -179,6 +219,26 @@ function getAppsScriptEndpoint() {
 }
 
 /**
+ * Get Spreadsheet ID from storage or environment
+ * @returns {string} Spreadsheet ID
+ */
+function getSpreadsheetId() {
+  // TODO: In production, retrieve from chrome.storage.sync
+  // For now, use from config (developers should replace this in config.local.js)
+  return self.APP_CONFIG.SPREADSHEET_ID;
+}
+
+/**
+ * Get Project ID from storage or environment
+ * @returns {string} Spreadsheet ID
+ */
+function getProjectId() {
+  // TODO: In production, retrieve from chrome.storage.sync
+  // For now, use from config (developers should replace this in config.local.js)
+  return self.APP_CONFIG.PROJECT_ID;
+}
+
+/**
  * Validate job data before sending
  * @param {Object} data - Job data to validate
  * @returns {boolean} True if valid
@@ -188,28 +248,9 @@ function validateJobData(data) {
     return false;
   }
 
-  // Check required fields
-  const requiredFields = ['title', 'company', 'location', 'url', 'timestamp'];
-  for (const field of requiredFields) {
-    if (!(field in data)) {
-      console.warn(`Missing required field: ${field}`);
-      return false;
-    }
-  }
-
-  // Validate URL format
-  try {
-    new URL(data.url);
-  } catch {
-    console.warn('Invalid URL format:', data.url);
-    return false;
-  }
-
-  // Validate timestamp format (ISO 8601)
-  if (!isValidTimestamp(data.timestamp)) {
-    console.warn('Invalid timestamp format:', data.timestamp);
-    return false;
-  }
+  // MVP: Accept partial data - just check that it's a valid object
+  // The Apps Script endpoint will handle missing fields with defaults
+  // This allows us to capture whatever data is available from the page
 
   return true;
 }

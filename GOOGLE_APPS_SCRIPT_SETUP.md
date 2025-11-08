@@ -158,6 +158,8 @@ After logging your first job, you'll see a sheet with these columns:
 | **Source** | Which job board it came from (LinkedIn, Indeed, etc.) |
 | **Date Added** | When the extension logged it to your sheet |
 
+**📝 MVP Note:** If the extension can't extract certain fields from a job page (e.g., company name isn't found), you'll see placeholder values like "(No company)" or "(No title)" in those cells. This ensures you don't lose the job listing entirely, and you can manually fill in the missing information later.
+
 You can:
 - ✅ Sort by any column
 - ✅ Add your own columns (Status, Notes, Applied Date, etc.)
@@ -195,14 +197,16 @@ You can:
 
 ---
 
-### "Invalid job data: missing required field"
+### "Invalid job data" or "Configuration not set up"
 
-**Cause:** The page you're on doesn't have recognizable job posting data
+**Cause:** Either the extension configuration (spreadsheet ID, project ID) is missing, or you haven't set up config.local.js
 
 **How to fix:**
-- Make sure you're on an actual job posting page (not search results)
-- Try a different job board (LinkedIn, Indeed, Glassdoor are best supported)
-- The extension works best on job detail pages, not list views
+- Create `config.local.js` from `config.example.js` and fill in your values
+- Make sure `SPREADSHEET_ID` and `PROJECT_ID` are set correctly
+- Reload the extension after updating config
+
+**Note:** For the MVP, the extension will accept and log whatever job data it can extract from the page, even if some fields are missing. Missing values will show as "(No company)" or "(No title)" in your sheet. This allows capturing data from pages with incomplete extraction.
 
 ---
 
@@ -382,13 +386,15 @@ If clicking **Extensions → Apps Script** gives a 404:
 
      ```
      resource.type="app_script_function"
+     AND resource.labels.function_name="doPost"
+     AND jsonPayload.message=~"JobSprint:.*"
      ```
-   * You’ll see all `Logger.log()` / `console.log()` output for your deployed script.
-     *(Optional filter)*
+   * You'll see all `console.log()` / `console.info()` / `console.warn()` / `console.error()` output for your deployed script.
 
-     ```
-     jsonPayload.functionName="doPost"
-     ```
+   **⚠️ Important:** If you don't see WARNING or ERROR logs:
+   - Check the **severity filter** dropdown at the top of the logs page - make sure "All severities" is selected
+   - The query searches for logs with `jsonPayload.message` starting with "JobSprint:"
+   - All console methods (info, warn, error) create the same structured log format
 
 ---
 
@@ -404,3 +410,26 @@ If clicking **Extensions → Apps Script** gives a 404:
 
 **In short:**
 If your deployed web app says “Completed” but you see nothing in Executions, link your script to a Cloud project. Cloud Logging is now the only place Google exposes real-time logs for web-app requests.
+
+### OAuth
+
+(first time setup - for developers)
+1. complete the Oauth consent screen
+2. Navigate to **Audience** and add yourself as a test user
+
+### Updating your code
+After uploading the latest source code, you must create a new deployment -> manage deployments -> edit -> New version. This will require auth. Your URL will not change.
+
+### When you connected your script to a custom GCP project:
+
+The “Executions” tab in Apps Script loses direct access to the built-in Logs Viewer.
+
+The “Cloud logs” / “Cloud errors” options are disabled because log ownership was transferred to your linked GCP project.
+
+(Apps Script’s own lightweight viewer only works for unbound projects.)
+
+```
+logName:"/logs/custom"
+```
+
+
