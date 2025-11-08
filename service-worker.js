@@ -195,6 +195,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       return false; // Synchronous
 
+    case 'testConnection':
+      // Test connection to Apps Script and Google Sheets
+      testConnection(sendResponse);
+      return true; // Async: fetch to external endpoint
+
     default:
       // Unknown action - return error
       sendResponse({ success: false, error: `Unknown action: ${message.action}` });
@@ -233,6 +238,122 @@ function handleSaveClipboardMacro(key, value, sendResponse) {
 }
 
 // ============ EXTRACTION FEATURE ============
+
+/**
+ * Test connection to Apps Script endpoint and Google Sheets
+ * @param {Function} sendResponse - Response callback
+ */
+function testConnection(sendResponse) {
+  const endpoint = getAppsScriptEndpoint();
+  const spreadsheetId = getSpreadsheetId();
+  const projectId = getProjectId();
+
+  // Check if configuration is set up
+  if (!endpoint || endpoint === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    sendResponse({
+      success: false,
+      error: 'Apps Script endpoint not configured. Please enter your endpoint URL.'
+    });
+    return;
+  }
+
+  if (!spreadsheetId || spreadsheetId === 'YOUR_SPREADSHEET_ID_HERE') {
+    sendResponse({
+      success: false,
+      error: 'Spreadsheet ID not configured. Please enter your Spreadsheet ID.'
+    });
+    return;
+  }
+
+  if (!projectId || projectId === 'YOUR_PROJECT_ID_HERE') {
+    sendResponse({
+      success: false,
+      error: 'Project ID not configured. Please enter your Project ID.'
+    });
+    return;
+  }
+
+  // Send a test request to the endpoint
+  const testData = {
+    title: '(Test Connection)',
+    company: '(Test)',
+    location: '(Test)',
+    url: 'https://test.com',
+    timestamp: new Date().toISOString(),
+    source: 'Connection Test',
+    spreadsheetId: spreadsheetId,
+    projectId: projectId,
+    isTest: true // Flag to indicate this is a test (Apps Script can ignore it)
+  };
+
+  fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(testData),
+    signal: AbortSignal.timeout(15000) // 15 second timeout
+  })
+    .then((response) => {
+      if (!response.ok) {
+        // Provide specific error messages based on status code
+        if (response.status === 404) {
+          throw new Error('Apps Script endpoint not found. Please check your endpoint URL.');
+        } else if (response.status === 403) {
+          throw new Error('Access denied. Please check deployment permissions (should be "Anyone").');
+        } else if (response.status === 401) {
+          throw new Error('Authentication required. Please redeploy your Apps Script as a Web App.');
+        } else if (response.status >= 500) {
+          throw new Error('Apps Script server error. Check the execution log in Apps Script.');
+        } else {
+          throw new Error(`HTTP ${response.status} error. Check your deployment settings.`);
+        }
+      }
+      return response.json();
+    })
+    .then((responseData) => {
+      if (responseData.success) {
+        sendResponse({
+          success: true,
+          message: 'Connection successful! Your configuration is working correctly.'
+        });
+      } else {
+        // Parse error from Apps Script
+        let errorMsg = responseData.error || 'Unknown error from Apps Script';
+
+        if (errorMsg.includes('not found') || errorMsg.includes('Spreadsheet not found')) {
+          errorMsg = 'Google Sheet not found. Please verify your Spreadsheet ID.';
+        } else if (errorMsg.includes('Authorization') || errorMsg.includes('Permission')) {
+          errorMsg = 'Cannot access Google Sheet. Please ensure the Apps Script owner has edit access.';
+        } else if (errorMsg.includes('Invalid') && errorMsg.includes('spreadsheet')) {
+          errorMsg = 'Invalid Spreadsheet ID. Please check your configuration.';
+        }
+
+        sendResponse({
+          success: false,
+          error: errorMsg
+        });
+      }
+    })
+    .catch((error) => {
+      console.error('Connection test failed:', error);
+
+      let errorMsg = 'Connection test failed';
+
+      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+        errorMsg = 'Cannot connect to Apps Script. Please check:\n• Apps Script URL is correct\n• Script is deployed as Web App\n• You have internet connection';
+      } else if (error.name === 'AbortError' || error.message.includes('timeout')) {
+        errorMsg = 'Connection timed out. Please check your internet connection.';
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+
+      sendResponse({
+        success: false,
+        error: errorMsg
+      });
+    });
+}
 
 /**
  * Log job data to Google Sheets via Apps Script endpoint
@@ -295,12 +416,24 @@ function handleLogJobData(data, sendResponse) {
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(dataWithIds)
+    body: JSON.stringify(dataWithIds),
+    signal: AbortSignal.timeout(15000) // 15 second timeout
   })
     .then((response) => {
       // Check if the response is ok (status 200-299)
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Provide specific error messages based on status code
+        if (response.status === 404) {
+          throw new Error('Apps Script endpoint not found. Please check your endpoint URL in Settings.');
+        } else if (response.status === 403) {
+          throw new Error('Access denied to Apps Script. Please check deployment permissions (should be "Anyone").');
+        } else if (response.status === 401) {
+          throw new Error('Authentication required. Please redeploy your Apps Script as a Web App.');
+        } else if (response.status >= 500) {
+          throw new Error('Apps Script server error. Please check the Apps Script execution log.');
+        } else {
+          throw new Error(`Apps Script returned error (HTTP ${response.status}). Check your deployment settings.`);
+        }
       }
       return response.json();
     })
@@ -310,17 +443,47 @@ function handleLogJobData(data, sendResponse) {
         sendResponse({ success: true, timestamp: data.timestamp });
       } else {
         console.error('Apps Script returned error:', responseData.error);
+
+        // Parse and improve error messages from Apps Script
+        let errorMsg = responseData.error || 'Unknown error from Apps Script';
+
+        // Detect common error patterns
+        if (errorMsg.includes('not found') || errorMsg.includes('Spreadsheet not found')) {
+          errorMsg = 'Google Sheet not found. Please verify your Spreadsheet ID in Settings.';
+        } else if (errorMsg.includes('Authorization') || errorMsg.includes('Permission')) {
+          errorMsg = 'Cannot access Google Sheet. Please ensure the Apps Script owner has edit access to the sheet.';
+        } else if (errorMsg.includes('Invalid') && errorMsg.includes('spreadsheet')) {
+          errorMsg = 'Invalid Spreadsheet ID. Please check your configuration in Settings.';
+        }
+
         sendResponse({
           success: false,
-          error: responseData.error || 'Unknown error from Apps Script'
+          error: errorMsg
         });
       }
     })
     .catch((error) => {
       console.error('Failed to log job data:', error);
+
+      // Provide user-friendly error messages based on error type
+      let errorMsg = 'Unknown error occurred';
+
+      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+        errorMsg = 'Cannot connect to Apps Script endpoint. Please check:\n' +
+                   '1. Your Apps Script URL is correct\n' +
+                   '2. The script is deployed as a Web App\n' +
+                   '3. You have an internet connection';
+      } else if (error.name === 'AbortError' || error.message.includes('timeout')) {
+        errorMsg = 'Connection to Apps Script timed out. Please check your internet connection or try again.';
+      } else if (error.message.includes('CORS')) {
+        errorMsg = 'CORS error. Please ensure your Apps Script is deployed with "Anyone" access.';
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+
       sendResponse({
         success: false,
-        error: error.message || 'Network error occurred'
+        error: errorMsg
       });
     });
 }

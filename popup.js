@@ -116,7 +116,13 @@ function handleExtractClick(button, statusDiv) {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const activeTab = tabs[0];
     if (!activeTab) {
-      handleExtractError(button, statusDiv, 'No active tab found');
+      handleExtractError(button, statusDiv, 'No active tab found. Please make sure you have a tab open.');
+      return;
+    }
+
+    // Check if tab URL is accessible
+    if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+      handleExtractError(button, statusDiv, 'Cannot extract from this page. Chrome extension pages and settings are not supported.');
       return;
     }
 
@@ -126,7 +132,24 @@ function handleExtractClick(button, statusDiv) {
       { action: 'extractJobData' },
       (response) => {
         if (chrome.runtime.lastError) {
-          handleExtractError(button, statusDiv, `Could not access page: ${chrome.runtime.lastError.message}`);
+          // Handle the common "Receiving end does not exist" error
+          const errorMsg = chrome.runtime.lastError.message;
+
+          if (errorMsg.includes('Receiving end does not exist')) {
+            handleExtractError(
+              button,
+              statusDiv,
+              'Please reload the page and try again. The extension needs to reinitialize.'
+            );
+          } else if (errorMsg.includes('Cannot access')) {
+            handleExtractError(
+              button,
+              statusDiv,
+              'Cannot access this page. Please make sure you are on a job posting page.'
+            );
+          } else {
+            handleExtractError(button, statusDiv, `Error: ${errorMsg}`);
+          }
           return;
         }
 

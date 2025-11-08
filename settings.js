@@ -56,6 +56,9 @@ function setupEventListeners() {
   // Download config button
   document.getElementById('downloadConfig').addEventListener('click', downloadConfig);
 
+  // Test connection button
+  document.getElementById('testConnection').addEventListener('click', testConnection);
+
   // Real-time connection status updates
   document.getElementById('spreadsheetId').addEventListener('input', updateConnectionStatusFromInputs);
   document.getElementById('appsScriptEndpoint').addEventListener('input', updateConnectionStatusFromInputs);
@@ -212,6 +215,48 @@ function extractConfigValue(configBody, key) {
   const regex = new RegExp(`${key}\\s*:\\s*['"]([^'"]+)['"]`);
   const match = configBody.match(regex);
   return match ? match[1] : '';
+}
+
+// Test connection to Apps Script and Google Sheets
+async function testConnection() {
+  const button = document.getElementById('testConnection');
+  const originalText = button.textContent;
+
+  // Disable button and show loading state
+  button.disabled = true;
+  button.textContent = 'Testing...';
+
+  try {
+    // First, save current settings to ensure service worker has latest config
+    const settings = {
+      APPS_SCRIPT_ENDPOINT: document.getElementById('appsScriptEndpoint').value.trim(),
+      SPREADSHEET_ID: document.getElementById('spreadsheetId').value.trim(),
+      PROJECT_ID: document.getElementById('projectId').value.trim(),
+      ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked
+    };
+
+    await chrome.storage.sync.set(settings);
+    await chrome.runtime.sendMessage({ action: 'configUpdated' });
+
+    // Small delay to ensure config is reloaded
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Now test the connection
+    const response = await chrome.runtime.sendMessage({ action: 'testConnection' });
+
+    if (response.success) {
+      showStatus(response.message || 'Connection successful!', 'success');
+    } else {
+      showStatus(response.error || 'Connection test failed', 'error');
+    }
+  } catch (error) {
+    console.error('Error testing connection:', error);
+    showStatus('Error testing connection: ' + error.message, 'error');
+  } finally {
+    // Re-enable button
+    button.disabled = false;
+    button.textContent = originalText;
+  }
 }
 
 // Download config.local.js file
