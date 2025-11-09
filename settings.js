@@ -8,20 +8,28 @@ const DEFAULT_CONFIG = {
   ENABLE_MANUAL_ENTRY: true
 };
 
-// Default clipboard macros
+// Default clipboard macros (nested structure)
 const DEFAULT_MACROS = {
-  phone: '',
-  email: '',
-  address: '',
-  linkedin: '',
-  name: '',
-  website: ''
+  demographics: {
+    phone: '',
+    email: '',
+    address: '',
+    name: '',
+    linkedin: '',
+    website: ''
+  },
+  references: {},
+  education: {},
+  skills: {},
+  projects: {},
+  employment: {}
 };
 
 // Load settings when page loads
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   setupEventListeners();
+  setupFolderHandlers();
 });
 
 // Load settings from Chrome storage
@@ -42,14 +50,17 @@ async function loadSettings() {
     document.getElementById('enableManualEntry').checked =
       result.ENABLE_MANUAL_ENTRY !== undefined ? result.ENABLE_MANUAL_ENTRY : true;
 
-    // Populate clipboard macro fields
+    // Populate clipboard macro folders
     const macros = result.clipboardMacros || DEFAULT_MACROS;
-    document.getElementById('macroPhone').value = macros.phone || '';
-    document.getElementById('macroEmail').value = macros.email || '';
-    document.getElementById('macroAddress').value = macros.address || '';
-    document.getElementById('macroLinkedin').value = macros.linkedin || '';
-    document.getElementById('macroName').value = macros.name || '';
-    document.getElementById('macroWebsite').value = macros.website || '';
+    const folders = ['demographics', 'references', 'education', 'skills', 'projects', 'employment'];
+
+    folders.forEach(folder => {
+      const textarea = document.querySelector(`.folder-json-editor[data-folder="${folder}"]`);
+      if (textarea) {
+        const folderData = macros[folder] || {};
+        textarea.value = JSON.stringify(folderData, null, 2);
+      }
+    });
 
     // Update connection status
     updateConnectionStatus(result);
@@ -85,6 +96,86 @@ function setupEventListeners() {
   document.getElementById('projectId').addEventListener('input', updateConnectionStatusFromInputs);
 }
 
+// Setup folder expand/collapse and JSON validation
+function setupFolderHandlers() {
+  // Folder header click handlers
+  const folderHeaders = document.querySelectorAll('.folder-header');
+  folderHeaders.forEach(header => {
+    header.addEventListener('click', () => {
+      const folder = header.getAttribute('data-folder');
+      toggleFolder(header, folder);
+    });
+  });
+
+  // JSON editor validation on input
+  const editors = document.querySelectorAll('.folder-json-editor');
+  editors.forEach(editor => {
+    editor.addEventListener('input', () => {
+      const folder = editor.getAttribute('data-folder');
+      validateFolderJSON(folder);
+    });
+  });
+}
+
+// Toggle folder expand/collapse
+function toggleFolder(header, folder) {
+  const content = document.getElementById(`folder-${folder}`);
+  const isExpanded = header.classList.contains('expanded');
+
+  if (isExpanded) {
+    header.classList.remove('expanded');
+    content.style.display = 'none';
+  } else {
+    header.classList.add('expanded');
+    content.style.display = 'block';
+  }
+}
+
+// Validate JSON for a folder
+function validateFolderJSON(folder) {
+  const textarea = document.querySelector(`.folder-json-editor[data-folder="${folder}"]`);
+  const errorDiv = document.querySelector(`.folder-error[data-folder="${folder}"]`);
+
+  if (!textarea || !errorDiv) return;
+
+  try {
+    const value = textarea.value.trim();
+    if (value === '') {
+      // Empty is valid (will use {})
+      textarea.classList.remove('error');
+      errorDiv.classList.remove('visible');
+      errorDiv.textContent = '';
+      return true;
+    }
+
+    const parsed = JSON.parse(value);
+
+    // Must be an object, not an array
+    if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Must be a JSON object, not an array');
+    }
+
+    // All values must be strings
+    for (const [key, val] of Object.entries(parsed)) {
+      if (typeof val !== 'string') {
+        throw new Error(`Value for "${key}" must be a string`);
+      }
+    }
+
+    // Valid JSON
+    textarea.classList.remove('error');
+    errorDiv.classList.remove('visible');
+    errorDiv.textContent = '';
+    return true;
+  } catch (error) {
+    // Invalid JSON
+    textarea.classList.add('error');
+    errorDiv.classList.add('visible');
+    errorDiv.textContent = `Invalid JSON: ${error.message}`;
+    return false;
+  }
+}
+
 // Save settings to Chrome storage
 async function saveSettings() {
   const settings = {
@@ -94,30 +185,41 @@ async function saveSettings() {
     ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked
   };
 
-  // Get clipboard macros
-  const clipboardMacros = {
-    phone: document.getElementById('macroPhone').value.trim(),
-    email: document.getElementById('macroEmail').value.trim(),
-    address: document.getElementById('macroAddress').value.trim(),
-    linkedin: document.getElementById('macroLinkedin').value.trim(),
-    name: document.getElementById('macroName').value.trim(),
-    website: document.getElementById('macroWebsite').value.trim()
-  };
+  // Get and validate clipboard macros
+  const folders = ['demographics', 'references', 'education', 'skills', 'projects', 'employment'];
+  const clipboardMacros = {};
+  let hasErrors = false;
 
-  // Validate inputs
+  for (const folder of folders) {
+    if (!validateFolderJSON(folder)) {
+      hasErrors = true;
+      continue;
+    }
+
+    const textarea = document.querySelector(`.folder-json-editor[data-folder="${folder}"]`);
+    if (textarea) {
+      const value = textarea.value.trim();
+      if (value === '') {
+        clipboardMacros[folder] = {};
+      } else {
+        try {
+          clipboardMacros[folder] = JSON.parse(value);
+        } catch (error) {
+          hasErrors = true;
+          showStatus(`Invalid JSON in ${folder}: ${error.message}`, 'error');
+        }
+      }
+    }
+  }
+
+  if (hasErrors) {
+    showStatus('Please fix JSON errors before saving', 'error');
+    return;
+  }
+
+  // Validate Google Sheets inputs
   if (settings.APPS_SCRIPT_ENDPOINT && !isValidUrl(settings.APPS_SCRIPT_ENDPOINT)) {
     showStatus('Invalid Apps Script Endpoint URL', 'error');
-    return;
-  }
-
-  // Validate clipboard macro URLs if provided
-  if (clipboardMacros.linkedin && !isValidUrl(clipboardMacros.linkedin)) {
-    showStatus('Invalid LinkedIn URL', 'error');
-    return;
-  }
-
-  if (clipboardMacros.website && !isValidUrl(clipboardMacros.website)) {
-    showStatus('Invalid Website URL', 'error');
     return;
   }
 

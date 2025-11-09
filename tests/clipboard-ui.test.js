@@ -1,6 +1,6 @@
 /**
- * UI tests for the Clipboard Macros MVP
- * Tests the 6-button layout and Settings integration
+ * UI tests for the Clipboard Macros Folder Structure
+ * Tests the 6-folder layout and Settings JSON editing
  */
 
 const fs = require('fs');
@@ -18,50 +18,64 @@ const settingsHtml = fs.readFileSync(
   'utf8'
 );
 
-describe('Clipboard Macros UI - 6-Button MVP', () => {
+describe('Clipboard Macros UI - Folder Structure', () => {
   describe('Popup HTML Structure', () => {
-    test('should have exactly 6 macro buttons', () => {
-      const buttonMatches = popupHtml.match(/class="macro-btn"/g);
+    test('should have exactly 6 folder buttons', () => {
+      const buttonMatches = popupHtml.match(/class="folder-btn"/g);
       expect(buttonMatches).toHaveLength(6);
     });
 
-    test('should have all 6 macro buttons with correct data-keys', () => {
-      const expectedKeys = ['phone', 'email', 'address', 'linkedin', 'name', 'website'];
+    test('should have all 6 folder buttons with correct data-folder attributes', () => {
+      const expectedFolders = ['demographics', 'references', 'education', 'skills', 'projects', 'employment'];
 
-      expectedKeys.forEach((key) => {
-        const pattern = new RegExp(`data-key="${key}"`, 'g');
+      expectedFolders.forEach((folder) => {
+        const pattern = new RegExp(`data-folder="${folder}"`, 'g');
         const matches = popupHtml.match(pattern);
-        expect(matches).toHaveLength(1);
+        expect(matches.length).toBeGreaterThanOrEqual(1);
       });
     });
 
-    test('should have phone button with emoji and label', () => {
-      expect(popupHtml).toContain('data-key="phone">📞 Phone</button>');
+    test('should have demographics folder button with emoji and label', () => {
+      expect(popupHtml).toContain('data-folder="demographics">👤 Demographics</button>');
     });
 
-    test('should have email button with emoji and label', () => {
-      expect(popupHtml).toContain('data-key="email">📧 Email</button>');
+    test('should have references folder button with emoji and label', () => {
+      expect(popupHtml).toContain('data-folder="references">📋 References</button>');
     });
 
-    test('should have address button with emoji and label', () => {
-      expect(popupHtml).toContain('data-key="address">📍 Address</button>');
+    test('should have education folder button with emoji and label', () => {
+      expect(popupHtml).toContain('data-folder="education">🎓 Education</button>');
     });
 
-    test('should have linkedin button with emoji and label', () => {
-      expect(popupHtml).toContain('data-key="linkedin">💼 LinkedIn</button>');
+    test('should have skills folder button with emoji and label', () => {
+      expect(popupHtml).toContain('data-folder="skills">💡 Skills</button>');
     });
 
-    test('should have name button with emoji and label', () => {
-      expect(popupHtml).toContain('data-key="name">👤 Name</button>');
+    test('should have projects folder button with emoji and label', () => {
+      expect(popupHtml).toContain('data-folder="projects">🚀 Projects</button>');
     });
 
-    test('should have website button with emoji and label', () => {
-      expect(popupHtml).toContain('data-key="website">🌐 Website</button>');
+    test('should have employment folder button with emoji and label', () => {
+      expect(popupHtml).toContain('data-folder="employment">💼 Employment</button>');
     });
 
-    test('should NOT have Edit Macros button in popup', () => {
-      expect(popupHtml).not.toContain('id="editMacros"');
-      expect(popupHtml).not.toContain('Edit Macros');
+    test('should have sub-menu view with back button', () => {
+      expect(popupHtml).toContain('id="subMenuView"');
+      expect(popupHtml).toContain('id="backButton"');
+      expect(popupHtml).toContain('← Back');
+    });
+
+    test('should have sub-menu items container', () => {
+      expect(popupHtml).toContain('id="subMenuItems"');
+      expect(popupHtml).toContain('class="sub-menu-items"');
+    });
+
+    test('should have configure hint in sub-menu', () => {
+      expect(popupHtml).toContain('Configure items in Settings');
+    });
+
+    test('should NOT have old macro-btn class', () => {
+      expect(popupHtml).not.toContain('class="macro-btn"');
     });
 
     test('should have Settings link', () => {
@@ -75,54 +89,70 @@ describe('Clipboard Macros UI - 6-Button MVP', () => {
       expect(settingsHtml).toContain('Clipboard Macros</h3>');
     });
 
-    test('should have all 6 macro input fields', () => {
-      const expectedIds = [
-        'macroPhone',
-        'macroEmail',
-        'macroAddress',
-        'macroLinkedin',
-        'macroName',
-        'macroWebsite'
-      ];
+    test('should mention JSON editing in info alert', () => {
+      expect(settingsHtml).toContain('Edit the JSON for each folder');
+    });
 
-      expectedIds.forEach((id) => {
-        const pattern = new RegExp(`id="${id}"`, 'g');
-        const matches = settingsHtml.match(pattern);
-        expect(matches).toHaveLength(1);
+    test('should have all 6 folder sections', () => {
+      const expectedFolders = ['demographics', 'references', 'education', 'skills', 'projects', 'employment'];
+
+      expectedFolders.forEach((folder) => {
+        expect(settingsHtml).toContain(`data-folder="${folder}"`);
+        expect(settingsHtml).toContain(`id="folder-${folder}"`);
       });
     });
 
-    test('should have phone input with label and emoji', () => {
-      expect(settingsHtml).toContain('for="macroPhone">📞 Phone Number</label>');
-      expect(settingsHtml).toContain('id="macroPhone"');
+    test('should have JSON textarea for each folder', () => {
+      const expectedFolders = ['demographics', 'references', 'education', 'skills', 'projects', 'employment'];
+
+      expectedFolders.forEach((folder) => {
+        expect(settingsHtml).toContain(`class="folder-json-editor" data-folder="${folder}"`);
+      });
     });
 
-    test('should have email input with label and emoji', () => {
-      expect(settingsHtml).toContain('for="macroEmail">📧 Email Address</label>');
-      expect(settingsHtml).toContain('id="macroEmail"');
+    test('should have demographics folder with standard fields', () => {
+      expect(settingsHtml).toContain('👤 Demographics');
+      expect(settingsHtml).toContain('folder-json-editor" data-folder="demographics"');
     });
 
-    test('should have address input with label and emoji', () => {
-      expect(settingsHtml).toContain('for="macroAddress">📍 Address</label>');
-      expect(settingsHtml).toContain('id="macroAddress"');
+    test('should have references folder', () => {
+      expect(settingsHtml).toContain('📋 References');
+      expect(settingsHtml).toContain('folder-json-editor" data-folder="references"');
     });
 
-    test('should have linkedin input with label and emoji', () => {
-      expect(settingsHtml).toContain('for="macroLinkedin">💼 LinkedIn Profile</label>');
-      expect(settingsHtml).toContain('id="macroLinkedin"');
+    test('should have education folder', () => {
+      expect(settingsHtml).toContain('🎓 Education');
+      expect(settingsHtml).toContain('folder-json-editor" data-folder="education"');
     });
 
-    test('should have name input with label and emoji', () => {
-      expect(settingsHtml).toContain('for="macroName">👤 Full Name</label>');
-      expect(settingsHtml).toContain('id="macroName"');
+    test('should have skills folder', () => {
+      expect(settingsHtml).toContain('💡 Skills');
+      expect(settingsHtml).toContain('folder-json-editor" data-folder="skills"');
     });
 
-    test('should have website input with label and emoji', () => {
-      expect(settingsHtml).toContain('for="macroWebsite">🌐 Website/Portfolio</label>');
-      expect(settingsHtml).toContain('id="macroWebsite"');
+    test('should have projects folder', () => {
+      expect(settingsHtml).toContain('🚀 Projects');
+      expect(settingsHtml).toContain('folder-json-editor" data-folder="projects"');
     });
 
-    test('should have privacy notice for clipboard macros', () => {
+    test('should have employment folder', () => {
+      expect(settingsHtml).toContain('💼 Employment');
+      expect(settingsHtml).toContain('folder-json-editor" data-folder="employment"');
+    });
+
+    test('should have folder expand/collapse icons', () => {
+      expect(settingsHtml).toContain('class="folder-icon">▶</span>');
+    });
+
+    test('should have error display divs for each folder', () => {
+      const expectedFolders = ['demographics', 'references', 'education', 'skills', 'projects', 'employment'];
+
+      expectedFolders.forEach((folder) => {
+        expect(settingsHtml).toContain(`class="folder-error" data-folder="${folder}"`);
+      });
+    });
+
+    test('should have privacy notice', () => {
       expect(settingsHtml).toContain('stored locally in your browser');
       expect(settingsHtml).toContain('never sent to any server');
     });
@@ -138,89 +168,111 @@ describe('Clipboard Macros UI - 6-Button MVP', () => {
       expect(popupCss).toContain('grid-template-columns: repeat(3, 1fr)');
     });
 
-    test('popup.css should have compact button styling', () => {
+    test('popup.css should have folder button styling', () => {
       const popupCss = fs.readFileSync(
         path.join(__dirname, '../popup.css'),
         'utf8'
       );
 
-      // Check for compact padding
-      expect(popupCss).toMatch(/\.macro-btn[\s\S]*?padding:\s*8px\s+4px/);
+      expect(popupCss).toContain('.folder-btn');
+    });
+
+    test('popup.css should have sub-menu styling', () => {
+      const popupCss = fs.readFileSync(
+        path.join(__dirname, '../popup.css'),
+        'utf8'
+      );
+
+      expect(popupCss).toContain('.sub-menu-items');
+      expect(popupCss).toContain('.sub-menu-item-btn');
     });
   });
 
   describe('JavaScript Integration', () => {
-    test('popup.js should NOT have Edit Macros event listener', () => {
+    test('popup.js should have folder navigation functions', () => {
       const popupJs = fs.readFileSync(
         path.join(__dirname, '../popup.js'),
         'utf8'
       );
 
-      expect(popupJs).not.toContain("getElementById('editMacros')");
+      expect(popupJs).toContain('openFolder');
+      expect(popupJs).toContain('closeFolder');
+      expect(popupJs).toContain('renderSubMenuItems');
     });
 
-    test('popup.js should reference all 6 macros in comments', () => {
+    test('popup.js should have FOLDER_TITLES mapping', () => {
       const popupJs = fs.readFileSync(
         path.join(__dirname, '../popup.js'),
         'utf8'
       );
 
-      // Check that the comment mentions all 6 macros
-      const comment = popupJs.match(/Macro key \(([^)]+)\)/);
-      if (comment && comment[1]) {
-        expect(comment[1]).toContain('phone');
-        expect(comment[1]).toContain('email');
-        expect(comment[1]).toContain('address');
-        expect(comment[1]).toContain('linkedin');
-        expect(comment[1]).toContain('name');
-        expect(comment[1]).toContain('website');
-      }
+      expect(popupJs).toContain('FOLDER_TITLES');
+      expect(popupJs).toContain('demographics');
+      expect(popupJs).toContain('references');
+      expect(popupJs).toContain('education');
+      expect(popupJs).toContain('skills');
+      expect(popupJs).toContain('projects');
+      expect(popupJs).toContain('employment');
     });
 
-    test('settings.js should have DEFAULT_MACROS with all 6 keys', () => {
+    test('settings.js should have DEFAULT_MACROS with nested structure', () => {
       const settingsJs = fs.readFileSync(
         path.join(__dirname, '../settings.js'),
         'utf8'
       );
 
       expect(settingsJs).toContain('DEFAULT_MACROS');
-      expect(settingsJs).toMatch(/phone:\s*['"]/);
-      expect(settingsJs).toMatch(/email:\s*['"]/);
-      expect(settingsJs).toMatch(/address:\s*['"]/);
-      expect(settingsJs).toMatch(/linkedin:\s*['"]/);
-      expect(settingsJs).toMatch(/name:\s*['"]/);
-      expect(settingsJs).toMatch(/website:\s*['"]/);
+      expect(settingsJs).toContain('demographics:');
+      expect(settingsJs).toContain('references:');
+      expect(settingsJs).toContain('education:');
+      expect(settingsJs).toContain('skills:');
+      expect(settingsJs).toContain('projects:');
+      expect(settingsJs).toContain('employment:');
+    });
+
+    test('settings.js should have JSON validation functions', () => {
+      const settingsJs = fs.readFileSync(
+        path.join(__dirname, '../settings.js'),
+        'utf8'
+      );
+
+      expect(settingsJs).toContain('validateFolderJSON');
+      expect(settingsJs).toContain('setupFolderHandlers');
+      expect(settingsJs).toContain('toggleFolder');
     });
   });
 
   describe('Service Worker Integration', () => {
-    test('service-worker.js should initialize all 6 macros', () => {
+    test('service-worker.js should have nested storage structure', () => {
       const serviceWorkerJs = fs.readFileSync(
         path.join(__dirname, '../service-worker.js'),
         'utf8'
       );
 
-      // Check initialization includes all 6 macros
-      const initSection = serviceWorkerJs.match(/clipboardMacros:\s*\{([^}]+)\}/);
-      if (initSection && initSection[1]) {
-        expect(initSection[1]).toContain('phone:');
-        expect(initSection[1]).toContain('email:');
-        expect(initSection[1]).toContain('address:');
-        expect(initSection[1]).toContain('linkedin:');
-        expect(initSection[1]).toContain('name:');
-        expect(initSection[1]).toContain('website:');
-      }
+      // Check for nested initialization
+      expect(serviceWorkerJs).toContain('demographics:');
+      expect(serviceWorkerJs).toContain('references:');
+      expect(serviceWorkerJs).toContain('education:');
     });
 
-    test('service-worker.js should have migration support for new macros', () => {
+    test('service-worker.js should have getClipboardFolder handler', () => {
       const serviceWorkerJs = fs.readFileSync(
         path.join(__dirname, '../service-worker.js'),
         'utf8'
       );
 
-      // Check for migration logic
-      expect(serviceWorkerJs).toContain("hasOwnProperty('name')");
-      expect(serviceWorkerJs).toContain("hasOwnProperty('website')");
+      expect(serviceWorkerJs).toContain('handleGetClipboardFolder');
+      expect(serviceWorkerJs).toContain('getClipboardFolder');
+    });
+
+    test('service-worker.js should have migration logic', () => {
+      const serviceWorkerJs = fs.readFileSync(
+        path.join(__dirname, '../service-worker.js'),
+        'utf8'
+      );
+
+      expect(serviceWorkerJs).toContain('Migration');
+      expect(serviceWorkerJs).toContain('macros.phone');
     });
   });
 });
