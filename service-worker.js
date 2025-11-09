@@ -241,6 +241,13 @@ function handleSaveClipboardMacro(key, value, sendResponse) {
 
 /**
  * Test connection to Apps Script endpoint and Google Sheets
+ *
+ * NOTE: This function validates configuration locally for user convenience,
+ * providing immediate feedback if settings are incomplete. The actual
+ * spreadsheetId and projectId are NOT sent in the request - they're
+ * configured server-side in Apps Script Script Properties. We only check
+ * them here to give helpful error messages in the Settings UI.
+ *
  * @param {Function} sendResponse - Response callback
  */
 function testConnection(sendResponse) {
@@ -248,7 +255,8 @@ function testConnection(sendResponse) {
   const spreadsheetId = getSpreadsheetId();
   const projectId = getProjectId();
 
-  // Check if configuration is set up
+  // Local validation for user convenience (these are NOT sent in the request)
+  // We check them here to provide immediate feedback in Settings UI
   if (!endpoint || endpoint === 'YOUR_APPS_SCRIPT_URL_HERE') {
     sendResponse({
       success: false,

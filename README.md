@@ -665,30 +665,162 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed CI
 ## 🔧 Developer Notes
 
 <details>
-<summary><b>Known TODOs and Future Improvements</b></summary>
+<summary><b>Production Readiness & Professional Extension Groundwork</b></summary>
 
-**Pending Features:**
-1. **Settings UI** (`popup.js:33`, `popup.js:269`) - Implement proper settings page for:
-   - Editing clipboard macro values (currently requires manual storage manipulation)
-   - Configuring Google Apps Script endpoint URL (currently hardcoded)
-   - Managing Q&A database (view/edit/delete saved answers)
+These items should be addressed before public release to avoid major refactoring later. They represent foundational work for a professional, safe, and maintainable Chrome extension.
 
-2. **Apps Script Configuration** (`service-worker.js:174`) - Move endpoint URL from hardcoded constant to `chrome.storage.sync` for user configuration
+### 🔐 Security & Privacy (Critical)
 
-3. **Enhanced Approval UI** (`SETUP.md:76`) - Current modal is functional but could be enhanced with:
-   - Keyboard shortcuts (Enter to approve, Esc to skip - currently only Esc works)
-   - Confidence score display (show similarity percentage)
-   - Edit-before-approve capability
+1. **Content Security Policy Hardening**
+   - Current: Default Manifest V3 CSP
+   - Needed: Explicit CSP in manifest.json preventing inline scripts, eval(), and unsafe practices
+   - Why: Required for Chrome Web Store, prevents XSS vulnerabilities
+   - Files: `manifest.json`
 
-4. **Site-Specific Selector Refinement** (`SETUP.md:77`) - Extraction selectors work on major job boards but may need updates as sites change their HTML structure
+2. **Input Sanitization & XSS Prevention**
+   - Current: Direct DOM insertion in some places (`textContent` is used, but should be verified everywhere)
+   - Needed: Audit all DOM manipulation, ensure no `innerHTML` usage without sanitization
+   - Why: Malicious job postings could inject scripts if we're not careful
+   - Files: `content-script.js`, `popup.js`
 
-**Test Coverage Goals:**
-- Current: Core business logic (similarity matching, validation, extraction)
-- Needed: UI interaction testing (requires browser automation with Puppeteer or similar)
+3. **Rate Limiting for Apps Script Requests**
+   - Current: No protection against rapid-fire requests
+   - Needed: Client-side throttling/debouncing for "Extract & Log" button
+   - Why: Prevents accidental DoS of user's own Apps Script, respects quota limits
+   - Files: `popup.js:handleExtractClick()`, `service-worker.js:handleLogJobData()`
 
-**Performance Optimizations:**
-- Consider debouncing autofill to reduce DOM queries on complex forms
-- Implement selector caching to avoid repeated querySelector calls
+4. **Sensitive Data Handling Review**
+   - Current: Clipboard macros (phone, email) stored in sync storage
+   - Needed: Document data retention policy, add "Clear All Data" button in settings
+   - Why: Users should control their data, especially PII like phone/email
+   - Files: `settings.html`, `settings.js`
+
+### 🛡️ Error Handling & Resilience
+
+5. **Network Failure Graceful Degradation**
+   - Current: 15-second timeout exists, but no retry logic
+   - Needed: Optional retry with exponential backoff for transient failures
+   - Why: User's network might be flaky; don't lose job data due to momentary disconnect
+   - Files: `service-worker.js:handleLogJobData()`, `service-worker.js:testConnection()`
+
+6. **Chrome Storage Quota Monitoring**
+   - Current: No quota checks before writing to storage
+   - Needed: Check `chrome.storage.sync.getBytesInUse()` before writes, warn user near limits
+   - Why: Sync storage has 100KB limit; Q&A database could grow large
+   - Files: `service-worker.js:handleSaveQAPair()`, `settings.js:saveSettings()`
+
+7. **Comprehensive Error Logging**
+   - Current: `console.error()` and `console.warn()` scattered throughout
+   - Needed: Centralized error reporting function, structured error objects with context
+   - Why: Easier debugging, potential for user-facing "Report Bug" feature with logs
+   - Files: All JavaScript files
+
+### 📊 Data Management & UX
+
+8. **Q&A Database Management UI**
+   - Current: Q&A pairs saved automatically, no way to view/edit/delete them
+   - Needed: Settings page section showing saved Q&A pairs with search/filter/delete
+   - Why: Users should control their data, debug bad matches, clean up old answers
+   - Files: `settings.html`, `settings.js`
+
+9. **Export/Import All Settings**
+   - Current: Only config.local.js download/upload (partial config)
+   - Needed: Full backup/restore including clipboard macros, Q&A database, all settings
+   - Why: Users switching devices, backing up before reinstall, sharing setups
+   - Files: `settings.js`
+
+10. **Clipboard Macro Management in Settings**
+    - Current: Clipboard macros can only be set via popup, no bulk editing
+    - Needed: Settings page section to edit all macros in one place
+    - Why: Better UX, especially for initial setup
+    - Files: `settings.html`, `settings.js`
+
+### ⚡ Performance & Scalability
+
+11. **Job Data Extraction Selector Maintenance**
+    - Current: Selectors for major job boards (LinkedIn, Indeed, etc.)
+    - Needed: Selector testing framework, automated monitoring for site changes
+    - Why: Sites update their HTML; selectors break silently
+    - Files: `content-script-testable.js:extractJobData()`
+
+12. **Q&A Database Size Limits**
+    - Current: Unlimited Q&A pair storage (could exceed 10MB local storage eventually)
+    - Needed: Configurable max size, auto-prune oldest entries, or LRU eviction
+    - Why: Prevent storage bloat, maintain performance as database grows
+    - Files: `service-worker.js:handleSaveQAPair()`
+
+13. **Content Script Performance on Complex Pages**
+    - Current: Autofill queries all form fields on complex application portals
+    - Needed: Debouncing, selector caching, progressive processing for 100+ field forms
+    - Why: Large forms (ATS systems) can have hundreds of fields
+    - Files: `content-script.js:startAutofill()`
+
+### 🧪 Testing & Quality Assurance
+
+14. **UI Interaction Testing**
+    - Current: Unit tests for business logic only (Jest)
+    - Needed: Browser automation tests (Puppeteer/Playwright) for popup, settings, modals
+    - Why: Catch UI regressions, test message passing between components
+    - Files: New test suite in `tests/e2e/`
+
+15. **Cross-Browser Compatibility** (Future)
+    - Current: Chrome-only (Manifest V3, chrome.* APIs)
+    - Needed: Firefox port (browser.* APIs, Manifest V2/V3 differences)
+    - Why: Expand user base, Firefox has privacy-focused users
+    - Files: Potentially all JavaScript files
+
+### 🌐 Internationalization & Accessibility (Nice-to-Have)
+
+16. **i18n Support**
+    - Current: All strings hardcoded in English
+    - Needed: Chrome i18n API (`chrome.i18n.getMessage()`), translation files
+    - Why: Non-English speakers, required for global Chrome Web Store distribution
+    - Files: All HTML/JS files, new `_locales/` directory
+
+17. **Accessibility Audit**
+    - Current: No ARIA labels, keyboard navigation incomplete
+    - Needed: Screen reader testing, ARIA attributes, full keyboard support
+    - Why: Legal compliance (ADA, WCAG), inclusive design
+    - Files: All HTML files, CSS for focus states
+
+### 📝 Documentation & Onboarding
+
+18. **First-Run Tutorial/Onboarding**
+    - Current: README is comprehensive but users may not read it
+    - Needed: In-extension tutorial on first install (popup overlay, tooltips)
+    - Why: Lower barrier to entry, increase successful setups
+    - Files: New `onboarding.html`, `onboarding.js`
+
+19. **Inline Help & Tooltips**
+    - Current: Settings page has some help text, but could be more comprehensive
+    - Needed: Contextual help icons (?) with tooltips explaining each field
+    - Why: Users shouldn't have to leave the extension to understand it
+    - Files: `settings.html`, `popup.html`
+
+---
+
+**Priority Ranking for Next Phase:**
+
+🔥 **Critical (Do before public release):**
+- #1 CSP Hardening
+- #2 Input Sanitization
+- #4 Sensitive Data Handling Review
+- #7 Comprehensive Error Logging
+- #8 Q&A Database Management UI
+
+⚠️ **Important (Do soon to avoid refactor):**
+- #3 Rate Limiting
+- #5 Network Failure Retry
+- #6 Storage Quota Monitoring
+- #9 Export/Import All Settings
+- #14 UI Interaction Testing
+
+✨ **Nice-to-Have (Can defer):**
+- #10 Clipboard Macro Management in Settings
+- #11 Selector Testing Framework
+- #12 Q&A Database Size Limits
+- #16 i18n Support
+- #18 First-Run Tutorial
 
 </details>
 
