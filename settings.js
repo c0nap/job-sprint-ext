@@ -220,7 +220,12 @@ function extractConfigValue(configBody, key) {
 // Test connection to Apps Script and Google Sheets
 async function testConnection() {
   const button = document.getElementById('testConnection');
+  const statusDiv = document.getElementById('saveStatus');
   const originalText = button.textContent;
+
+  // Clear any previous status messages
+  statusDiv.style.display = 'none';
+  statusDiv.textContent = '';
 
   // Disable button and show loading state
   button.disabled = true;
@@ -306,6 +311,7 @@ if (typeof module !== 'undefined' && module.exports) {
 function updateConnectionStatus(settings) {
   const statusDiv = document.getElementById('connectionStatus');
   const openSheetLink = document.getElementById('openSheetLink');
+  const testConnectionBtn = document.getElementById('testConnection');
 
   const hasEndpoint = settings.APPS_SCRIPT_ENDPOINT &&
                       settings.APPS_SCRIPT_ENDPOINT !== 'YOUR_APPS_SCRIPT_URL_HERE' &&
@@ -326,8 +332,11 @@ function updateConnectionStatus(settings) {
     openSheetLink.target = '_blank';
     openSheetLink.classList.remove('disabled');
     openSheetLink.textContent = '📊 Open Google Sheet';
+
+    // Enable the "Test Connection" button
+    testConnectionBtn.disabled = false;
   } else {
-    statusDiv.textContent = '✗ Not connected - Please configure all fields';
+    statusDiv.textContent = 'Please configure all fields to connect';
     statusDiv.className = 'connection-status disconnected';
 
     // Disable the "Open Sheet" link
@@ -335,6 +344,9 @@ function updateConnectionStatus(settings) {
     openSheetLink.removeAttribute('target');
     openSheetLink.classList.add('disabled');
     openSheetLink.textContent = 'Open Google Sheet (Configure first)';
+
+    // Disable the "Test Connection" button
+    testConnectionBtn.disabled = true;
   }
 }
 
