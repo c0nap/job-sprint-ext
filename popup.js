@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeExtraction();
   initializeAutofill();
   initializeSettings();
+  initializeManualEntryModal();
 });
 
 // ============ CLIPBOARD MACROS ============
@@ -115,7 +116,13 @@ function handleExtractClick(button, statusDiv) {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const activeTab = tabs[0];
     if (!activeTab) {
-      handleExtractError(button, statusDiv, 'No active tab found');
+      handleExtractError(button, statusDiv, 'No active tab found. Please make sure you have a tab open.');
+      return;
+    }
+
+    // Check if tab URL is accessible
+    if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+      handleExtractError(button, statusDiv, 'Cannot extract from this page. Chrome extension pages and settings are not supported.');
       return;
     }
 
@@ -125,7 +132,24 @@ function handleExtractClick(button, statusDiv) {
       { action: 'extractJobData' },
       (response) => {
         if (chrome.runtime.lastError) {
-          handleExtractError(button, statusDiv, `Could not access page: ${chrome.runtime.lastError.message}`);
+          // Handle the common "Receiving end does not exist" error
+          const errorMsg = chrome.runtime.lastError.message;
+
+          if (errorMsg.includes('Receiving end does not exist')) {
+            handleExtractError(
+              button,
+              statusDiv,
+              'Please reload the page and try again. The extension needs to reinitialize.'
+            );
+          } else if (errorMsg.includes('Cannot access')) {
+            handleExtractError(
+              button,
+              statusDiv,
+              'Cannot access this page. Please make sure you are on a job posting page.'
+            );
+          } else {
+            handleExtractError(button, statusDiv, `Error: ${errorMsg}`);
+          }
           return;
         }
 
@@ -143,11 +167,34 @@ function handleExtractClick(button, statusDiv) {
 
 /**
  * Log extracted job data via service worker
+ * Checks if manual entry is needed before logging
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Extracted job data
  */
 function logJobData(button, statusDiv, jobData) {
+  // Check if manual entry is enabled and if data is missing
+  chrome.runtime.sendMessage({ action: 'getConfig' }, (configResponse) => {
+    const isManualEntryEnabled = configResponse?.config?.ENABLE_MANUAL_ENTRY !== false;
+    const hasMissingData = isMissingRequiredData(jobData);
+
+    if (isManualEntryEnabled && hasMissingData) {
+      // Show manual entry modal
+      showManualEntryModal(button, statusDiv, jobData);
+    } else {
+      // Proceed with logging directly
+      submitJobData(button, statusDiv, jobData);
+    }
+  });
+}
+
+/**
+ * Submit job data to service worker for logging
+ * @param {HTMLButtonElement} button - Extract button element
+ * @param {HTMLElement} statusDiv - Status message display element
+ * @param {Object} jobData - Job data to submit
+ */
+function submitJobData(button, statusDiv, jobData) {
   chrome.runtime.sendMessage(
     { action: 'logJobData', data: jobData },
     (logResponse) => {
@@ -160,6 +207,21 @@ function logJobData(button, statusDiv, jobData) {
       resetExtractButton(button);
     }
   );
+}
+
+/**
+ * Check if job data is missing required fields
+ * @param {Object} jobData - Job data to check
+ * @returns {boolean} True if missing required data
+ */
+function isMissingRequiredData(jobData) {
+  const title = (jobData.title || '').trim();
+  const company = (jobData.company || '').trim();
+
+  // Consider data missing if title or company is empty or placeholder
+  return !title || !company ||
+         title === '(No title)' ||
+         company === '(No company)';
 }
 
 /**
@@ -266,7 +328,7 @@ function resetAutofillButton(button) {
 
 /**
  * Initialize settings link
- * TODO: Implement settings page with macro editing, Apps Script URL config, etc.
+ * Opens the settings page in a new tab
  */
 function initializeSettings() {
   const settingsLink = document.getElementById('settingsLink');
@@ -274,8 +336,121 @@ function initializeSettings() {
 
   settingsLink.addEventListener('click', (e) => {
     e.preventDefault();
-    alert('Settings page coming soon!');
+    // Open settings page in a new tab
+    chrome.tabs.create({ url: 'settings.html' });
   });
+}
+
+// ============ MANUAL DATA ENTRY ============
+
+/**
+ * Initialize manual data entry modal event listeners
+ */
+function initializeManualEntryModal() {
+  const modal = document.getElementById('manualEntryModal');
+  const closeBtn = document.getElementById('closeModal');
+  const cancelBtn = document.getElementById('cancelModal');
+  const form = document.getElementById('manualEntryForm');
+
+  if (!modal || !closeBtn || !cancelBtn || !form) return;
+
+  // Close modal on X button
+  closeBtn.addEventListener('click', () => {
+    hideManualEntryModal();
+  });
+
+  // Close modal on Cancel button
+  cancelBtn.addEventListener('click', () => {
+    hideManualEntryModal();
+  });
+
+  // Close modal on background click
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      hideManualEntryModal();
+    }
+  });
+
+  // Handle form submission
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    handleManualEntrySubmit();
+  });
+}
+
+/**
+ * Show manual entry modal with pre-filled data
+ * @param {HTMLButtonElement} button - Extract button element
+ * @param {HTMLElement} statusDiv - Status message display element
+ * @param {Object} jobData - Extracted job data to pre-fill
+ */
+function showManualEntryModal(button, statusDiv, jobData) {
+  const modal = document.getElementById('manualEntryModal');
+  if (!modal) return;
+
+  // Store references for later use
+  modal.dataset.button = 'extractBtn';
+  modal.dataset.status = 'extractionStatus';
+
+  // Pre-fill form fields with extracted data
+  document.getElementById('manualJobTitle').value = jobData.title || '';
+  document.getElementById('manualCompany').value = jobData.company || '';
+  document.getElementById('manualLocation').value = jobData.location || '';
+  document.getElementById('manualUrl').value = jobData.url || '';
+
+  // Store the full job data for later
+  modal.dataset.jobData = JSON.stringify(jobData);
+
+  // Show the modal
+  modal.style.display = 'flex';
+
+  // Reset button state
+  resetExtractButton(button);
+}
+
+/**
+ * Hide manual entry modal
+ */
+function hideManualEntryModal() {
+  const modal = document.getElementById('manualEntryModal');
+  if (!modal) return;
+
+  modal.style.display = 'none';
+
+  // Clear form
+  document.getElementById('manualEntryForm').reset();
+}
+
+/**
+ * Handle manual entry form submission
+ */
+function handleManualEntrySubmit() {
+  const modal = document.getElementById('manualEntryModal');
+  const button = document.getElementById(modal.dataset.button);
+  const statusDiv = document.getElementById(modal.dataset.status);
+
+  // Get form values
+  const manualData = {
+    title: document.getElementById('manualJobTitle').value.trim(),
+    company: document.getElementById('manualCompany').value.trim(),
+    location: document.getElementById('manualLocation').value.trim(),
+    url: document.getElementById('manualUrl').value.trim()
+  };
+
+  // Get original job data to preserve other fields
+  const originalData = JSON.parse(modal.dataset.jobData || '{}');
+
+  // Merge manual data with original data
+  const finalData = {
+    ...originalData,
+    ...manualData
+  };
+
+  // Hide modal
+  hideManualEntryModal();
+
+  // Submit the data
+  submitJobData(button, statusDiv, finalData);
 }
 
 // ============ UTILITY FUNCTIONS ============

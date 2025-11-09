@@ -88,44 +88,79 @@ This is the most important step - it makes your script accessible from the exten
 
 ---
 
-### Step 5: Configure the Extension
+### Step 5: Configure the Apps Script Test Functions (Optional but Recommended)
 
-Now we need to tell the extension where to send the job data.
+Before we configure the extension, let's set up the Apps Script test functions so you can verify everything works.
 
-1. In your extension folder, open `service-worker.js` in a text editor (Notepad, TextEdit, VS Code, etc.)
-2. Find line 174 (or search for `function getAppsScriptEndpoint()`)
-3. You'll see this:
+1. In the Apps Script editor, find the `setupConfiguration()` function (around line 304)
+2. Replace the placeholder values with your actual IDs:
+   - **SPREADSHEET_ID:** Go back to your Google Sheet tab, look at the URL. The ID is the long string between `/d/` and `/edit`. Example: `https://docs.google.com/spreadsheets/d/`**`1A2B3C4D5E6F7G8H9I0J`**`/edit` - copy `1A2B3C4D5E6F7G8H9I0J`
+   - **PROJECT_ID:** If you set up Google Cloud Logging (see bottom of this guide), use your numeric project number. Otherwise, use any identifier like `test-project-123`
+3. Click **Run** (▶️ button) and select `setupConfiguration` from the dropdown
+4. Click Run again to execute
+5. Check the execution log - you should see "✅ Configuration saved successfully!"
+6. Now run `runDiagnostics` to test your setup
+7. If diagnostics pass, run `testDoPost` to add a test job to your sheet
 
-```javascript
-function getAppsScriptEndpoint() {
-  // TODO: In production, retrieve from chrome.storage.sync
-  // For now, use placeholder (developers should replace this)
-  return 'YOUR_APPS_SCRIPT_URL_HERE';
-}
-```
+**What this does:** This saves your configuration in Apps Script's Script Properties, so test functions work automatically without editing them each time.
 
-4. Replace `'YOUR_APPS_SCRIPT_URL_HERE'` with your actual URL (paste the URL you copied in Step 4)
-5. It should look like this (but with your actual URL):
+**🔒 Security Note:** Script Properties are Google's server-side key-value storage. Your Spreadsheet ID and Project ID are stored securely on Google's servers and are NEVER transmitted over the network when logging jobs. The extension only sends job data (title, company, location, URL) - never your configuration secrets.
 
-```javascript
-function getAppsScriptEndpoint() {
-  // TODO: In production, retrieve from chrome.storage.sync
-  // For now, use placeholder (developers should replace this)
-  return 'https://script.google.com/macros/s/AKfycbx.../exec';
-}
-```
+---
 
-6. **Save the file**
-7. Reload the extension in Chrome:
+### Step 6: Configure the Extension
+
+Now we need to tell the extension where to send the job data. **There are two methods:**
+
+#### Method A: Using the Settings Page (Recommended - Easy!)
+
+1. Click the JobSprint extension icon in your Chrome toolbar
+2. Click **"Settings"** at the bottom of the popup
+3. A new tab will open with the settings page
+4. Fill in the three required fields:
+   - **Apps Script Endpoint URL:** Paste the URL you copied in Step 4
+   - **Google Spreadsheet ID:** The ID from your sheet URL (see Step 5 above)
+   - **Google Cloud Project ID:** Your project ID (same as in Step 5)
+5. Click **"Save Settings"**
+6. You should see "✓ Connected to Google Sheets" with a green checkmark
+7. Click **"📊 Open Google Sheet"** to verify it opens your sheet
+
+**Benefits of this method:**
+- ✅ Easy to update settings later
+- ✅ No need to edit code files
+- ✅ Settings sync across Chrome browsers (if you're signed in)
+- ✅ Can download a `config.local.js` file for backup
+
+**🔒 Why do I need to enter Spreadsheet ID and Project ID here?**
+These values are stored locally in your extension for two purposes:
+1. **User convenience:** Generate the "Open Google Sheet" link in settings
+2. **Initial setup:** Help you configure the Apps Script via `setupConfiguration()`
+
+**Important:** These values are stored locally only and are NEVER sent over the network. When you click "Extract & Log Job Data", the extension only sends job details to your Apps Script endpoint. Your Apps Script retrieves the Spreadsheet ID and Project ID from its own server-side Script Properties.
+
+#### Method B: Using config.local.js (Advanced)
+
+1. In your extension folder, copy `config.example.js` to `config.local.js`
+2. Open `config.local.js` in a text editor
+3. Replace the placeholder values:
+   ```javascript
+   const CONFIG = {
+     APPS_SCRIPT_ENDPOINT: 'https://script.google.com/macros/s/AKfycbx.../exec',
+     SPREADSHEET_ID: '1A2B3C4D5E6F7G8H9I0J...',
+     PROJECT_ID: '123456789012',
+   };
+   ```
+4. Save the file
+5. Reload the extension in Chrome:
    - Go to `chrome://extensions`
    - Find "JobSprint Extension"
    - Click the circular reload icon 🔄
 
-**What this does:** This tells the extension where to send job data when you click "Extract & Log Job Data".
+**What this does:** This tells the extension where to send job data when you click "Extract & Log Job Data". The extension checks Settings first, then falls back to `config.local.js` if settings are empty.
 
 ---
 
-### Step 6: Test It!
+### Step 7: Test It!
 
 Let's make sure everything works:
 
@@ -158,7 +193,7 @@ After logging your first job, you'll see a sheet with these columns:
 | **Source** | Which job board it came from (LinkedIn, Indeed, etc.) |
 | **Date Added** | When the extension logged it to your sheet |
 
-**📝 MVP Note:** If the extension can't extract certain fields from a job page (e.g., company name isn't found), you'll see placeholder values like "(No company)" or "(No title)" in those cells. This ensures you don't lose the job listing entirely, and you can manually fill in the missing information later.
+**📝 Manual Data Entry:** If the extension can't extract certain fields from a job page (e.g., company name isn't found), it will show you a popup form where you can review and fill in the missing information before submitting. This feature is enabled by default but can be disabled in Settings if you prefer to just log whatever data is extracted automatically (which will show as placeholders like "(No company)" or "(No title)" in your sheet).
 
 You can:
 - ✅ Sort by any column
@@ -187,13 +222,18 @@ You can:
 
 ### "Apps Script endpoint not configured"
 
-**Cause:** The URL in `service-worker.js` is still set to `'YOUR_APPS_SCRIPT_URL_HERE'`
+**Cause:** The extension configuration is not set up yet
 
 **How to fix:**
-1. Open `service-worker.js`
-2. Find the `getAppsScriptEndpoint()` function
-3. Replace the placeholder with your actual deployment URL
-4. Save and reload the extension
+1. Click the extension icon → Settings
+2. Fill in your Apps Script Endpoint URL, Spreadsheet ID, and Project ID
+3. Click "Save Settings"
+4. Try extracting job data again
+
+**Alternative fix (if you prefer using config.local.js):**
+1. Create `config.local.js` from `config.example.js`
+2. Fill in your values
+3. Reload the extension
 
 ---
 
@@ -232,81 +272,6 @@ You can:
 
 ---
 
-## Testing Your Setup (Optional)
-
-Want to test the script directly without the extension?
-
-1. In the Apps Script editor, find the `testDoPost()` function at the bottom
-2. Click the **Run** button (▶️) at the top
-3. Select `testDoPost` from the function dropdown if needed
-4. Click Run
-5. Check the "Execution log" - you should see "Test response: {"success":true,...}"
-6. Check your Google Sheet - a test job should appear
-
----
-
-## Security & Privacy
-
-**Is my data secure?**
-
-Yes! Here's what happens:
-1. Your extension runs locally in your browser
-2. Job data goes directly from your browser to your personal Google Apps Script
-3. Your Apps Script writes to your personal Google Sheet
-4. No third-party services or databases are involved
-
-**Who can access my data?**
-
-Only you. The Apps Script URL is private (only you know it), and the Google Sheet is in your Google Drive with your normal Drive permissions.
-
-**Can I revoke access?**
-
-Yes, at any time:
-1. In Apps Script, click Deploy → Manage deployments
-2. Click the Archive button (🗑️) next to your deployment
-3. The extension will stop being able to add jobs to your sheet
-
----
-
-## Advanced: Using a Separate Sheet
-
-If you want the job data in a specific sheet (not the one the script is attached to):
-
-1. Create or open the target spreadsheet
-2. Copy the spreadsheet ID from the URL:
-   - URL: `https://docs.google.com/spreadsheets/d/`**`1A2B3C4D5E6F7G8H9I0J`**`/edit`
-   - The ID is the long string between `/d/` and `/edit`
-3. In the Apps Script code, find the line:
-   ```javascript
-   var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-   ```
-4. Replace it with:
-   ```javascript
-   var spreadsheet = SpreadsheetApp.openById('YOUR_SPREADSHEET_ID_HERE');
-   ```
-5. Replace `YOUR_SPREADSHEET_ID_HERE` with the actual ID you copied
-6. Save and redeploy (Deploy → New deployment)
-
----
-
-## Local Testing Alternative
-
-If you want to test the extension without deploying to Google Apps Script, you can use the **local mock endpoint**:
-
-1. In your terminal, run:
-   ```bash
-   npm run start:local-endpoint
-   ```
-2. Change the URL in `service-worker.js` to:
-   ```javascript
-   return 'http://localhost:3000/log-job';
-   ```
-3. Test the extension - data will be logged to your console instead of Google Sheets
-
-See `LOCAL_ENDPOINT_README.md` for more details on local testing.
-
----
-
 ## Need Help?
 
 If you're still having trouble:
@@ -337,15 +302,17 @@ Happy job hunting! 🎉
 
 ## 🧭 Viewing Logs for Your Google Apps Script Web App
 
-### Quick Fix if “Extensions → Apps Script” Shows 404
+### Quick Fix if “Sheets → Extensions → Apps Script” Shows 404
 
-If clicking **Extensions → Apps Script** gives a 404:
+If clicking **Sheets → Extensions → Apps Script** gives a 404:
 
 1. Open an **incognito window** — the script editor should load there.
 2. If not, go to [https://script.google.com/home/projects](https://script.google.com/home/projects)
    → find your spreadsheet’s bound project in the list.
 3. Open it and click the **“Open spreadsheet”** button to confirm it’s truly bound.
    (If that button opens your sheet, you’re in the right project.)
+
+You can now exit the incognito window and open your Apps Script and Sheet from [https://script.google.com/home/projects](https://script.google.com/home/projects).
 
 ---
 
@@ -432,4 +399,68 @@ The “Cloud logs” / “Cloud errors” options are disabled because log owner
 logName:"/logs/custom"
 ```
 
+# TODO: Incorporate this section better either here or in main README - not as a list of New Features
 
+
+## New Features
+
+### Settings Page
+
+The extension now includes a dedicated settings page where you can:
+
+- **Configure all credentials:** Apps Script URL, Spreadsheet ID, and Project ID
+- **Test your connection:** See if your Google Sheets connection is working
+- **Open your sheet directly:** Click a button to open your Google Sheet
+- **Download config file:** Export your settings as `config.local.js` for backup
+- **Control manual entry:** Enable/disable the manual data entry popup
+
+**To access:** Click the JobSprint icon → Settings (at the bottom)
+
+### Manual Data Entry Popup
+
+When the extension can't automatically extract all job details (common on custom job boards), it will show a form where you can:
+
+- Review the data that was extracted
+- Fill in any missing fields (job title, company, location)
+- Submit the corrected data to your sheet
+
+**Benefits:**
+- ✅ Ensures complete job records
+- ✅ Works on any job board, even custom ones
+- ✅ Can be disabled in Settings if you prefer automatic-only extraction
+
+### Improved Apps Script Setup
+
+The Apps Script code now includes a `setupConfiguration()` function that:
+
+- Stores your Spreadsheet ID and Project ID in Script Properties
+- Allows test functions to run without editing them each time
+- Makes deployment and testing much easier
+
+**To use:**
+1. Edit `setupConfiguration()` with your IDs (one time only)
+2. Run it to save your configuration
+3. Run `testDoPost()` and `runDiagnostics()` anytime without editing
+
+---
+
+## Advanced: Using a Separate Sheet
+
+If you want the job data in a specific sheet (not the one the script is attached to):
+
+1. Create or open the target spreadsheet
+2. Copy the spreadsheet ID from the URL:
+   - URL: `https://docs.google.com/spreadsheets/d/`**`1A2B3C4D5E6F7G8H9I0J`**`/edit`
+   - The ID is the long string between `/d/` and `/edit`
+3. In the Apps Script code, find the line:
+   ```javascript
+   var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+   ```
+4. Replace it with:
+   ```javascript
+   var spreadsheet = SpreadsheetApp.openById('YOUR_SPREADSHEET_ID_HERE');
+   ```
+5. Replace `YOUR_SPREADSHEET_ID_HERE` with the actual ID you copied
+6. Save and redeploy (Deploy → New deployment)
+
+---

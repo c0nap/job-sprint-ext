@@ -4,11 +4,113 @@
  * Features: Clipboard macros, job data extraction/logging, Q&A autofill
  */
 
+// Cache for configuration loaded from chrome.storage or config.local.js
+let configCache = {
+  APPS_SCRIPT_ENDPOINT: '',
+  SPREADSHEET_ID: '',
+  PROJECT_ID: '',
+  ENABLE_MANUAL_ENTRY: true
+};
+
 // Initialize storage when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
   console.log('JobSprint Extension installed');
   initializeStorage();
+  loadConfiguration();
 });
+
+// Load configuration on startup
+chrome.runtime.onStartup.addListener(() => {
+  console.log('JobSprint Extension starting up');
+  loadConfiguration();
+});
+
+/**
+ * Load configuration from chrome.storage (priority) or config.local.js (fallback)
+ * Caches the configuration for quick access
+ * If loading from config.local.js, auto-saves to chrome.storage for future use
+ */
+async function loadConfiguration() {
+  try {
+    // Try to load from chrome.storage first
+    const storageConfig = await chrome.storage.sync.get([
+      'APPS_SCRIPT_ENDPOINT',
+      'SPREADSHEET_ID',
+      'PROJECT_ID',
+      'ENABLE_MANUAL_ENTRY'
+    ]);
+
+    // Check if we have values in storage
+    const hasStorageConfig = storageConfig.APPS_SCRIPT_ENDPOINT ||
+                             storageConfig.SPREADSHEET_ID ||
+                             storageConfig.PROJECT_ID;
+
+    if (hasStorageConfig) {
+      // Use chrome.storage values
+      configCache.APPS_SCRIPT_ENDPOINT = storageConfig.APPS_SCRIPT_ENDPOINT || '';
+      configCache.SPREADSHEET_ID = storageConfig.SPREADSHEET_ID || '';
+      configCache.PROJECT_ID = storageConfig.PROJECT_ID || '';
+      configCache.ENABLE_MANUAL_ENTRY =
+        storageConfig.ENABLE_MANUAL_ENTRY !== undefined ? storageConfig.ENABLE_MANUAL_ENTRY : true;
+      console.log('Configuration loaded from chrome.storage');
+    } else {
+      // Fallback to config.local.js
+      if (typeof self.APP_CONFIG !== 'undefined') {
+        configCache.APPS_SCRIPT_ENDPOINT = self.APP_CONFIG.APPS_SCRIPT_ENDPOINT || '';
+        configCache.SPREADSHEET_ID = self.APP_CONFIG.SPREADSHEET_ID || '';
+        configCache.PROJECT_ID = self.APP_CONFIG.PROJECT_ID || '';
+        console.log('Configuration loaded from config.local.js');
+
+        // Auto-save to chrome.storage for future use (if we have valid config)
+        const hasValidConfig = configCache.APPS_SCRIPT_ENDPOINT &&
+                               configCache.APPS_SCRIPT_ENDPOINT !== 'YOUR_APPS_SCRIPT_URL_HERE';
+
+        if (hasValidConfig) {
+          try {
+            await chrome.storage.sync.set({
+              APPS_SCRIPT_ENDPOINT: configCache.APPS_SCRIPT_ENDPOINT,
+              SPREADSHEET_ID: configCache.SPREADSHEET_ID,
+              PROJECT_ID: configCache.PROJECT_ID,
+              ENABLE_MANUAL_ENTRY: configCache.ENABLE_MANUAL_ENTRY
+            });
+            console.log('Configuration auto-saved to chrome.storage from config.local.js');
+          } catch (saveError) {
+            console.warn('Could not auto-save config to storage:', saveError);
+          }
+        }
+      } else {
+        console.warn('No configuration found in storage or config.local.js');
+      }
+    }
+  } catch (error) {
+    console.error('Error loading configuration:', error);
+    // Try fallback to config.local.js
+    if (typeof self.APP_CONFIG !== 'undefined') {
+      configCache.APPS_SCRIPT_ENDPOINT = self.APP_CONFIG.APPS_SCRIPT_ENDPOINT || '';
+      configCache.SPREADSHEET_ID = self.APP_CONFIG.SPREADSHEET_ID || '';
+      configCache.PROJECT_ID = self.APP_CONFIG.PROJECT_ID || '';
+      console.log('Configuration loaded from config.local.js (fallback)');
+
+      // Auto-save to chrome.storage (if we have valid config)
+      const hasValidConfig = configCache.APPS_SCRIPT_ENDPOINT &&
+                             configCache.APPS_SCRIPT_ENDPOINT !== 'YOUR_APPS_SCRIPT_URL_HERE';
+
+      if (hasValidConfig) {
+        try {
+          await chrome.storage.sync.set({
+            APPS_SCRIPT_ENDPOINT: configCache.APPS_SCRIPT_ENDPOINT,
+            SPREADSHEET_ID: configCache.SPREADSHEET_ID,
+            PROJECT_ID: configCache.PROJECT_ID,
+            ENABLE_MANUAL_ENTRY: configCache.ENABLE_MANUAL_ENTRY
+          });
+          console.log('Configuration auto-saved to chrome.storage from config.local.js (fallback)');
+        } catch (saveError) {
+          console.warn('Could not auto-save config to storage:', saveError);
+        }
+      }
+    }
+  }
+}
 
 /**
  * Initialize default storage values on first install
@@ -76,6 +178,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleSaveQAPair(message.question, message.answer, sendResponse);
       return true; // Async: chrome.storage.local.set
 
+    case 'configUpdated':
+      // Reload configuration when settings are updated
+      loadConfiguration().then(() => {
+        sendResponse({ success: true });
+      }).catch(error => {
+        sendResponse({ success: false, error: error.message });
+      });
+      return true; // Async: loadConfiguration
+
+    case 'getConfig':
+      // Get current configuration
+      sendResponse({
+        success: true,
+        config: configCache
+      });
+      return false; // Synchronous
+
+    case 'testConnection':
+      // Test connection to Apps Script and Google Sheets
+      testConnection(sendResponse);
+      return true; // Async: fetch to external endpoint
+
     default:
       // Unknown action - return error
       sendResponse({ success: false, error: `Unknown action: ${message.action}` });
@@ -116,6 +240,130 @@ function handleSaveClipboardMacro(key, value, sendResponse) {
 // ============ EXTRACTION FEATURE ============
 
 /**
+ * Test connection to Apps Script endpoint and Google Sheets
+ *
+ * NOTE: This function validates configuration locally for user convenience,
+ * providing immediate feedback if settings are incomplete. The actual
+ * spreadsheetId and projectId are NOT sent in the request - they're
+ * configured server-side in Apps Script Script Properties. We only check
+ * them here to give helpful error messages in the Settings UI.
+ *
+ * @param {Function} sendResponse - Response callback
+ */
+function testConnection(sendResponse) {
+  const endpoint = getAppsScriptEndpoint();
+  const spreadsheetId = getSpreadsheetId();
+  const projectId = getProjectId();
+
+  // Local validation for user convenience (these are NOT sent in the request)
+  // We check them here to provide immediate feedback in Settings UI
+  if (!endpoint || endpoint === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    sendResponse({
+      success: false,
+      error: 'Apps Script endpoint not configured. Please enter your endpoint URL.'
+    });
+    return;
+  }
+
+  if (!spreadsheetId || spreadsheetId === 'YOUR_SPREADSHEET_ID_HERE') {
+    sendResponse({
+      success: false,
+      error: 'Spreadsheet ID not configured. Please enter your Spreadsheet ID.'
+    });
+    return;
+  }
+
+  if (!projectId || projectId === 'YOUR_PROJECT_ID_HERE') {
+    sendResponse({
+      success: false,
+      error: 'Project ID not configured. Please enter your Project ID.'
+    });
+    return;
+  }
+
+  // Send a test request to the endpoint
+  // NOTE: We only send job data fields. Spreadsheet ID and Project ID
+  // are configured server-side in Apps Script using Script Properties.
+  // This ensures secrets never traverse the network.
+  const testData = {
+    title: '(Test Connection)',
+    company: '(Test)',
+    location: '(Test)',
+    url: 'https://test.com',
+    timestamp: new Date().toISOString(),
+    source: 'Connection Test'
+  };
+
+  fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(testData),
+    signal: AbortSignal.timeout(15000) // 15 second timeout
+  })
+    .then((response) => {
+      if (!response.ok) {
+        // Provide specific error messages based on status code
+        if (response.status === 404) {
+          throw new Error('Apps Script endpoint not found. Please check your endpoint URL.');
+        } else if (response.status === 403) {
+          throw new Error('Access denied. Please check deployment permissions (should be "Anyone").');
+        } else if (response.status === 401) {
+          throw new Error('Authentication required. Please redeploy your Apps Script as a Web App.');
+        } else if (response.status >= 500) {
+          throw new Error('Apps Script server error. Check the execution log in Apps Script.');
+        } else {
+          throw new Error(`HTTP ${response.status} error. Check your deployment settings.`);
+        }
+      }
+      return response.json();
+    })
+    .then((responseData) => {
+      if (responseData.success) {
+        sendResponse({
+          success: true,
+          message: 'Connection successful! Your configuration is working correctly.'
+        });
+      } else {
+        // Parse error from Apps Script
+        let errorMsg = responseData.error || 'Unknown error from Apps Script';
+
+        if (errorMsg.includes('not found') || errorMsg.includes('Spreadsheet not found')) {
+          errorMsg = 'Google Sheet not found. Please verify your Spreadsheet ID.';
+        } else if (errorMsg.includes('Authorization') || errorMsg.includes('Permission')) {
+          errorMsg = 'Cannot access Google Sheet. Please ensure the Apps Script owner has edit access.';
+        } else if (errorMsg.includes('Invalid') && errorMsg.includes('spreadsheet')) {
+          errorMsg = 'Invalid Spreadsheet ID. Please check your configuration.';
+        }
+
+        sendResponse({
+          success: false,
+          error: errorMsg
+        });
+      }
+    })
+    .catch((error) => {
+      console.error('Connection test failed:', error);
+
+      let errorMsg = 'Connection test failed';
+
+      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+        errorMsg = 'Cannot connect to Apps Script. Please check:\n• Apps Script URL is correct\n• Script is deployed as Web App\n• You have internet connection';
+      } else if (error.name === 'AbortError' || error.message.includes('timeout')) {
+        errorMsg = 'Connection timed out. Please check your internet connection.';
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+
+      sendResponse({
+        success: false,
+        error: errorMsg
+      });
+    });
+}
+
+/**
  * Log job data to Google Sheets via Apps Script endpoint
  * @param {Object} data - Job data to log
  * @param {Function} sendResponse - Response callback
@@ -144,30 +392,12 @@ function handleLogJobData(data, sendResponse) {
     return;
   }
 
-  // Get spreadsheet ID from config
-  const spreadsheetId = getSpreadsheetId();
-  if (!spreadsheetId || spreadsheetId === 'YOUR_SPREADSHEET_ID_HERE') {
-    console.warn('Spreadsheet ID not configured');
-    sendResponse({
-      success: false,
-      error: 'Spreadsheet ID not configured. Please set up your Spreadsheet ID in config.local.js.'
-    });
-    return;
-  }
-
-  // Get spreadsheet ID from config
-  const projectId = getProjectId();
-  if (!projectId || projectId === 'YOUR_PROJECT_ID_HERE') {
-    console.warn('Project ID not configured');
-    sendResponse({
-      success: false,
-      error: 'Project ID not configured. Please set up your Project ID in config.local.js.'
-    });
-    return;
-  }
-
-  // Add spreadsheet ID and project ID to the data payload
-  const dataWithIds = { ...data, spreadsheetId, projectId };
+  // NOTE: Spreadsheet ID and Project ID are NOT sent in the request.
+  // They are configured server-side in Apps Script using Script Properties.
+  // This security design ensures sensitive IDs never traverse the network.
+  // The extension stores these values locally only for:
+  // 1. Settings UI display and "Open Sheet" link
+  // 2. User convenience (remembering configuration)
 
   // Send data to endpoint
   // Note: Apps Script Web Apps support CORS, so we don't need 'no-cors' mode
@@ -176,12 +406,24 @@ function handleLogJobData(data, sendResponse) {
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(dataWithIds)
+    body: JSON.stringify(data), // Only job data fields, no secrets
+    signal: AbortSignal.timeout(15000) // 15 second timeout
   })
     .then((response) => {
       // Check if the response is ok (status 200-299)
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Provide specific error messages based on status code
+        if (response.status === 404) {
+          throw new Error('Apps Script endpoint not found. Please check your endpoint URL in Settings.');
+        } else if (response.status === 403) {
+          throw new Error('Access denied to Apps Script. Please check deployment permissions (should be "Anyone").');
+        } else if (response.status === 401) {
+          throw new Error('Authentication required. Please redeploy your Apps Script as a Web App.');
+        } else if (response.status >= 500) {
+          throw new Error('Apps Script server error. Please check the Apps Script execution log.');
+        } else {
+          throw new Error(`Apps Script returned error (HTTP ${response.status}). Check your deployment settings.`);
+        }
       }
       return response.json();
     })
@@ -191,51 +433,88 @@ function handleLogJobData(data, sendResponse) {
         sendResponse({ success: true, timestamp: data.timestamp });
       } else {
         console.error('Apps Script returned error:', responseData.error);
+
+        // Parse and improve error messages from Apps Script
+        let errorMsg = responseData.error || 'Unknown error from Apps Script';
+
+        // Detect common error patterns
+        if (errorMsg.includes('not found') || errorMsg.includes('Spreadsheet not found')) {
+          errorMsg = 'Google Sheet not found. Please verify your Spreadsheet ID in Settings.';
+        } else if (errorMsg.includes('Authorization') || errorMsg.includes('Permission')) {
+          errorMsg = 'Cannot access Google Sheet. Please ensure the Apps Script owner has edit access to the sheet.';
+        } else if (errorMsg.includes('Invalid') && errorMsg.includes('spreadsheet')) {
+          errorMsg = 'Invalid Spreadsheet ID. Please check your configuration in Settings.';
+        }
+
         sendResponse({
           success: false,
-          error: responseData.error || 'Unknown error from Apps Script'
+          error: errorMsg
         });
       }
     })
     .catch((error) => {
       console.error('Failed to log job data:', error);
+
+      // Provide user-friendly error messages based on error type
+      let errorMsg = 'Unknown error occurred';
+
+      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+        errorMsg = 'Cannot connect to Apps Script endpoint. Please check:\n' +
+                   '1. Your Apps Script URL is correct\n' +
+                   '2. The script is deployed as a Web App\n' +
+                   '3. You have an internet connection';
+      } else if (error.name === 'AbortError' || error.message.includes('timeout')) {
+        errorMsg = 'Connection to Apps Script timed out. Please check your internet connection or try again.';
+      } else if (error.message.includes('CORS')) {
+        errorMsg = 'CORS error. Please ensure your Apps Script is deployed with "Anyone" access.';
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+
       sendResponse({
         success: false,
-        error: error.message || 'Network error occurred'
+        error: errorMsg
       });
     });
 }
 
-importScripts('config.local.js');
+// Try to import config.local.js (will fail silently if not present)
+try {
+  importScripts('config.local.js');
+} catch (error) {
+  console.log('config.local.js not found, using chrome.storage for configuration');
+}
 
 /**
- * Get Apps Script endpoint URL from storage or environment
+ * Get Apps Script endpoint URL from cached configuration
  * @returns {string} Endpoint URL
  */
 function getAppsScriptEndpoint() {
-  // TODO: In production, retrieve from chrome.storage.sync
-  // For now, use placeholder (developers should replace this)
-  return self.APP_CONFIG.APPS_SCRIPT_ENDPOINT;
+  return configCache.APPS_SCRIPT_ENDPOINT;
 }
 
 /**
- * Get Spreadsheet ID from storage or environment
+ * Get Spreadsheet ID from cached configuration
  * @returns {string} Spreadsheet ID
  */
 function getSpreadsheetId() {
-  // TODO: In production, retrieve from chrome.storage.sync
-  // For now, use from config (developers should replace this in config.local.js)
-  return self.APP_CONFIG.SPREADSHEET_ID;
+  return configCache.SPREADSHEET_ID;
 }
 
 /**
- * Get Project ID from storage or environment
- * @returns {string} Spreadsheet ID
+ * Get Project ID from cached configuration
+ * @returns {string} Project ID
  */
 function getProjectId() {
-  // TODO: In production, retrieve from chrome.storage.sync
-  // For now, use from config (developers should replace this in config.local.js)
-  return self.APP_CONFIG.PROJECT_ID;
+  return configCache.PROJECT_ID;
+}
+
+/**
+ * Check if manual entry is enabled
+ * @returns {boolean} True if manual entry is enabled
+ */
+function isManualEntryEnabled() {
+  return configCache.ENABLE_MANUAL_ENTRY;
 }
 
 /**

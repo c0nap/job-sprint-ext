@@ -13,6 +13,7 @@ Built for Chrome using **Manifest V3**, this extension speeds up high-volume job
 1. **Clipboard Macros** - Instantly paste common resume text (phone, email, address, LinkedIn) into any form field with one click
 2. **Job Data Extraction** - Capture and log job details (title, company, location) from any posting to your private Google Sheet
 3. **Semi-Supervised Autofill** - Automatically fill application forms based on past answers, with approval prompts for every field
+4. **Settings Page** - Easy configuration of Google Sheets credentials, manual entry preferences, and more
 
 ---
 
@@ -50,10 +51,17 @@ The extension icon should now appear in your toolbar. If you don't see it, click
 
 ### Step 4: Configure Extension
 
-#### Option A: Clipboard Macros
-Click the extension icon and use the "Edit Macros" button to set your personal information. *(Note: Full settings UI is in development. Current version uses browser storage directly.)*
+#### Using the Settings Page (Recommended)
 
-#### Option B: Google Sheets Logging (optional)
+1. Click the JobSprint extension icon in your toolbar
+2. Click **"Settings"** at the bottom of the popup
+3. Configure your preferences:
+   - **Google Sheets Configuration:** Enter your Apps Script URL, Spreadsheet ID, and Project ID
+   - **Job Data Extraction:** Enable/disable manual entry popup for missing data
+   - **Download Config:** Export your settings as a backup file
+
+#### Setting Up Google Sheets Logging
+
 To enable job data logging to your personal Google Sheet:
 
 **🚀 Quick Setup (Recommended):**
@@ -61,8 +69,10 @@ Follow our complete step-by-step guide: **[GOOGLE_APPS_SCRIPT_SETUP.md](GOOGLE_A
 
 This guide includes:
 - ✅ Creating your Google Apps Script (copy & paste, no coding needed)
+- ✅ Using the new `setupConfiguration()` function for easier testing
 - ✅ Deploying it as a web app
-- ✅ Connecting it to the extension
+- ✅ Configuring the extension via the Settings page (no code editing needed!)
+- ✅ Manual data entry popup for incomplete extractions
 - ✅ Testing your setup
 - ✅ Troubleshooting common issues
 
@@ -216,8 +226,70 @@ Job boards use different HTML structures and frequently update their layouts. Mu
 **Supported platforms:**
 LinkedIn, Indeed, Glassdoor, Greenhouse, Lever, Workday, plus generic selectors for smaller job boards.
 
+**Configuration management strategy:**
+The extension uses a dual-layer configuration approach for maximum flexibility:
+
+1. **Chrome Storage (Primary)**: Settings configured via the Settings page are stored in `chrome.storage.sync`, which syncs across browsers when signed in to Chrome. This is the recommended approach for most users.
+
+2. **config.local.js (Fallback)**: For advanced users or development environments, a local JavaScript file can be used. The service worker automatically detects and imports this file if present.
+
+3. **Auto-migration**: When the service worker loads configuration from `config.local.js`, it automatically saves the values to `chrome.storage.sync`. This ensures the Settings page always displays the active configuration, even if users started with the file-based approach.
+
+**Why this hybrid approach?**
+- **User-friendly**: Non-technical users can configure via GUI without editing code
+- **Developer-friendly**: Developers can use version-controlled config files
+- **Migration path**: Existing users with `config.local.js` automatically migrate to Settings
+- **Sync benefits**: Chrome storage syncs settings across devices
+- **No manual copying**: Upload button parses existing config files and auto-saves to storage
+
+**Apps Script secrets management:**
+The Apps Script endpoint needs to know which spreadsheet and Google Cloud project to use. We use a three-tier approach:
+
+1. **Script Properties (Preferred)**: The `setupConfiguration()` function stores spreadsheet ID and project ID in Apps Script's Script Properties service. This is the recommended approach because:
+   - Values are stored server-side in Google's infrastructure
+   - Test functions (`testDoPost()`, `runDiagnostics()`) can run without manual editing
+   - One-time setup, then testing is automatic
+   - No risk of accidentally committing secrets to version control
+
+2. **Request payload (Runtime)**: For actual job logging, the extension sends spreadsheet ID and project ID in each POST request. This allows:
+   - Different extensions/users to log to different sheets using the same Apps Script deployment
+   - Users to change spreadsheets without redeploying Apps Script
+   - Single Apps Script deployment to serve multiple configurations
+
+3. **Hardcoded fallback (Legacy)**: For users who prefer it, values can be hardcoded in the Apps Script code. Not recommended due to version control risks.
+
+**Why send secrets in the request instead of storing in Apps Script?**
+This design choice allows a single deployed Apps Script to serve multiple users/configurations. Each user can have their own spreadsheet ID and project ID stored in their extension settings, but all share the same Apps Script deployment URL. This is particularly useful for:
+- Team environments where each person tracks applications separately
+- Development/staging/production configurations
+- Easier sharing of the Apps Script code (no personal IDs embedded)
+
+**Google Cloud Logging approach:**
+Apps Script execution logs are only visible in Google Cloud Logging after linking to a Cloud Project. The setup requires:
+
+1. **Create GCP Project**: Users create a free Google Cloud project (no billing required for logging)
+2. **Link to Apps Script**: Connect the Apps Script to the GCP project using the numeric project ID
+3. **View logs**: Access detailed execution logs, including all `console.log()`, `console.warn()`, and `console.error()` output
+
+**Why require Google Cloud setup for logging?**
+Google deprecated the built-in Apps Script Execution log viewer for deployed web apps. Cloud Logging is now the official way to view detailed logs. While this adds setup complexity, it provides:
+- **Structured logging** with severity levels and filtering
+- **Real-time log streaming** during development
+- **Log retention** for debugging historical issues
+- **Query capabilities** to search logs efficiently
+- **Industry-standard tooling** (Cloud Logging is used across Google Cloud services)
+
+The `setupConfiguration()` function and `runDiagnostics()` output confirmation messages to Cloud Logging, making it easy to verify the setup is working correctly.
+
+**Manual data entry fallback:**
+When automatic extraction fails or returns incomplete data, users can optionally review and correct the information before submitting. This feature:
+- **Enabled by default** to ensure data quality
+- **Pre-fills extracted data** so users only need to fill missing fields
+- **Can be disabled** in Settings for users who prefer automatic-only logging
+- **Prevents data loss** from custom job boards with non-standard HTML
+
 **Validation strategy (MVP):**
-For the MVP, the extension accepts partial or incomplete job data and logs whatever information is available. Only configuration fields (`spreadsheetId`, `projectId`) are strictly required. Missing job fields (title, company, location) are logged with placeholder values like "(No company)" to ensure data capture even from pages with incomplete extraction.
+For the MVP, the extension accepts partial or incomplete job data and logs whatever information is available. Missing job fields (title, company, location) trigger the manual entry popup if enabled, or are logged with placeholder values like "(No company)" to ensure data capture even from pages with incomplete extraction.
 
 </details>
 
@@ -239,19 +311,58 @@ For the MVP, the extension accepts partial or incomplete job data and logs whate
 
 | Function | Purpose |
 | :--- | :--- |
-| `handleLogJobData(data, sendResponse)` | Validates configuration fields and sends POST request to Apps Script endpoint |
+| `loadConfiguration()` | Loads config from chrome.storage.sync (priority) or config.local.js (fallback), auto-saves to storage if loading from file |
+| `handleLogJobData(data, sendResponse)` | Validates configuration fields, sends POST request to Apps Script endpoint with enhanced error detection for network issues, HTTP status codes, and Apps Script errors |
+| `testConnection(sendResponse)` | Tests connection to Apps Script and Google Sheets, provides detailed error messages for troubleshooting |
 | `validateJobData(data)` | MVP: Minimal validation - accepts any valid object (Apps Script handles missing fields) |
-| `getAppsScriptEndpoint()` | Returns configured endpoint URL from config.local.js |
-| `getSpreadsheetId()` | Returns configured spreadsheet ID from config.local.js |
-| `getProjectId()` | Returns configured Google Cloud project ID from config.local.js |
+| `getAppsScriptEndpoint()` | Returns configured endpoint URL from cached configuration (loaded from chrome.storage or config.local.js) |
+| `getSpreadsheetId()` | Returns configured spreadsheet ID from cached configuration |
+| `getProjectId()` | Returns configured Google Cloud project ID from cached configuration |
+| `isManualEntryEnabled()` | Returns whether the manual data entry popup is enabled (from cached configuration) |
 
 #### `popup.js` - UI Coordination
 
 | Function | Purpose |
 | :--- | :--- |
-| `handleExtractClick(button, statusDiv)` | Triggers extraction on active tab and shows status updates |
-| `logJobData(button, statusDiv, jobData)` | Sends validated data to Service Worker for API submission |
+| `handleExtractClick(button, statusDiv)` | Triggers extraction on active tab, includes enhanced error handling for content script communication issues (e.g., "Receiving end does not exist") |
+| `logJobData(button, statusDiv, jobData)` | Checks if manual entry is needed, shows modal if data is incomplete, otherwise sends to Service Worker |
+| `submitJobData(button, statusDiv, jobData)` | Sends validated data to Service Worker for API submission |
+| `isMissingRequiredData(jobData)` | Checks if job title or company are missing/placeholder values |
+| `showManualEntryModal(button, statusDiv, jobData)` | Displays modal form for reviewing and correcting extracted job data |
+| `hideManualEntryModal()` | Closes the manual entry modal and resets the form |
+| `handleManualEntrySubmit()` | Processes manual entry form submission, merges with original data, and submits to Service Worker |
 | `showStatus(element, type, message)` | Displays success/error messages with appropriate styling |
+
+#### `settings.js` - Settings Page Management
+
+| Function | Purpose |
+| :--- | :--- |
+| `loadSettings()` | Loads current configuration from chrome.storage.sync and populates form fields |
+| `saveSettings()` | Validates and saves settings to chrome.storage.sync, notifies service worker to reload config |
+| `testConnection()` | Tests connection to Apps Script and Google Sheets, displays detailed error messages |
+| `uploadConfig()` | Triggers file browser to select config.local.js for upload |
+| `handleConfigFileUpload(event)` | Parses uploaded config.local.js file, populates form fields, auto-saves to chrome.storage.sync |
+| `parseConfigFile(content)` | Extracts CONFIG object from JavaScript file using regex |
+| `downloadConfig()` | Generates and downloads config.local.js file with current settings |
+| `updateConnectionStatus(settings)` | Updates connection status indicator and enables/disables Test Connection button based on configuration completeness |
+
+#### `google-apps-script-endpoint.js` - Backend API (Google Apps Script)
+
+| Function | Purpose |
+| :--- | :--- |
+| `doPost(e)` | Main entry point for POST requests from extension, validates data and logs to Google Sheets |
+| `setupConfiguration()` | Stores spreadsheet ID and project ID in Script Properties (one-time setup for testing) |
+| `getConfiguration()` | Retrieves stored configuration from Script Properties |
+| `testDoPost()` | Simulates a POST request using stored configuration, validates the setup |
+| `runDiagnostics()` | Checks permissions, spreadsheet access, and configuration completeness |
+| `validateJobData(data)` | Ensures required fields (spreadsheetId, projectId) are present, accepts partial job data |
+| `logJobToSheet(jobData, requestId)` | Opens spreadsheet, creates/gets "Job Applications" sheet, appends row with job data |
+| `createJsonResponse(data, statusCode)` | Creates properly formatted JSON response for the extension |
+
+**Configuration hierarchy in Apps Script:**
+1. Script Properties (for test functions) - Set via `setupConfiguration()`
+2. Request payload (for actual logging) - Sent by extension in each POST request
+3. Hardcoded values (deprecated) - Only for legacy setups
 
 </details>
 
@@ -339,6 +450,124 @@ Job applications have legal and professional implications. Requiring approval fo
 
 ---
 
+## 🔒 Security
+
+<details>
+<summary><b>Security Architecture & Privacy</b></summary>
+
+### Overview
+
+JobSprint is designed with security-first principles. Your sensitive information stays private, and configuration secrets never traverse the network.
+
+### Server-Side Secrets Storage
+
+**Critical Design Decision:** Spreadsheet IDs and Project IDs are **never sent over HTTP**.
+
+**How it works:**
+1. **Server-Side Configuration:** Your Spreadsheet ID and Google Cloud Project ID are stored exclusively in Google Apps Script using **Script Properties** (server-side key-value storage)
+2. **One-Time Setup:** Run `setupConfiguration()` once in the Apps Script editor to securely store these values on Google's servers
+3. **Request Payload:** When the extension logs job data, it only sends:
+   - Job details (title, company, location, URL)
+   - Timestamp and source metadata
+   - **Nothing else** - no IDs, no credentials, no secrets
+
+**What this prevents:**
+- Network interception of sensitive IDs
+- Accidental exposure in browser DevTools or network logs
+- Leaking configuration through compromised client systems
+
+### Data Transmission
+
+**What IS sent over the network:**
+- Job posting data (title, company, location, URL) - **only when you click "Extract & Log"**
+- The Apps Script endpoint URL (public web app URL)
+- Test connection requests (minimal test data when you click "Test Connection")
+
+**What is NEVER sent:**
+- Your Google Spreadsheet ID
+- Your Google Cloud Project ID
+- Any credentials or authentication tokens
+- Personal information from clipboard macros (phone, email, etc.)
+- Q&A autofill database entries
+
+# TODO: Incporate into main security section here. The phrasing and info of both should be preserved
+
+
+## Security & Privacy
+
+**Is my data secure?**
+
+Yes! Here's what happens:
+1. Your extension runs locally in your browser
+2. Job data goes directly from your browser to your personal Google Apps Script
+3. Your Apps Script writes to your personal Google Sheet
+4. No third-party services or databases are involved
+
+**Who can access my data?**
+
+Only you. The Apps Script URL is private (only you know it), and the Google Sheet is in your Google Drive with your normal Drive permissions.
+
+**Can I revoke access?**
+
+Yes, at any time:
+1. In Apps Script, click Deploy → Manage deployments
+2. Click the Archive button (🗑️) next to your deployment
+3. The extension will stop being able to add jobs to your sheet
+
+---
+
+
+### Local Storage
+
+**Where your data lives:**
+
+| Data Type | Storage Location | Synced? | Purpose |
+|-----------|-----------------|---------|---------|
+| **Clipboard Macros** (phone, email, LinkedIn, address) | `chrome.storage.sync` | Yes (across your Chrome browsers) | Quick-paste personal info |
+| **Q&A Autofill Database** | `chrome.storage.local` | No (device-specific) | Store previous form answers |
+| **Configuration** (endpoint URL, Spreadsheet ID, Project ID) | `chrome.storage.sync` + `config.local.js` | Sync storage: Yes / File: No | Remember your settings |
+| **Job Data** | Not stored locally | N/A | Immediately sent to your Google Sheet |
+
+**Privacy Notes:**
+- All data stays **within your Chrome profile** - never sent to third-party servers (except Google Sheets, which YOU control)
+- Clipboard macros sync across your devices via Chrome Sync (can be disabled in Chrome settings)
+- Q&A autofill database is device-local for privacy (not synced)
+
+### Extension Permissions
+
+JobSprint requests the following Chrome permissions:
+
+| Permission | Why We Need It | What We Do |
+|------------|----------------|------------|
+| `storage` | Save your settings and Q&A database | Store config in `chrome.storage.sync/local` |
+| `activeTab` | Access the current job posting page | Extract job details from DOM when you click "Extract" |
+| `scripting` | Inject content script for autofill | Insert autofill logic into application forms |
+
+**What we DON'T request:**
+- `<all_urls>` - We don't access all websites automatically
+- `history` - We don't track your browsing
+- `cookies` - We don't read or modify cookies
+- `webRequest` - We don't intercept your network traffic
+
+### Configuration Security Best Practices
+
+1. **Never commit `config.local.js` to version control** - It contains your personal IDs
+   - Already included in `.gitignore` for your protection
+2. **Use the Settings Page** - Easiest way to configure without touching code
+3. **Verify Apps Script Deployment** - Ensure deployment permissions are set to "Anyone" (required for web apps), not "Anyone with Google account" (would expose your email)
+4. **Regular Backups** - Use Settings → Download Config to backup your configuration
+
+### Reporting Security Issues
+
+If you discover a security vulnerability, please report it responsibly:
+- **Email:** Create an issue at https://github.com/c0nap/job-sprint-ext/issues with `[SECURITY]` prefix
+- **Do not** disclose publicly until a fix is available
+- We'll acknowledge within 48 hours and work on a fix promptly
+
+</details>
+
+---
+
 ## 🧠 Core Technical Glossary
 
 <details>
@@ -421,6 +650,40 @@ A dedicated CI workflow runs Jest on every pull request. If unit tests pass (log
 
 </details>
 
+# TODO: Incorporate this into a testing page
+
+## Testing Your Setup (Optional)
+
+Want to test the script directly without the extension?
+
+1. In the Apps Script editor, find the `testDoPost()` function at the bottom
+2. Click the **Run** button (▶️) at the top
+3. Select `testDoPost` from the function dropdown if needed
+4. Click Run
+5. Check the "Execution log" - you should see "Test response: {"success":true,...}"
+6. Check your Google Sheet - a test job should appear
+
+---
+
+## Local Testing Alternative
+
+If you want to test the extension without deploying to Google Apps Script, you can use the **local mock endpoint**:
+
+1. In your terminal, run:
+   ```bash
+   npm run start:local-endpoint
+   ```
+2. Change the URL in `service-worker.js` to:
+   ```javascript
+   return 'http://localhost:3000/log-job';
+   ```
+3. Test the extension - data will be logged to your console instead of Google Sheets
+
+See `LOCAL_ENDPOINT_README.md` for more details on local testing.
+
+
+
+
 ### CI/CD Pipeline
 
 <details>
@@ -460,33 +723,7 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed CI
 
 ## 🔧 Developer Notes
 
-<details>
-<summary><b>Known TODOs and Future Improvements</b></summary>
-
-**Pending Features:**
-1. **Settings UI** (`popup.js:33`, `popup.js:269`) - Implement proper settings page for:
-   - Editing clipboard macro values (currently requires manual storage manipulation)
-   - Configuring Google Apps Script endpoint URL (currently hardcoded)
-   - Managing Q&A database (view/edit/delete saved answers)
-
-2. **Apps Script Configuration** (`service-worker.js:174`) - Move endpoint URL from hardcoded constant to `chrome.storage.sync` for user configuration
-
-3. **Enhanced Approval UI** (`SETUP.md:76`) - Current modal is functional but could be enhanced with:
-   - Keyboard shortcuts (Enter to approve, Esc to skip - currently only Esc works)
-   - Confidence score display (show similarity percentage)
-   - Edit-before-approve capability
-
-4. **Site-Specific Selector Refinement** (`SETUP.md:77`) - Extraction selectors work on major job boards but may need updates as sites change their HTML structure
-
-**Test Coverage Goals:**
-- Current: Core business logic (similarity matching, validation, extraction)
-- Needed: UI interaction testing (requires browser automation with Puppeteer or similar)
-
-**Performance Optimizations:**
-- Consider debouncing autofill to reduce DOM queries on complex forms
-- Implement selector caching to avoid repeated querySelector calls
-
-</details>
+Put a list here containing critical TODOs or human verification steps:
 
 ---
 
