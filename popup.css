@@ -102,7 +102,7 @@ button {
 
 /* Folder buttons */
 .folder-btn {
-  background-color: #007bff;
+  background-color: #28a745;
   color: white;
   padding: 12px 8px;
   font-size: 13px;
@@ -116,7 +116,7 @@ button {
 }
 
 .folder-btn:hover {
-  background-color: #0056b3;
+  background-color: #218838;
 }
 
 .folder-btn:active {

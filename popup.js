@@ -110,19 +110,18 @@ function closeFolder() {
  */
 function renderSubMenuItems(items) {
   const container = document.getElementById('subMenuItems');
-  container.innerHTML = '';
+
+  // Clear container
+  while (container.firstChild) {
+    container.removeChild(container.firstChild);
+  }
 
   // Convert items object to array
   const itemsArray = Object.entries(items || {});
 
   if (itemsArray.length === 0) {
     // Show empty state
-    container.innerHTML = `
-      <div class="sub-menu-empty">
-        <div class="sub-menu-empty-icon">📭</div>
-        <div>No items configured</div>
-      </div>
-    `;
+    showEmptyState(container);
     return;
   }
 
@@ -145,7 +144,14 @@ function renderSubMenuItems(items) {
     // Set button text with copy icon for folders
     const labelText = formatItemLabel(key, value);
     if (isFolder) {
-      button.innerHTML = `${labelText} <span class="copy-icon">📋</span>`;
+      // Use DOM manipulation instead of innerHTML to avoid CSP violations
+      const textNode = document.createTextNode(labelText + ' ');
+      button.appendChild(textNode);
+
+      const copyIcon = document.createElement('span');
+      copyIcon.className = 'copy-icon';
+      copyIcon.textContent = '📋';
+      button.appendChild(copyIcon);
     } else {
       button.textContent = labelText;
     }
@@ -164,13 +170,28 @@ function renderSubMenuItems(items) {
 
   // If no non-empty items, show empty state
   if (container.children.length === 0) {
-    container.innerHTML = `
-      <div class="sub-menu-empty">
-        <div class="sub-menu-empty-icon">📭</div>
-        <div>No items configured</div>
-      </div>
-    `;
+    showEmptyState(container);
   }
+}
+
+/**
+ * Show empty state in container
+ * @param {HTMLElement} container - Container element
+ */
+function showEmptyState(container) {
+  const emptyDiv = document.createElement('div');
+  emptyDiv.className = 'sub-menu-empty';
+
+  const iconDiv = document.createElement('div');
+  iconDiv.className = 'sub-menu-empty-icon';
+  iconDiv.textContent = '📭';
+
+  const textDiv = document.createElement('div');
+  textDiv.textContent = 'No items configured';
+
+  emptyDiv.appendChild(iconDiv);
+  emptyDiv.appendChild(textDiv);
+  container.appendChild(emptyDiv);
 }
 
 /**
@@ -416,13 +437,19 @@ function handleSearchInput() {
 function displaySearchResults(results) {
   const resultsContainer = document.getElementById('searchResults');
 
+  // Clear container
+  while (resultsContainer.firstChild) {
+    resultsContainer.removeChild(resultsContainer.firstChild);
+  }
+
   if (results.length === 0) {
-    resultsContainer.innerHTML = '<div class="search-no-results">No results found</div>';
+    const noResults = document.createElement('div');
+    noResults.className = 'search-no-results';
+    noResults.textContent = 'No results found';
+    resultsContainer.appendChild(noResults);
     resultsContainer.style.display = 'block';
     return;
   }
-
-  resultsContainer.innerHTML = '';
 
   results.forEach((result) => {
     const resultItem = document.createElement('div');
