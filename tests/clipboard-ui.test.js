@@ -35,28 +35,28 @@ describe('Clipboard Macros UI - Folder Structure', () => {
       });
     });
 
-    test('should have demographics folder button with emoji and label', () => {
-      expect(popupHtml).toContain('data-folder="demographics">👤 Demographics</button>');
+    test('should have demographics folder button with label', () => {
+      expect(popupHtml).toContain('data-folder="demographics">Demographics</button>');
     });
 
-    test('should have references folder button with emoji and label', () => {
-      expect(popupHtml).toContain('data-folder="references">📋 References</button>');
+    test('should have references folder button with label', () => {
+      expect(popupHtml).toContain('data-folder="references">References</button>');
     });
 
-    test('should have education folder button with emoji and label', () => {
-      expect(popupHtml).toContain('data-folder="education">🎓 Education</button>');
+    test('should have education folder button with label', () => {
+      expect(popupHtml).toContain('data-folder="education">Education</button>');
     });
 
-    test('should have skills folder button with emoji and label', () => {
-      expect(popupHtml).toContain('data-folder="skills">💡 Skills</button>');
+    test('should have skills folder button with label', () => {
+      expect(popupHtml).toContain('data-folder="skills">Skills</button>');
     });
 
-    test('should have projects folder button with emoji and label', () => {
-      expect(popupHtml).toContain('data-folder="projects">🚀 Projects</button>');
+    test('should have projects folder button with label', () => {
+      expect(popupHtml).toContain('data-folder="projects">Projects</button>');
     });
 
-    test('should have employment folder button with emoji and label', () => {
-      expect(popupHtml).toContain('data-folder="employment">💼 Employment</button>');
+    test('should have employment folder button with label', () => {
+      expect(popupHtml).toContain('data-folder="employment">Employment</button>');
     });
 
     test('should have sub-menu view with back button', () => {
@@ -164,13 +164,13 @@ describe('Clipboard Macros UI - Folder Structure', () => {
   });
 
   describe('CSS Grid Layout', () => {
-    test('popup.css should have 3-column grid layout', () => {
+    test('popup.css should have 2-column grid layout (3 rows)', () => {
       const popupCss = fs.readFileSync(
         path.join(__dirname, '../popup.css'),
         'utf8'
       );
 
-      expect(popupCss).toContain('grid-template-columns: repeat(3, 1fr)');
+      expect(popupCss).toContain('grid-template-columns: repeat(2, 1fr)');
     });
 
     test('popup.css should have folder button styling', () => {

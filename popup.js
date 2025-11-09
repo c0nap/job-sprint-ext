@@ -126,14 +126,28 @@ function renderSubMenuItems(items) {
     if (!value) return;
 
     const button = document.createElement('button');
-    button.className = 'sub-menu-item-btn';
-    button.textContent = formatItemLabel(key, value);
+    const isFolder = typeof value === 'object' && value !== null && !Array.isArray(value);
+
+    // Set class based on type - folders (green) vs basic items (blue)
+    if (isFolder) {
+      button.className = 'sub-menu-item-btn folder-item';
+    } else {
+      button.className = 'sub-menu-item-btn basic-item';
+    }
+
+    // Set button text with copy icon for folders
+    const labelText = formatItemLabel(key, value);
+    if (isFolder) {
+      button.innerHTML = `${labelText} <span class="copy-icon">📋</span>`;
+    } else {
+      button.textContent = labelText;
+    }
 
     // Set tooltip - verbalize for preview
-    if (typeof value === 'object') {
-      button.title = `Click to paste verbalized:\n${verbalizeValue(value)}`;
+    if (isFolder) {
+      button.title = `Click to copy verbalized:\n${verbalizeValue(value)}`;
     } else {
-      button.title = value; // Show full value on hover
+      button.title = `Click to copy: ${value}`;
     }
 
     button.addEventListener('click', () => handleItemClick(key, value));
@@ -222,37 +236,31 @@ function verbalizeValue(value, indent = 0) {
 }
 
 /**
- * Handle item click - paste the value
+ * Handle item click - copy the value to clipboard
  * @param {string} key - Item key
- * @param {string|Object} value - Item value to paste (string or nested object)
+ * @param {string|Object} value - Item value to copy (string or nested object)
  */
-function handleItemClick(key, value) {
+async function handleItemClick(key, value) {
   // Verbalize the value (converts objects to readable text, keeps strings as-is)
-  const textToPaste = verbalizeValue(value);
+  const textToCopy = verbalizeValue(value);
 
-  // Query active tab
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const activeTab = tabs[0];
-    if (!activeTab) {
-      showError('No active tab found');
-      return;
-    }
+  try {
+    // Copy to clipboard using Clipboard API
+    await navigator.clipboard.writeText(textToCopy);
 
-    // Send paste command to content script
-    chrome.tabs.sendMessage(
-      activeTab.id,
-      { action: 'pasteText', text: textToPaste },
-      (pasteResponse) => {
-        if (chrome.runtime.lastError) {
-          showError(`Failed to paste: ${chrome.runtime.lastError.message}`);
-          return;
-        }
+    // Show success message
+    showSuccess('Copied to clipboard!');
 
-        console.log('Text pasted successfully');
-        window.close(); // Close popup after successful paste
-      }
-    );
-  });
+    console.log('Text copied successfully:', textToCopy);
+
+    // Close popup after 500ms (give user time to see success message)
+    setTimeout(() => {
+      window.close();
+    }, 500);
+  } catch (error) {
+    showError('Failed to copy to clipboard');
+    console.error('Clipboard error:', error);
+  }
 }
 
 /**
@@ -696,4 +704,15 @@ function setButtonLoading(button, text) {
  */
 function showError(message) {
   alert(`✗ ${message}`);
+}
+
+/**
+ * Display success message using alert
+ * Uses consistent success format: "✓ message"
+ * @param {string} message - Success message to display
+ */
+function showSuccess(message) {
+  // For clipboard, we could use a less intrusive notification
+  // But for now, using console.log for success (popup closes anyway)
+  console.log(`✓ ${message}`);
 }

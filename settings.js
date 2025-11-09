@@ -72,8 +72,11 @@ async function loadSettings() {
 
 // Setup event listeners
 function setupEventListeners() {
-  // Save button
+  // Save all settings button
   document.getElementById('saveSettings').addEventListener('click', saveSettings);
+
+  // Save clipboard macros button (specific to clipboard section)
+  document.getElementById('saveClipboardMacros').addEventListener('click', saveClipboardMacros);
 
   // Reset button
   document.getElementById('resetSettings').addEventListener('click', resetSettings);
@@ -188,6 +191,68 @@ function validateFolderJSON(folder) {
     errorDiv.classList.add('visible');
     errorDiv.textContent = `Invalid JSON: ${error.message}`;
     return false;
+  }
+}
+
+// Save only clipboard macros to Chrome storage
+async function saveClipboardMacros() {
+  const folders = ['demographics', 'references', 'education', 'skills', 'projects', 'employment'];
+  const clipboardMacros = {};
+  let hasErrors = false;
+
+  // Validate all folders
+  for (const folder of folders) {
+    if (!validateFolderJSON(folder)) {
+      hasErrors = true;
+      continue;
+    }
+
+    const textarea = document.querySelector(`.folder-json-editor[data-folder="${folder}"]`);
+    if (textarea) {
+      const value = textarea.value.trim();
+      if (value === '') {
+        clipboardMacros[folder] = {};
+      } else {
+        try {
+          clipboardMacros[folder] = JSON.parse(value);
+        } catch (error) {
+          hasErrors = true;
+          showClipboardStatus(`Invalid JSON in ${folder}: ${error.message}`, 'error');
+        }
+      }
+    }
+  }
+
+  if (hasErrors) {
+    showClipboardStatus('Please fix JSON errors before saving', 'error');
+    return;
+  }
+
+  try {
+    // Save only clipboard macros to Chrome storage
+    await chrome.storage.sync.set({ clipboardMacros });
+    showClipboardStatus('Clipboard macros saved successfully!', 'success');
+    console.log('Clipboard macros saved:', clipboardMacros);
+  } catch (error) {
+    showClipboardStatus('Error saving clipboard macros', 'error');
+    console.error('Error saving clipboard macros:', error);
+  }
+}
+
+// Helper to show status for clipboard macros save
+function showClipboardStatus(message, type) {
+  const statusDiv = document.getElementById('clipboardSaveStatus');
+  if (!statusDiv) return;
+
+  statusDiv.textContent = message;
+  statusDiv.className = `status-message ${type}`;
+  statusDiv.style.display = 'block';
+
+  // Auto-hide success messages after 3 seconds
+  if (type === 'success') {
+    setTimeout(() => {
+      statusDiv.style.display = 'none';
+    }, 3000);
   }
 }
 

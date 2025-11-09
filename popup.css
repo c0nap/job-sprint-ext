@@ -60,7 +60,7 @@ h1 {
 /* Buttons */
 .button-group {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 6px;
   margin-bottom: 0;
 }
@@ -193,7 +193,6 @@ button {
 }
 
 .sub-menu-item-btn {
-  background-color: #28a745;
   color: white;
   padding: 10px 12px;
   font-size: 13px;
@@ -203,9 +202,26 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.sub-menu-item-btn:hover {
+/* Basic/leaf items - blue */
+.sub-menu-item-btn.basic-item {
+  background-color: #007bff;
+}
+
+.sub-menu-item-btn.basic-item:hover {
+  background-color: #0056b3;
+}
+
+/* Folder items - green */
+.sub-menu-item-btn.folder-item {
+  background-color: #28a745;
+}
+
+.sub-menu-item-btn.folder-item:hover {
   background-color: #218838;
 }
 
@@ -215,6 +231,14 @@ button {
 
 .sub-menu-item-btn:last-child {
   margin-bottom: 0;
+}
+
+/* Copy icon for folders */
+.copy-icon {
+  font-size: 14px;
+  opacity: 0.8;
+  margin-left: 8px;
+  flex-shrink: 0;
 }
 
 .sub-menu-hint {
