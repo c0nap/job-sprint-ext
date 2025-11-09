@@ -125,9 +125,28 @@ function initializeStorage() {
           phone: '',
           email: '',
           address: '',
-          linkedin: ''
+          linkedin: '',
+          name: '',
+          website: ''
         }
       });
+    } else {
+      // Ensure existing storage has all 6 macro keys (migration support)
+      const macros = result.clipboardMacros;
+      let needsUpdate = false;
+
+      if (!macros.hasOwnProperty('name')) {
+        macros.name = '';
+        needsUpdate = true;
+      }
+      if (!macros.hasOwnProperty('website')) {
+        macros.website = '';
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        chrome.storage.sync.set({ clipboardMacros: macros });
+      }
     }
   });
 
@@ -211,7 +230,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 /**
  * Get clipboard macro value from sync storage
- * @param {string} key - Macro key (phone, email, address, linkedin)
+ * @param {string} key - Macro key (phone, email, address, linkedin, name, website)
  * @param {Function} sendResponse - Response callback
  */
 function handleGetClipboardMacro(key, sendResponse) {
@@ -223,7 +242,7 @@ function handleGetClipboardMacro(key, sendResponse) {
 
 /**
  * Save clipboard macro value to sync storage
- * @param {string} key - Macro key (phone, email, address, linkedin)
+ * @param {string} key - Macro key (phone, email, address, linkedin, name, website)
  * @param {string} value - Macro value to save
  * @param {Function} sendResponse - Response callback
  */

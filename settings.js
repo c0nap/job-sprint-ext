@@ -8,6 +8,16 @@ const DEFAULT_CONFIG = {
   ENABLE_MANUAL_ENTRY: true
 };
 
+// Default clipboard macros
+const DEFAULT_MACROS = {
+  phone: '',
+  email: '',
+  address: '',
+  linkedin: '',
+  name: '',
+  website: ''
+};
+
 // Load settings when page loads
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
@@ -21,7 +31,8 @@ async function loadSettings() {
       'APPS_SCRIPT_ENDPOINT',
       'SPREADSHEET_ID',
       'PROJECT_ID',
-      'ENABLE_MANUAL_ENTRY'
+      'ENABLE_MANUAL_ENTRY',
+      'clipboardMacros'
     ]);
 
     // Populate form fields
@@ -30,6 +41,15 @@ async function loadSettings() {
     document.getElementById('projectId').value = result.PROJECT_ID || '';
     document.getElementById('enableManualEntry').checked =
       result.ENABLE_MANUAL_ENTRY !== undefined ? result.ENABLE_MANUAL_ENTRY : true;
+
+    // Populate clipboard macro fields
+    const macros = result.clipboardMacros || DEFAULT_MACROS;
+    document.getElementById('macroPhone').value = macros.phone || '';
+    document.getElementById('macroEmail').value = macros.email || '';
+    document.getElementById('macroAddress').value = macros.address || '';
+    document.getElementById('macroLinkedin').value = macros.linkedin || '';
+    document.getElementById('macroName').value = macros.name || '';
+    document.getElementById('macroWebsite').value = macros.website || '';
 
     // Update connection status
     updateConnectionStatus(result);
@@ -74,15 +94,36 @@ async function saveSettings() {
     ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked
   };
 
+  // Get clipboard macros
+  const clipboardMacros = {
+    phone: document.getElementById('macroPhone').value.trim(),
+    email: document.getElementById('macroEmail').value.trim(),
+    address: document.getElementById('macroAddress').value.trim(),
+    linkedin: document.getElementById('macroLinkedin').value.trim(),
+    name: document.getElementById('macroName').value.trim(),
+    website: document.getElementById('macroWebsite').value.trim()
+  };
+
   // Validate inputs
   if (settings.APPS_SCRIPT_ENDPOINT && !isValidUrl(settings.APPS_SCRIPT_ENDPOINT)) {
     showStatus('Invalid Apps Script Endpoint URL', 'error');
     return;
   }
 
+  // Validate clipboard macro URLs if provided
+  if (clipboardMacros.linkedin && !isValidUrl(clipboardMacros.linkedin)) {
+    showStatus('Invalid LinkedIn URL', 'error');
+    return;
+  }
+
+  if (clipboardMacros.website && !isValidUrl(clipboardMacros.website)) {
+    showStatus('Invalid Website URL', 'error');
+    return;
+  }
+
   try {
     // Save to Chrome storage
-    await chrome.storage.sync.set(settings);
+    await chrome.storage.sync.set({ ...settings, clipboardMacros });
 
     // Update connection status
     updateConnectionStatus(settings);
@@ -104,7 +145,7 @@ async function resetSettings() {
   }
 
   try {
-    await chrome.storage.sync.set(DEFAULT_CONFIG);
+    await chrome.storage.sync.set({ ...DEFAULT_CONFIG, clipboardMacros: DEFAULT_MACROS });
     await loadSettings();
     showStatus('Settings reset to defaults', 'info');
   } catch (error) {

@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /**
  * Initialize clipboard macro buttons and event listeners
- * Sets up click handlers for macro buttons (phone, email, address, linkedin)
+ * Sets up click handlers for macro buttons (phone, email, address, linkedin, name, website)
  */
 function initializeClipboardMacros() {
   const macroButtons = document.querySelectorAll('.macro-btn');
@@ -30,20 +30,12 @@ function initializeClipboardMacros() {
       handleMacroClick(key);
     });
   });
-
-  // Edit macros button - TODO: Implement settings modal or page for editing macro values
-  const editButton = document.getElementById('editMacros');
-  if (editButton) {
-    editButton.addEventListener('click', () => {
-      alert('Edit macros functionality coming soon!');
-    });
-  }
 }
 
 /**
  * Handle macro button click - retrieve value and paste to active field
  * Flow: Get value from storage -> Query active tab -> Send to content script -> Paste
- * @param {string} key - Macro key (phone, email, address, linkedin)
+ * @param {string} key - Macro key (phone, email, address, linkedin, name, website)
  */
 function handleMacroClick(key) {
   // Step 1: Get the macro value from service worker storage
@@ -52,7 +44,7 @@ function handleMacroClick(key) {
     (response) => {
       // Early return if no value is set
       if (!response?.success || !response?.value) {
-        showError('No value set for this macro. Please edit macros first.');
+        showError('No value set for this macro. Please configure it in Settings.');
         return;
       }
 

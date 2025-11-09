@@ -60,9 +60,9 @@ h1 {
 /* Buttons */
 .button-group {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 0;
 }
 
 button {
@@ -103,6 +103,11 @@ button {
 .macro-btn {
   background-color: #28a745;
   color: white;
+  padding: 8px 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .macro-btn:hover {

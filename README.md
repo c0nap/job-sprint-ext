@@ -10,7 +10,7 @@ Built for Chrome using **Manifest V3**, this extension speeds up high-volume job
 
 ## Features at a Glance
 
-1. **Clipboard Macros** - Instantly paste common resume text (phone, email, address, LinkedIn) into any form field with one click
+1. **Clipboard Macros** - Instantly paste common resume text (phone, email, address, LinkedIn, name, website) into any form field with one click
 2. **Job Data Extraction** - Capture and log job details (title, company, location) from any posting to your private Google Sheet
 3. **Semi-Supervised Autofill** - Automatically fill application forms based on past answers, with approval prompts for every field
 4. **Settings Page** - Easy configuration of Google Sheets credentials, manual entry preferences, and more
@@ -523,7 +523,7 @@ Yes, at any time:
 
 | Data Type | Storage Location | Synced? | Purpose |
 |-----------|-----------------|---------|---------|
-| **Clipboard Macros** (phone, email, LinkedIn, address) | `chrome.storage.sync` | Yes (across your Chrome browsers) | Quick-paste personal info |
+| **Clipboard Macros** (phone, email, address, LinkedIn, name, website) | `chrome.storage.sync` | Yes (across your Chrome browsers) | Quick-paste personal info |
 | **Q&A Autofill Database** | `chrome.storage.local` | No (device-specific) | Store previous form answers |
 | **Configuration** (endpoint URL, Spreadsheet ID, Project ID) | `chrome.storage.sync` + `config.local.js` | Sync storage: Yes / File: No | Remember your settings |
 | **Job Data** | Not stored locally | N/A | Immediately sent to your Google Sheet |
@@ -723,7 +723,183 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed CI
 
 ## 🔧 Developer Notes
 
-Put a list here containing critical TODOs or human verification steps:
+### Manual UI Testing Checklist - Clipboard Macros MVP
+
+Use this checklist to manually verify the 6-button Clipboard Macros MVP implementation:
+
+#### Popup UI Tests
+
+**Layout & Visual:**
+- [ ] Open extension popup - verify 6 macro buttons are displayed
+- [ ] Buttons should be in a 3-column grid layout (2 rows of 3)
+- [ ] Each button shows an emoji icon + label
+- [ ] Buttons are compact but readable (not cramped)
+- [ ] No "Edit Macros" button visible in popup
+- [ ] Settings link is present at the bottom
+
+**Button Labels (verify exact text):**
+- [ ] "📞 Phone"
+- [ ] "📧 Email"
+- [ ] "📍 Address"
+- [ ] "💼 LinkedIn"
+- [ ] "👤 Name"
+- [ ] "🌐 Website"
+
+**Functionality (before configuring):**
+- [ ] Click Phone button → error message: "No value set for this macro. Please configure it in Settings."
+- [ ] Click Email button → error message: "No value set for this macro. Please configure it in Settings."
+- [ ] Click Address button → error message: "No value set for this macro. Please configure it in Settings."
+- [ ] Click LinkedIn button → error message: "No value set for this macro. Please configure it in Settings."
+- [ ] Click Name button → error message: "No value set for this macro. Please configure it in Settings."
+- [ ] Click Website button → error message: "No value set for this macro. Please configure it in Settings."
+
+#### Settings Page Tests
+
+**Navigation:**
+- [ ] Click "Settings" link in popup → Settings page opens in new tab
+
+**Clipboard Macros Section:**
+- [ ] "Clipboard Macros" section appears FIRST (before Google Sheets Configuration)
+- [ ] Privacy notice displayed: "stored locally in your browser and are never sent to any server"
+- [ ] All 6 input fields are present with correct labels:
+  - [ ] "📞 Phone Number"
+  - [ ] "📧 Email Address"
+  - [ ] "📍 Address"
+  - [ ] "💼 LinkedIn Profile"
+  - [ ] "👤 Full Name"
+  - [ ] "🌐 Website/Portfolio"
+
+**Configuration:**
+- [ ] Enter test values in all 6 fields:
+  - Phone: `(555) 123-4567`
+  - Email: `test@example.com`
+  - Address: `123 Main St, San Francisco, CA 94105`
+  - LinkedIn: `https://linkedin.com/in/testuser`
+  - Name: `Jane Doe`
+  - Website: `https://janedoe.dev`
+- [ ] Click "Save Settings" → Success message appears
+- [ ] Reload settings page → All 6 values persist
+
+**Validation:**
+- [ ] Enter invalid LinkedIn URL (e.g., `not-a-url`) → Click Save → Error: "Invalid LinkedIn URL"
+- [ ] Enter invalid Website URL (e.g., `invalid`) → Click Save → Error: "Invalid Website URL"
+- [ ] Fix errors and save successfully
+
+#### Paste Functionality Tests
+
+**Setup:**
+1. Configure all 6 macros with test values (as above)
+2. Open any webpage with text input fields (e.g., Google Form, LinkedIn profile edit)
+
+**Phone Macro:**
+- [ ] Focus on an empty text input field
+- [ ] Click extension icon → Click "📞 Phone" button
+- [ ] Popup closes automatically
+- [ ] Phone number `(555) 123-4567` is pasted into the focused field
+
+**Email Macro:**
+- [ ] Focus on an email input field
+- [ ] Click extension → Click "📧 Email"
+- [ ] Email `test@example.com` is pasted correctly
+
+**Address Macro:**
+- [ ] Focus on a text area
+- [ ] Click extension → Click "📍 Address"
+- [ ] Full address is pasted correctly
+
+**LinkedIn Macro:**
+- [ ] Focus on a URL input
+- [ ] Click extension → Click "💼 LinkedIn"
+- [ ] LinkedIn URL is pasted correctly
+
+**Name Macro:**
+- [ ] Focus on a name field
+- [ ] Click extension → Click "👤 Name"
+- [ ] Name `Jane Doe` is pasted correctly
+
+**Website Macro:**
+- [ ] Focus on a URL field
+- [ ] Click extension → Click "🌐 Website"
+- [ ] Website URL is pasted correctly
+
+#### Edge Cases
+
+**Cursor Position:**
+- [ ] Type "Hello " in a field (with trailing space)
+- [ ] Keep cursor at end of text
+- [ ] Paste Phone macro → Result: "Hello (555) 123-4567"
+- [ ] Type "Hello World" in a field
+- [ ] Move cursor between "Hello" and "World"
+- [ ] Paste Name macro → Result: "Hello Jane Doe World"
+
+**Text Selection:**
+- [ ] Type "Replace this text" in a field
+- [ ] Select "this" (highlight it)
+- [ ] Paste Email macro → Result: "Replace test@example.com text"
+
+**Multiple Fields:**
+- [ ] Open form with multiple input fields
+- [ ] Focus first field → Paste Phone
+- [ ] Press Tab to next field → Paste Email
+- [ ] Press Tab to next field → Paste Address
+- [ ] Verify all fields have correct values
+
+**Reset Settings:**
+- [ ] In Settings, click "Reset to Defaults"
+- [ ] Confirm the reset
+- [ ] All 6 macro fields should be empty
+- [ ] Try pasting → Error messages appear again
+
+#### Browser Compatibility
+
+**Chrome Desktop:**
+- [ ] All tests pass in Chrome on Windows/Mac/Linux
+
+**Chrome DevTools Console:**
+- [ ] Open popup → Press F12 to inspect
+- [ ] Check console → No JavaScript errors
+- [ ] Click each macro button → No console errors
+
+#### Performance
+
+**Load Time:**
+- [ ] Popup opens in < 100ms
+- [ ] Settings page loads in < 200ms
+
+**Paste Speed:**
+- [ ] Paste operation completes in < 100ms
+- [ ] No visible lag or delay
+
+#### Storage Verification
+
+**Chrome Storage Inspection:**
+- [ ] Go to `chrome://extensions`
+- [ ] Find JobSprint → Click "Service worker" link
+- [ ] In console, type: `chrome.storage.sync.get(['clipboardMacros'], console.log)`
+- [ ] Verify output shows all 6 macros:
+  ```javascript
+  {
+    clipboardMacros: {
+      phone: "(555) 123-4567",
+      email: "test@example.com",
+      address: "123 Main St, San Francisco, CA 94105",
+      linkedin: "https://linkedin.com/in/testuser",
+      name: "Jane Doe",
+      website: "https://janedoe.dev"
+    }
+  }
+  ```
+
+#### Regression Tests (Verify other features still work)
+
+- [ ] Job Data Extraction still works
+- [ ] Smart Autofill still works
+- [ ] Google Sheets configuration still works
+- [ ] Test Connection button still works
+
+---
+
+### Critical TODOs or Human Verification Steps:
 
 ---
 
