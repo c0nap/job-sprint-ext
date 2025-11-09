@@ -410,15 +410,17 @@ Happy job hunting! 🎉
 
 ## 🧭 Viewing Logs for Your Google Apps Script Web App
 
-### Quick Fix if “Extensions → Apps Script” Shows 404
+### Quick Fix if “Sheets → Extensions → Apps Script” Shows 404
 
-If clicking **Extensions → Apps Script** gives a 404:
+If clicking **Sheets → Extensions → Apps Script** gives a 404:
 
 1. Open an **incognito window** — the script editor should load there.
 2. If not, go to [https://script.google.com/home/projects](https://script.google.com/home/projects)
    → find your spreadsheet’s bound project in the list.
 3. Open it and click the **“Open spreadsheet”** button to confirm it’s truly bound.
    (If that button opens your sheet, you’re in the right project.)
+
+You can now exit the incognito window and open your Apps Script and Sheet from [https://script.google.com/home/projects](https://script.google.com/home/projects).
 
 ---
 
