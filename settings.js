@@ -40,7 +40,8 @@ async function loadSettings() {
       'SPREADSHEET_ID',
       'PROJECT_ID',
       'ENABLE_MANUAL_ENTRY',
-      'clipboardMacros'
+      'clipboardMacros',
+      'maxSearchResults'
     ]);
 
     // Populate form fields
@@ -49,6 +50,9 @@ async function loadSettings() {
     document.getElementById('projectId').value = result.PROJECT_ID || '';
     document.getElementById('enableManualEntry').checked =
       result.ENABLE_MANUAL_ENTRY !== undefined ? result.ENABLE_MANUAL_ENTRY : true;
+
+    // Populate search settings
+    document.getElementById('maxSearchResults').value = result.maxSearchResults || 10;
 
     // Populate clipboard macro folders
     const macros = result.clipboardMacros || DEFAULT_MACROS;
@@ -228,11 +232,21 @@ async function saveClipboardMacros() {
     return;
   }
 
+  // Get search settings
+  const maxSearchResults = parseInt(document.getElementById('maxSearchResults').value, 10);
+
+  // Validate search results count
+  if (isNaN(maxSearchResults) || maxSearchResults < 5 || maxSearchResults > 50) {
+    showClipboardStatus('Maximum search results must be between 5 and 50', 'error');
+    return;
+  }
+
   try {
-    // Save only clipboard macros to Chrome storage
-    await chrome.storage.sync.set({ clipboardMacros });
+    // Save clipboard macros and search settings to Chrome storage
+    await chrome.storage.sync.set({ clipboardMacros, maxSearchResults });
     showClipboardStatus('Clipboard macros saved successfully!', 'success');
     console.log('Clipboard macros saved:', clipboardMacros);
+    console.log('Max search results:', maxSearchResults);
   } catch (error) {
     showClipboardStatus('Error saving clipboard macros', 'error');
     console.error('Error saving clipboard macros:', error);

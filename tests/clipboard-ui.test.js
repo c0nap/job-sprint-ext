@@ -299,4 +299,66 @@ describe('Clipboard Macros UI - Folder Structure', () => {
       expect(serviceWorkerJs).toContain('macros.phone');
     });
   });
+
+  describe('Search Functionality', () => {
+    test('popup.html should have search input', () => {
+      expect(popupHtml).toContain('id="clipboardSearch"');
+      expect(popupHtml).toContain('type="text"');
+    });
+
+    test('popup.html should have search results container', () => {
+      expect(popupHtml).toContain('id="searchResults"');
+      expect(popupHtml).toContain('class="search-results"');
+    });
+
+    test('popup.js should have search initialization function', () => {
+      const popupJs = fs.readFileSync(
+        path.join(__dirname, '../popup.js'),
+        'utf8'
+      );
+
+      expect(popupJs).toContain('initializeSearch');
+      expect(popupJs).toContain('buildSearchIndex');
+      expect(popupJs).toContain('handleSearchInput');
+    });
+
+    test('popup.js should have search result navigation', () => {
+      const popupJs = fs.readFileSync(
+        path.join(__dirname, '../popup.js'),
+        'utf8'
+      );
+
+      expect(popupJs).toContain('navigateToSearchResult');
+      expect(popupJs).toContain('copySearchResult');
+      expect(popupJs).toContain('displaySearchResults');
+    });
+
+    test('popup.css should have search styling', () => {
+      const popupCss = fs.readFileSync(
+        path.join(__dirname, '../popup.css'),
+        'utf8'
+      );
+
+      expect(popupCss).toContain('.search-container');
+      expect(popupCss).toContain('.search-results');
+      expect(popupCss).toContain('.search-result-item');
+      expect(popupCss).toContain('.search-result-copy');
+    });
+
+    test('settings.html should have max search results input', () => {
+      expect(settingsHtml).toContain('id="maxSearchResults"');
+      expect(settingsHtml).toContain('type="number"');
+      expect(settingsHtml).toContain('min="5"');
+      expect(settingsHtml).toContain('max="50"');
+    });
+
+    test('settings.js should load and save maxSearchResults', () => {
+      const settingsJs = fs.readFileSync(
+        path.join(__dirname, '../settings.js'),
+        'utf8'
+      );
+
+      expect(settingsJs).toContain('maxSearchResults');
+    });
+  });
 });

@@ -30,6 +30,10 @@ const FOLDER_TITLES = {
 // Current navigation state
 let currentFolder = null;
 
+// Search cache
+let searchIndex = null;
+let maxSearchResults = 10; // Default, will be loaded from settings
+
 /**
  * Initialize clipboard macro folder navigation
  * Sets up click handlers for folder buttons and navigation
@@ -49,6 +53,9 @@ function initializeClipboardMacros() {
   if (backButton) {
     backButton.addEventListener('click', closeFolder);
   }
+
+  // Initialize search
+  initializeSearch();
 }
 
 /**
@@ -293,6 +300,235 @@ function showOtherSections() {
   if (footer) {
     footer.classList.remove('other-sections-hidden');
   }
+}
+
+// ============ CLIPBOARD SEARCH ============
+
+/**
+ * Initialize clipboard search functionality
+ */
+function initializeSearch() {
+  // Load search settings
+  chrome.storage.sync.get(['maxSearchResults'], (result) => {
+    if (result.maxSearchResults) {
+      maxSearchResults = result.maxSearchResults;
+    }
+  });
+
+  // Set up search input handler
+  const searchInput = document.getElementById('clipboardSearch');
+  if (searchInput) {
+    searchInput.addEventListener('input', handleSearchInput);
+    searchInput.addEventListener('focus', () => {
+      if (searchInput.value.trim()) {
+        handleSearchInput(); // Show results if there's already a value
+      }
+    });
+  }
+
+  // Hide results when clicking outside
+  document.addEventListener('click', (e) => {
+    const searchContainer = document.querySelector('.search-container');
+    if (searchContainer && !searchContainer.contains(e.target)) {
+      hideSearchResults();
+    }
+  });
+
+  // Build search index
+  buildSearchIndex();
+}
+
+/**
+ * Build search index from all clipboard macros
+ */
+function buildSearchIndex() {
+  chrome.storage.sync.get(['clipboardMacros'], (result) => {
+    const macros = result.clipboardMacros || {};
+    searchIndex = [];
+
+    // Recursively index all items
+    Object.entries(macros).forEach(([folderKey, folderData]) => {
+      indexFolder(folderKey, folderData, [folderKey]);
+    });
+  });
+}
+
+/**
+ * Recursively index a folder and its contents
+ * @param {string} key - Current key
+ * @param {*} value - Current value
+ * @param {Array<string>} path - Path from root to current item
+ */
+function indexFolder(key, value, path) {
+  if (typeof value === 'string') {
+    // Leaf node - add to index
+    searchIndex.push({
+      path: path,
+      dotPath: path.join('.'),
+      value: value,
+      displayPath: path.map(capitalizeFirst).join(' → ')
+    });
+  } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    // Object node - recurse into children
+    Object.entries(value).forEach(([childKey, childValue]) => {
+      indexFolder(childKey, childValue, [...path, childKey]);
+    });
+  }
+}
+
+/**
+ * Handle search input changes
+ */
+function handleSearchInput() {
+  const searchInput = document.getElementById('clipboardSearch');
+  const query = searchInput.value.trim().toLowerCase();
+
+  if (!query) {
+    hideSearchResults();
+    return;
+  }
+
+  if (!searchIndex) {
+    buildSearchIndex();
+    setTimeout(handleSearchInput, 100); // Retry after index is built
+    return;
+  }
+
+  // Search through index
+  const results = searchIndex.filter((item) => {
+    // Match against dot path (e.g., "employment.walmart.start_date")
+    const dotPathMatch = item.dotPath.toLowerCase().includes(query);
+    // Match against display path (e.g., "Employment → Walmart → Start Date")
+    const displayPathMatch = item.displayPath.toLowerCase().includes(query);
+    // Match against value
+    const valueMatch = item.value.toLowerCase().includes(query);
+
+    return dotPathMatch || displayPathMatch || valueMatch;
+  }).slice(0, maxSearchResults);
+
+  displaySearchResults(results);
+}
+
+/**
+ * Display search results in dropdown
+ * @param {Array<Object>} results - Search results to display
+ */
+function displaySearchResults(results) {
+  const resultsContainer = document.getElementById('searchResults');
+
+  if (results.length === 0) {
+    resultsContainer.innerHTML = '<div class="search-no-results">No results found</div>';
+    resultsContainer.style.display = 'block';
+    return;
+  }
+
+  resultsContainer.innerHTML = '';
+
+  results.forEach((result) => {
+    const resultItem = document.createElement('div');
+    resultItem.className = 'search-result-item';
+
+    const pathDiv = document.createElement('div');
+    pathDiv.className = 'search-result-path';
+
+    const breadcrumbSpan = document.createElement('span');
+    breadcrumbSpan.className = 'search-result-breadcrumb';
+    breadcrumbSpan.textContent = result.displayPath;
+
+    const valuePreview = document.createElement('div');
+    valuePreview.style.fontSize = '11px';
+    valuePreview.style.color = '#999';
+    valuePreview.style.marginTop = '2px';
+    valuePreview.textContent = result.value.length > 50
+      ? result.value.substring(0, 50) + '...'
+      : result.value;
+
+    pathDiv.appendChild(breadcrumbSpan);
+    pathDiv.appendChild(valuePreview);
+
+    const copyButton = document.createElement('button');
+    copyButton.className = 'search-result-copy';
+    copyButton.textContent = 'Copy';
+    copyButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copySearchResult(result);
+    });
+
+    // Click on result item navigates to it
+    resultItem.addEventListener('click', () => {
+      navigateToSearchResult(result);
+    });
+
+    resultItem.appendChild(pathDiv);
+    resultItem.appendChild(copyButton);
+    resultsContainer.appendChild(resultItem);
+  });
+
+  resultsContainer.style.display = 'block';
+}
+
+/**
+ * Hide search results dropdown
+ */
+function hideSearchResults() {
+  const resultsContainer = document.getElementById('searchResults');
+  if (resultsContainer) {
+    resultsContainer.style.display = 'none';
+  }
+}
+
+/**
+ * Copy search result value to clipboard
+ * @param {Object} result - Search result to copy
+ */
+async function copySearchResult(result) {
+  try {
+    await navigator.clipboard.writeText(result.value);
+    console.log('✓ Copied to clipboard:', result.value);
+
+    // Visual feedback
+    const searchInput = document.getElementById('clipboardSearch');
+    const originalPlaceholder = searchInput.placeholder;
+    searchInput.placeholder = '✓ Copied!';
+    setTimeout(() => {
+      searchInput.placeholder = originalPlaceholder;
+    }, 1500);
+  } catch (error) {
+    showError('Failed to copy to clipboard');
+    console.error('Clipboard error:', error);
+  }
+}
+
+/**
+ * Navigate to search result location
+ * @param {Object} result - Search result to navigate to
+ */
+function navigateToSearchResult(result) {
+  // Hide search results
+  hideSearchResults();
+
+  // Clear search input
+  const searchInput = document.getElementById('clipboardSearch');
+  if (searchInput) {
+    searchInput.value = '';
+  }
+
+  // Navigate to the folder
+  const folder = result.path[0]; // First element is the folder name
+  openFolder(folder);
+
+  // If there are more levels, we need to handle nested navigation
+  // For now, opening the folder will show all items including nested ones
+}
+
+/**
+ * Capitalize first letter of a string
+ * @param {string} str - String to capitalize
+ * @returns {string} Capitalized string
+ */
+function capitalizeFirst(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 // ============ DATA EXTRACTION ============
