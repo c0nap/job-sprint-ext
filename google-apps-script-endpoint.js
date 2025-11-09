@@ -37,6 +37,70 @@
  */
 
 /**
+ * Setup function - run this FIRST to configure your spreadsheet and project IDs
+ * This stores the configuration in Script Properties so you don't need to hardcode values
+ *
+ * BEFORE RUNNING: Replace the placeholder IDs below with your actual IDs
+ */
+function setupConfiguration() {
+  var spreadsheetId = 'YOUR_SPREADSHEET_ID_HERE';  // ← REPLACE THIS
+  var projectId = 'YOUR_PROJECT_ID_HERE';  // ← REPLACE THIS (your GCP project ID)
+
+  // Validate inputs
+  if (spreadsheetId === 'YOUR_SPREADSHEET_ID_HERE' || projectId === 'YOUR_PROJECT_ID_HERE') {
+    console.error('❌ ERROR: Please replace the placeholder IDs with your actual IDs first!');
+    console.error('Edit this function and update spreadsheetId and projectId before running.');
+    return { success: false, error: 'Configuration not updated - placeholder values detected' };
+  }
+
+  try {
+    // Store in Script Properties
+    var scriptProperties = PropertiesService.getScriptProperties();
+    scriptProperties.setProperties({
+      'SPREADSHEET_ID': spreadsheetId,
+      'PROJECT_ID': projectId
+    });
+
+    console.info('✅ Configuration saved successfully!');
+    console.info({
+      message: 'JobSprint: Configuration saved',
+      spreadsheetId: spreadsheetId,
+      projectId: projectId
+    });
+
+    return {
+      success: true,
+      message: 'Configuration saved. You can now run testDoPost() and runDiagnostics() without editing them.',
+      spreadsheetId: spreadsheetId,
+      projectId: projectId
+    };
+  } catch (error) {
+    console.error('❌ Failed to save configuration: ' + error.toString());
+    return { success: false, error: error.toString() };
+  }
+}
+
+/**
+ * Get configuration from Script Properties
+ * Returns stored spreadsheet and project IDs
+ */
+function getConfiguration() {
+  var scriptProperties = PropertiesService.getScriptProperties();
+  var spreadsheetId = scriptProperties.getProperty('SPREADSHEET_ID');
+  var projectId = scriptProperties.getProperty('PROJECT_ID');
+
+  if (!spreadsheetId || !projectId) {
+    console.warn('⚠️ Configuration not found. Please run setupConfiguration() first.');
+    return null;
+  }
+
+  return {
+    spreadsheetId: spreadsheetId,
+    projectId: projectId
+  };
+}
+
+/**
  * Main entry point for HTTP POST requests from the extension
  * @param {Object} e - Event object containing request parameters
  * @returns {ContentService.TextOutput} JSON response
@@ -307,70 +371,6 @@ function createJsonResponse(data, statusCode) {
   // The statusCode parameter is for documentation purposes
 
   return response;
-}
-
-/**
- * Setup function - run this FIRST to configure your spreadsheet and project IDs
- * This stores the configuration in Script Properties so you don't need to hardcode values
- *
- * BEFORE RUNNING: Replace the placeholder IDs below with your actual IDs
- */
-function setupConfiguration() {
-  var spreadsheetId = 'YOUR_SPREADSHEET_ID_HERE';  // ← REPLACE THIS
-  var projectId = 'YOUR_PROJECT_ID_HERE';  // ← REPLACE THIS (your GCP project ID)
-
-  // Validate inputs
-  if (spreadsheetId === 'YOUR_SPREADSHEET_ID_HERE' || projectId === 'YOUR_PROJECT_ID_HERE') {
-    console.error('❌ ERROR: Please replace the placeholder IDs with your actual IDs first!');
-    console.error('Edit this function and update spreadsheetId and projectId before running.');
-    return { success: false, error: 'Configuration not updated - placeholder values detected' };
-  }
-
-  try {
-    // Store in Script Properties
-    var scriptProperties = PropertiesService.getScriptProperties();
-    scriptProperties.setProperties({
-      'SPREADSHEET_ID': spreadsheetId,
-      'PROJECT_ID': projectId
-    });
-
-    console.info('✅ Configuration saved successfully!');
-    console.info({
-      message: 'JobSprint: Configuration saved',
-      spreadsheetId: spreadsheetId,
-      projectId: projectId
-    });
-
-    return {
-      success: true,
-      message: 'Configuration saved. You can now run testDoPost() and runDiagnostics() without editing them.',
-      spreadsheetId: spreadsheetId,
-      projectId: projectId
-    };
-  } catch (error) {
-    console.error('❌ Failed to save configuration: ' + error.toString());
-    return { success: false, error: error.toString() };
-  }
-}
-
-/**
- * Get configuration from Script Properties
- * Returns stored spreadsheet and project IDs
- */
-function getConfiguration() {
-  var scriptProperties = PropertiesService.getScriptProperties();
-  var spreadsheetId = scriptProperties.getProperty('SPREADSHEET_ID');
-  var projectId = scriptProperties.getProperty('PROJECT_ID');
-
-  if (!spreadsheetId || !projectId) {
-    console.warn('⚠️ Configuration not found. Please run setupConfiguration() first.');
-    return null;
-  }
-
-  return {
-    spreadsheetId: spreadsheetId,
-    projectId: projectId
-  };
 }
 
 /**
