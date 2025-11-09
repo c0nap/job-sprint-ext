@@ -452,6 +452,97 @@ Job applications have legal and professional implications. Requiring approval fo
 
 ---
 
+## 🔒 Security
+
+<details>
+<summary><b>Security Architecture & Privacy</b></summary>
+
+### Overview
+
+JobSprint is designed with security-first principles. Your sensitive information stays private, and configuration secrets never traverse the network.
+
+### Server-Side Secrets Storage
+
+**Critical Design Decision:** Spreadsheet IDs and Project IDs are **never sent over HTTP**.
+
+**How it works:**
+1. **Server-Side Configuration:** Your Spreadsheet ID and Google Cloud Project ID are stored exclusively in Google Apps Script using **Script Properties** (server-side key-value storage)
+2. **One-Time Setup:** Run `setupConfiguration()` once in the Apps Script editor to securely store these values on Google's servers
+3. **Request Payload:** When the extension logs job data, it only sends:
+   - Job details (title, company, location, URL)
+   - Timestamp and source metadata
+   - **Nothing else** - no IDs, no credentials, no secrets
+
+**What this prevents:**
+- Network interception of sensitive IDs
+- Accidental exposure in browser DevTools or network logs
+- Leaking configuration through compromised client systems
+
+### Data Transmission
+
+**What IS sent over the network:**
+- Job posting data (title, company, location, URL) - **only when you click "Extract & Log"**
+- The Apps Script endpoint URL (public web app URL)
+- Test connection requests (minimal test data when you click "Test Connection")
+
+**What is NEVER sent:**
+- Your Google Spreadsheet ID
+- Your Google Cloud Project ID
+- Any credentials or authentication tokens
+- Personal information from clipboard macros (phone, email, etc.)
+- Q&A autofill database entries
+
+### Local Storage
+
+**Where your data lives:**
+
+| Data Type | Storage Location | Synced? | Purpose |
+|-----------|-----------------|---------|---------|
+| **Clipboard Macros** (phone, email, LinkedIn, address) | `chrome.storage.sync` | Yes (across your Chrome browsers) | Quick-paste personal info |
+| **Q&A Autofill Database** | `chrome.storage.local` | No (device-specific) | Store previous form answers |
+| **Configuration** (endpoint URL, Spreadsheet ID, Project ID) | `chrome.storage.sync` + `config.local.js` | Sync storage: Yes / File: No | Remember your settings |
+| **Job Data** | Not stored locally | N/A | Immediately sent to your Google Sheet |
+
+**Privacy Notes:**
+- All data stays **within your Chrome profile** - never sent to third-party servers (except Google Sheets, which YOU control)
+- Clipboard macros sync across your devices via Chrome Sync (can be disabled in Chrome settings)
+- Q&A autofill database is device-local for privacy (not synced)
+
+### Extension Permissions
+
+JobSprint requests the following Chrome permissions:
+
+| Permission | Why We Need It | What We Do |
+|------------|----------------|------------|
+| `storage` | Save your settings and Q&A database | Store config in `chrome.storage.sync/local` |
+| `activeTab` | Access the current job posting page | Extract job details from DOM when you click "Extract" |
+| `scripting` | Inject content script for autofill | Insert autofill logic into application forms |
+
+**What we DON'T request:**
+- `<all_urls>` - We don't access all websites automatically
+- `history` - We don't track your browsing
+- `cookies` - We don't read or modify cookies
+- `webRequest` - We don't intercept your network traffic
+
+### Configuration Security Best Practices
+
+1. **Never commit `config.local.js` to version control** - It contains your personal IDs
+   - Already included in `.gitignore` for your protection
+2. **Use the Settings Page** - Easiest way to configure without touching code
+3. **Verify Apps Script Deployment** - Ensure deployment permissions are set to "Anyone" (required for web apps), not "Anyone with Google account" (would expose your email)
+4. **Regular Backups** - Use Settings → Download Config to backup your configuration
+
+### Reporting Security Issues
+
+If you discover a security vulnerability, please report it responsibly:
+- **Email:** Create an issue at https://github.com/c0nap/job-sprint-ext/issues with `[SECURITY]` prefix
+- **Do not** disclose publicly until a fix is available
+- We'll acknowledge within 48 hours and work on a fix promptly
+
+</details>
+
+---
+
 ## 🧠 Core Technical Glossary
 
 <details>

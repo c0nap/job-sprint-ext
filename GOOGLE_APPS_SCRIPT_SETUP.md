@@ -104,6 +104,8 @@ Before we configure the extension, let's set up the Apps Script test functions s
 
 **What this does:** This saves your configuration in Apps Script's Script Properties, so test functions work automatically without editing them each time.
 
+**🔒 Security Note:** Script Properties are Google's server-side key-value storage. Your Spreadsheet ID and Project ID are stored securely on Google's servers and are NEVER transmitted over the network when logging jobs. The extension only sends job data (title, company, location, URL) - never your configuration secrets.
+
 ---
 
 ### Step 6: Configure the Extension
@@ -128,6 +130,13 @@ Now we need to tell the extension where to send the job data. **There are two me
 - ✅ No need to edit code files
 - ✅ Settings sync across Chrome browsers (if you're signed in)
 - ✅ Can download a `config.local.js` file for backup
+
+**🔒 Why do I need to enter Spreadsheet ID and Project ID here?**
+These values are stored locally in your extension for two purposes:
+1. **User convenience:** Generate the "Open Google Sheet" link in settings
+2. **Initial setup:** Help you configure the Apps Script via `setupConfiguration()`
+
+**Important:** These values are stored locally only and are NEVER sent over the network. When you click "Extract & Log Job Data", the extension only sends job details to your Apps Script endpoint. Your Apps Script retrieves the Spreadsheet ID and Project ID from its own server-side Script Properties.
 
 #### Method B: Using config.local.js (Advanced)
 

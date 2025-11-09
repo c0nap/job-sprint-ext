@@ -4,17 +4,19 @@
  * This script receives job data from the JobSprint Chrome extension
  * and logs it to a Google Sheet.
  *
+ * SECURITY NOTE:
+ * This script uses Script Properties to store sensitive configuration (spreadsheet ID, project ID).
+ * These values are stored server-side and are NOT transmitted over the network.
+ * Only the Apps Script endpoint URL needs to be known by the extension.
+ *
  * DEPLOYMENT INSTRUCTIONS:
- * 1. Copy this entire file
- * 2. Paste into your Google Apps Script editor
+ * 1. Copy this entire file into your Google Apps Script editor
+ * 2. Run setupConfiguration() function ONCE to store your spreadsheet and project IDs
  * 3. Deploy as Web App:
  *    - Execute as: Me
  *    - Who has access: Anyone
- * 4. Copy the deployment URL
- * 5. Update the extension's config.local.js with:
- *    - APPS_SCRIPT_ENDPOINT: your deployment URL
- *    - SPREADSHEET_ID: your Google Sheet ID
- *    - PROJECT_ID: your Google Cloud Project ID
+ * 4. Copy the deployment URL and save it in the extension settings
+ * 5. Run testDoPost() to verify everything works
  *
  * LOGGING:
  * Logs are sent to Google Cloud Logging using console.info(), console.warn(), console.error()
@@ -26,7 +28,8 @@
  * If WARNING/ERROR logs don't show, check the severity filter dropdown (select "All severities")
  *
  * MVP BEHAVIOR:
- * This script accepts partial/incomplete job data. Only spreadsheetId and projectId are required.
+ * This script accepts partial/incomplete job data. Only job details are sent in requests.
+ * Configuration (spreadsheet ID, project ID) is stored server-side in Script Properties.
  * Missing job fields (title, company, location, etc.) are filled with defaults like "(No company)".
  * This allows capturing whatever data is available from each page.
  *
@@ -58,11 +61,25 @@ function doPost(e) {
       requestId: requestId,
       hasTitle: !!requestData.title,
       hasCompany: !!requestData.company,
-      hasSpreadsheetId: !!requestData.spreadsheetId,
-      hasProjectId: !!requestData.projectId
+      hasLocation: !!requestData.location
     });
 
-    // Validate the incoming data
+    // Get configuration from Script Properties
+    var config = getConfiguration();
+    if (!config) {
+      console.error({
+        message: 'JobSprint: Configuration not found',
+        requestId: requestId,
+        hint: 'Run setupConfiguration() to configure this script'
+      });
+
+      return createJsonResponse({
+        success: false,
+        error: 'Server configuration not set up. Please run setupConfiguration() in the Apps Script editor.'
+      }, 500);
+    }
+
+    // Validate the incoming data (just checks it's a valid object with job fields)
     var validation = validateJobData(requestData);
     if (!validation.valid) {
       console.warn({
@@ -78,8 +95,8 @@ function doPost(e) {
       }, 400);
     }
 
-    // Log the job data to the spreadsheet
-    var result = logJobToSheet(requestData, requestId);
+    // Log the job data to the spreadsheet using server-side configuration
+    var result = logJobToSheet(requestData, config, requestId);
 
     if (result.success) {
       var duration = new Date() - startTime;
@@ -127,7 +144,8 @@ function doPost(e) {
 
 /**
  * Validates job data according to the API contract
- * For MVP: Only require config fields (spreadsheetId, projectId), allow partial job data
+ * For MVP: Accept any valid object with job fields (all optional)
+ * Configuration fields are NOT accepted in requests - they're stored server-side
  * @param {Object} data - Job data to validate
  * @returns {Object} { valid: boolean, error?: string }
  */
@@ -137,21 +155,16 @@ function validateJobData(data) {
     return { valid: false, error: 'Invalid job data: data must be an object' };
   }
 
-  // Only require config fields - these are essential for the script to work
-  var requiredConfigFields = ['spreadsheetId', 'projectId'];
-  for (var i = 0; i < requiredConfigFields.length; i++) {
-    var field = requiredConfigFields[i];
-
-    if (!(field in data)) {
-      return { valid: false, error: 'Invalid job data: missing required field "' + field + '"' };
-    }
-
-    if (typeof data[field] !== 'string' || data[field].trim() === '') {
-      return { valid: false, error: 'Invalid job data: "' + field + '" must be a non-empty string' };
-    }
+  // For security: Reject requests that try to send configuration fields
+  // Configuration should only be set server-side via setupConfiguration()
+  if ('spreadsheetId' in data || 'projectId' in data) {
+    return {
+      valid: false,
+      error: 'Invalid request: configuration fields should not be sent in requests. Use setupConfiguration() to configure the server.'
+    };
   }
 
-  // For MVP: Job data fields are optional - we'll log whatever we have
+  // For MVP: All job data fields are optional - we'll log whatever we have
   // This allows us to capture partial data from pages with incomplete extraction
 
   return { valid: true };
@@ -159,11 +172,12 @@ function validateJobData(data) {
 
 /**
  * Logs job data to the Google Sheet
- * @param {Object} jobData - Validated job data
+ * @param {Object} jobData - Validated job data (title, company, location, url, etc.)
+ * @param {Object} config - Server-side configuration from Script Properties
  * @param {string} requestId - Request ID for logging correlation
  * @returns {Object} { success: boolean, error?: string, errorDetails?: Object }
  */
-function logJobToSheet(jobData, requestId) {
+function logJobToSheet(jobData, config, requestId) {
   var spreadsheet = null;
   var sheet = null;
 
@@ -171,11 +185,11 @@ function logJobToSheet(jobData, requestId) {
     console.log({
       message: 'JobSprint: Attempting to open spreadsheet',
       requestId: requestId,
-      hasSpreadsheetId: !!jobData.spreadsheetId
+      hasSpreadsheetId: !!config.spreadsheetId
     });
 
-    // Open the spreadsheet by ID (required for Web App deployment with "Anyone" access)
-    spreadsheet = SpreadsheetApp.openById(jobData.spreadsheetId);
+    // Open the spreadsheet by ID using server-side configuration
+    spreadsheet = SpreadsheetApp.openById(config.spreadsheetId);
 
     console.log({
       message: 'JobSprint: Spreadsheet opened successfully',
@@ -387,9 +401,7 @@ function testDoPost() {
         location: 'San Francisco, CA',
         url: 'https://example.com/jobs/test-123',
         timestamp: new Date().toISOString(),
-        source: 'Manual Test',
-        spreadsheetId: config.spreadsheetId,
-        projectId: config.projectId
+        source: 'Manual Test'
       })
     }
   };

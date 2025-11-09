@@ -215,22 +215,27 @@
         <div class="settings-section">
             <h3>Google Sheets Configuration</h3>
 
+            <div class="alert alert-info">
+                <strong>🔒 Security Note:</strong> Your Spreadsheet ID and Project ID are stored server-side in Apps Script using Script Properties. They are NEVER sent over the network. The extension stores them locally only for your convenience (to open the sheet directly).
+            </div>
+
             <div class="form-group">
                 <label for="appsScriptEndpoint">Apps Script Endpoint URL</label>
                 <input type="url" id="appsScriptEndpoint" placeholder="https://script.google.com/macros/s/.../exec">
-                <small>The URL of your deployed Google Apps Script web app</small>
+                <small>The URL of your deployed Google Apps Script web app (this is the only value sent in requests)</small>
             </div>
 
             <div class="form-group">
                 <label for="spreadsheetId">Google Spreadsheet ID</label>
                 <input type="text" id="spreadsheetId" placeholder="1a2B3c4D5e6F7g8H9i0J...">
-                <small>Found in the URL: docs.google.com/spreadsheets/d/<strong>SPREADSHEET_ID</strong>/edit</small>
+                <small>Found in the URL: docs.google.com/spreadsheets/d/<strong>SPREADSHEET_ID</strong>/edit<br>
+                Used to: (1) Configure Apps Script via setupConfiguration(), (2) Open sheet from extension</small>
             </div>
 
             <div class="form-group">
                 <label for="projectId">Google Cloud Project ID</label>
                 <input type="text" id="projectId" placeholder="123456789012">
-                <small>Your Google Cloud numeric project ID</small>
+                <small>Your Google Cloud numeric project ID (for Apps Script configuration and logging)</small>
             </div>
 
             <div class="sheet-connection">
@@ -260,7 +265,7 @@
             <h3>Configuration File</h3>
 
             <div class="alert alert-info">
-                Settings are stored in Chrome sync storage and can be exported to <code>config.local.js</code> for the service worker.
+                Settings are stored in Chrome sync storage and can be exported to <code>config.local.js</code> for the service worker. Your configuration is stored locally in the extension only - sensitive IDs are configured server-side in Apps Script and never transmitted over the network.
             </div>
 
             <div class="config-download">

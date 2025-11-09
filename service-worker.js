@@ -274,16 +274,16 @@ function testConnection(sendResponse) {
   }
 
   // Send a test request to the endpoint
+  // NOTE: We only send job data fields. Spreadsheet ID and Project ID
+  // are configured server-side in Apps Script using Script Properties.
+  // This ensures secrets never traverse the network.
   const testData = {
     title: '(Test Connection)',
     company: '(Test)',
     location: '(Test)',
     url: 'https://test.com',
     timestamp: new Date().toISOString(),
-    source: 'Connection Test',
-    spreadsheetId: spreadsheetId,
-    projectId: projectId,
-    isTest: true // Flag to indicate this is a test (Apps Script can ignore it)
+    source: 'Connection Test'
   };
 
   fetch(endpoint, {
@@ -384,30 +384,12 @@ function handleLogJobData(data, sendResponse) {
     return;
   }
 
-  // Get spreadsheet ID from config
-  const spreadsheetId = getSpreadsheetId();
-  if (!spreadsheetId || spreadsheetId === 'YOUR_SPREADSHEET_ID_HERE') {
-    console.warn('Spreadsheet ID not configured');
-    sendResponse({
-      success: false,
-      error: 'Spreadsheet ID not configured. Please set up your Spreadsheet ID in config.local.js.'
-    });
-    return;
-  }
-
-  // Get spreadsheet ID from config
-  const projectId = getProjectId();
-  if (!projectId || projectId === 'YOUR_PROJECT_ID_HERE') {
-    console.warn('Project ID not configured');
-    sendResponse({
-      success: false,
-      error: 'Project ID not configured. Please set up your Project ID in config.local.js.'
-    });
-    return;
-  }
-
-  // Add spreadsheet ID and project ID to the data payload
-  const dataWithIds = { ...data, spreadsheetId, projectId };
+  // NOTE: Spreadsheet ID and Project ID are NOT sent in the request.
+  // They are configured server-side in Apps Script using Script Properties.
+  // This security design ensures sensitive IDs never traverse the network.
+  // The extension stores these values locally only for:
+  // 1. Settings UI display and "Open Sheet" link
+  // 2. User convenience (remembering configuration)
 
   // Send data to endpoint
   // Note: Apps Script Web Apps support CORS, so we don't need 'no-cors' mode
@@ -416,7 +398,7 @@ function handleLogJobData(data, sendResponse) {
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(dataWithIds),
+    body: JSON.stringify(data), // Only job data fields, no secrets
     signal: AbortSignal.timeout(15000) // 15 second timeout
   })
     .then((response) => {
