@@ -131,6 +131,25 @@ function toggleFolder(header, folder) {
   }
 }
 
+// Recursively validate object values (must be strings or nested objects)
+function validateObjectValues(obj, path) {
+  for (const [key, val] of Object.entries(obj)) {
+    const currentPath = path ? `${path}.${key}` : key;
+
+    if (typeof val === 'string') {
+      // Strings are valid leaf values
+      continue;
+    } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+      // Nested objects are valid - recurse
+      validateObjectValues(val, currentPath);
+    } else {
+      // Arrays, null, numbers, booleans, etc. are not allowed
+      const typeDesc = Array.isArray(val) ? 'array' : typeof val;
+      throw new Error(`Value at "${currentPath}" must be a string or object, not ${typeDesc}`);
+    }
+  }
+}
+
 // Validate JSON for a folder
 function validateFolderJSON(folder) {
   const textarea = document.querySelector(`.folder-json-editor[data-folder="${folder}"]`);
@@ -155,12 +174,8 @@ function validateFolderJSON(folder) {
       throw new Error('Must be a JSON object, not an array');
     }
 
-    // All values must be strings
-    for (const [key, val] of Object.entries(parsed)) {
-      if (typeof val !== 'string') {
-        throw new Error(`Value for "${key}" must be a string`);
-      }
-    }
+    // Validate values recursively (strings or nested objects)
+    validateObjectValues(parsed, '');
 
     // Valid JSON
     textarea.classList.remove('error');

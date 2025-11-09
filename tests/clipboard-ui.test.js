@@ -156,6 +156,11 @@ describe('Clipboard Macros UI - Folder Structure', () => {
       expect(settingsHtml).toContain('stored locally in your browser');
       expect(settingsHtml).toContain('never sent to any server');
     });
+
+    test('should mention nested objects support in folder hint', () => {
+      expect(settingsHtml).toContain('Values can be strings or nested objects');
+      expect(settingsHtml).toContain('verbalized as lists');
+    });
   });
 
   describe('CSS Grid Layout', () => {
@@ -215,6 +220,16 @@ describe('Clipboard Macros UI - Folder Structure', () => {
       expect(popupJs).toContain('employment');
     });
 
+    test('popup.js should have verbalization function for nested objects', () => {
+      const popupJs = fs.readFileSync(
+        path.join(__dirname, '../popup.js'),
+        'utf8'
+      );
+
+      expect(popupJs).toContain('verbalizeValue');
+      expect(popupJs).toContain('convert nested objects to readable text');
+    });
+
     test('settings.js should have DEFAULT_MACROS with nested structure', () => {
       const settingsJs = fs.readFileSync(
         path.join(__dirname, '../settings.js'),
@@ -239,6 +254,15 @@ describe('Clipboard Macros UI - Folder Structure', () => {
       expect(settingsJs).toContain('validateFolderJSON');
       expect(settingsJs).toContain('setupFolderHandlers');
       expect(settingsJs).toContain('toggleFolder');
+    });
+
+    test('settings.js should have recursive validation for nested objects', () => {
+      const settingsJs = fs.readFileSync(
+        path.join(__dirname, '../settings.js'),
+        'utf8'
+      );
+
+      expect(settingsJs).toContain('validateObjectValues');
     });
   });
 

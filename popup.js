@@ -121,12 +121,21 @@ function renderSubMenuItems(items) {
 
   // Render each item as a button
   itemsArray.forEach(([key, value]) => {
-    if (!value || value.trim() === '') return; // Skip empty items
+    // Skip empty values (but allow objects)
+    if (typeof value === 'string' && value.trim() === '') return;
+    if (!value) return;
 
     const button = document.createElement('button');
     button.className = 'sub-menu-item-btn';
     button.textContent = formatItemLabel(key, value);
-    button.title = value; // Show full value on hover
+
+    // Set tooltip - verbalize for preview
+    if (typeof value === 'object') {
+      button.title = `Click to paste verbalized:\n${verbalizeValue(value)}`;
+    } else {
+      button.title = value; // Show full value on hover
+    }
+
     button.addEventListener('click', () => handleItemClick(key, value));
 
     container.appendChild(button);
@@ -146,14 +155,20 @@ function renderSubMenuItems(items) {
 /**
  * Format item label for display
  * @param {string} key - Item key
- * @param {string} value - Item value
+ * @param {string|Object} value - Item value
  * @returns {string} Formatted label
  */
 function formatItemLabel(key, value) {
   // Capitalize first letter of key
   const label = key.charAt(0).toUpperCase() + key.slice(1);
 
-  // Truncate value if too long
+  // If value is an object (nested), show folder icon
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const itemCount = Object.keys(value).length;
+    return `📁 ${label} (${itemCount} items)`;
+  }
+
+  // If value is a string, show preview
   const maxLength = 30;
   const truncatedValue = value.length > maxLength
     ? value.substring(0, maxLength) + '...'
@@ -163,11 +178,58 @@ function formatItemLabel(key, value) {
 }
 
 /**
+ * Verbalize a value - convert nested objects to readable text
+ * If value is a string, return as-is. If object, convert to bulleted list.
+ * @param {string|Object} value - Value to verbalize
+ * @param {number} indent - Indentation level (for recursion)
+ * @returns {string} Verbalized text
+ */
+function verbalizeValue(value, indent = 0) {
+  // Base case: if it's a string, return it
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  // If it's an object, convert to list format
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const entries = Object.entries(value);
+    if (entries.length === 0) {
+      return '(empty)';
+    }
+
+    const lines = [];
+    const indentStr = '  '.repeat(indent);
+
+    entries.forEach(([key, val]) => {
+      const label = key.charAt(0).toUpperCase() + key.slice(1);
+
+      if (typeof val === 'string') {
+        // Leaf node - format as "- Key: value"
+        lines.push(`${indentStr}- ${label}: ${val}`);
+      } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+        // Nested object - format with sub-items
+        lines.push(`${indentStr}- ${label}:`);
+        const nested = verbalizeValue(val, indent + 1);
+        lines.push(nested);
+      }
+    });
+
+    return lines.join('\n');
+  }
+
+  // Fallback for unexpected types
+  return String(value);
+}
+
+/**
  * Handle item click - paste the value
  * @param {string} key - Item key
- * @param {string} value - Item value to paste
+ * @param {string|Object} value - Item value to paste (string or nested object)
  */
 function handleItemClick(key, value) {
+  // Verbalize the value (converts objects to readable text, keeps strings as-is)
+  const textToPaste = verbalizeValue(value);
+
   // Query active tab
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const activeTab = tabs[0];
@@ -179,7 +241,7 @@ function handleItemClick(key, value) {
     // Send paste command to content script
     chrome.tabs.sendMessage(
       activeTab.id,
-      { action: 'pasteText', text: value },
+      { action: 'pasteText', text: textToPaste },
       (pasteResponse) => {
         if (chrome.runtime.lastError) {
           showError(`Failed to paste: ${chrome.runtime.lastError.message}`);
