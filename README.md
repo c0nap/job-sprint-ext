@@ -12,8 +12,6 @@ Built for Chrome using **Manifest V3**, this extension speeds up high-volume job
 
 1. **Clipboard Macros** - Instantly paste common resume text (phone, email, address, LinkedIn) into any form field with one click
 2. **Job Data Extraction** - Capture and log job details (title, company, location) from any posting to your private Google Sheet
-   - **NEW:** Manual data entry popup - Review and fill missing fields before submitting
-   - **NEW:** Configurable via Settings page - No more editing code files!
 3. **Semi-Supervised Autofill** - Automatically fill application forms based on past answers, with approval prompts for every field
 4. **Settings Page** - Easy configuration of Google Sheets credentials, manual entry preferences, and more
 
@@ -492,6 +490,33 @@ JobSprint is designed with security-first principles. Your sensitive information
 - Personal information from clipboard macros (phone, email, etc.)
 - Q&A autofill database entries
 
+# TODO: Incporate into main security section here. The phrasing and info of both should be preserved
+
+
+## Security & Privacy
+
+**Is my data secure?**
+
+Yes! Here's what happens:
+1. Your extension runs locally in your browser
+2. Job data goes directly from your browser to your personal Google Apps Script
+3. Your Apps Script writes to your personal Google Sheet
+4. No third-party services or databases are involved
+
+**Who can access my data?**
+
+Only you. The Apps Script URL is private (only you know it), and the Google Sheet is in your Google Drive with your normal Drive permissions.
+
+**Can I revoke access?**
+
+Yes, at any time:
+1. In Apps Script, click Deploy → Manage deployments
+2. Click the Archive button (🗑️) next to your deployment
+3. The extension will stop being able to add jobs to your sheet
+
+---
+
+
 ### Local Storage
 
 **Where your data lives:**
@@ -625,6 +650,40 @@ A dedicated CI workflow runs Jest on every pull request. If unit tests pass (log
 
 </details>
 
+# TODO: Incorporate this into a testing page
+
+## Testing Your Setup (Optional)
+
+Want to test the script directly without the extension?
+
+1. In the Apps Script editor, find the `testDoPost()` function at the bottom
+2. Click the **Run** button (▶️) at the top
+3. Select `testDoPost` from the function dropdown if needed
+4. Click Run
+5. Check the "Execution log" - you should see "Test response: {"success":true,...}"
+6. Check your Google Sheet - a test job should appear
+
+---
+
+## Local Testing Alternative
+
+If you want to test the extension without deploying to Google Apps Script, you can use the **local mock endpoint**:
+
+1. In your terminal, run:
+   ```bash
+   npm run start:local-endpoint
+   ```
+2. Change the URL in `service-worker.js` to:
+   ```javascript
+   return 'http://localhost:3000/log-job';
+   ```
+3. Test the extension - data will be logged to your console instead of Google Sheets
+
+See `LOCAL_ENDPOINT_README.md` for more details on local testing.
+
+
+
+
 ### CI/CD Pipeline
 
 <details>
@@ -664,165 +723,7 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed CI
 
 ## 🔧 Developer Notes
 
-<details>
-<summary><b>Production Readiness & Professional Extension Groundwork</b></summary>
-
-These items should be addressed before public release to avoid major refactoring later. They represent foundational work for a professional, safe, and maintainable Chrome extension.
-
-### 🔐 Security & Privacy (Critical)
-
-1. **Content Security Policy Hardening**
-   - Current: Default Manifest V3 CSP
-   - Needed: Explicit CSP in manifest.json preventing inline scripts, eval(), and unsafe practices
-   - Why: Required for Chrome Web Store, prevents XSS vulnerabilities
-   - Files: `manifest.json`
-
-2. **Input Sanitization & XSS Prevention**
-   - Current: Direct DOM insertion in some places (`textContent` is used, but should be verified everywhere)
-   - Needed: Audit all DOM manipulation, ensure no `innerHTML` usage without sanitization
-   - Why: Malicious job postings could inject scripts if we're not careful
-   - Files: `content-script.js`, `popup.js`
-
-3. **Rate Limiting for Apps Script Requests**
-   - Current: No protection against rapid-fire requests
-   - Needed: Client-side throttling/debouncing for "Extract & Log" button
-   - Why: Prevents accidental DoS of user's own Apps Script, respects quota limits
-   - Files: `popup.js:handleExtractClick()`, `service-worker.js:handleLogJobData()`
-
-4. **Sensitive Data Handling Review**
-   - Current: Clipboard macros (phone, email) stored in sync storage
-   - Needed: Document data retention policy, add "Clear All Data" button in settings
-   - Why: Users should control their data, especially PII like phone/email
-   - Files: `settings.html`, `settings.js`
-
-### 🛡️ Error Handling & Resilience
-
-5. **Network Failure Graceful Degradation**
-   - Current: 15-second timeout exists, but no retry logic
-   - Needed: Optional retry with exponential backoff for transient failures
-   - Why: User's network might be flaky; don't lose job data due to momentary disconnect
-   - Files: `service-worker.js:handleLogJobData()`, `service-worker.js:testConnection()`
-
-6. **Chrome Storage Quota Monitoring**
-   - Current: No quota checks before writing to storage
-   - Needed: Check `chrome.storage.sync.getBytesInUse()` before writes, warn user near limits
-   - Why: Sync storage has 100KB limit; Q&A database could grow large
-   - Files: `service-worker.js:handleSaveQAPair()`, `settings.js:saveSettings()`
-
-7. **Comprehensive Error Logging**
-   - Current: `console.error()` and `console.warn()` scattered throughout
-   - Needed: Centralized error reporting function, structured error objects with context
-   - Why: Easier debugging, potential for user-facing "Report Bug" feature with logs
-   - Files: All JavaScript files
-
-### 📊 Data Management & UX
-
-8. **Q&A Database Management UI**
-   - Current: Q&A pairs saved automatically, no way to view/edit/delete them
-   - Needed: Settings page section showing saved Q&A pairs with search/filter/delete
-   - Why: Users should control their data, debug bad matches, clean up old answers
-   - Files: `settings.html`, `settings.js`
-
-9. **Export/Import All Settings**
-   - Current: Only config.local.js download/upload (partial config)
-   - Needed: Full backup/restore including clipboard macros, Q&A database, all settings
-   - Why: Users switching devices, backing up before reinstall, sharing setups
-   - Files: `settings.js`
-
-10. **Clipboard Macro Management in Settings**
-    - Current: Clipboard macros can only be set via popup, no bulk editing
-    - Needed: Settings page section to edit all macros in one place
-    - Why: Better UX, especially for initial setup
-    - Files: `settings.html`, `settings.js`
-
-### ⚡ Performance & Scalability
-
-11. **Job Data Extraction Selector Maintenance**
-    - Current: Selectors for major job boards (LinkedIn, Indeed, etc.)
-    - Needed: Selector testing framework, automated monitoring for site changes
-    - Why: Sites update their HTML; selectors break silently
-    - Files: `content-script-testable.js:extractJobData()`
-
-12. **Q&A Database Size Limits**
-    - Current: Unlimited Q&A pair storage (could exceed 10MB local storage eventually)
-    - Needed: Configurable max size, auto-prune oldest entries, or LRU eviction
-    - Why: Prevent storage bloat, maintain performance as database grows
-    - Files: `service-worker.js:handleSaveQAPair()`
-
-13. **Content Script Performance on Complex Pages**
-    - Current: Autofill queries all form fields on complex application portals
-    - Needed: Debouncing, selector caching, progressive processing for 100+ field forms
-    - Why: Large forms (ATS systems) can have hundreds of fields
-    - Files: `content-script.js:startAutofill()`
-
-### 🧪 Testing & Quality Assurance
-
-14. **UI Interaction Testing**
-    - Current: Unit tests for business logic only (Jest)
-    - Needed: Browser automation tests (Puppeteer/Playwright) for popup, settings, modals
-    - Why: Catch UI regressions, test message passing between components
-    - Files: New test suite in `tests/e2e/`
-
-15. **Cross-Browser Compatibility** (Future)
-    - Current: Chrome-only (Manifest V3, chrome.* APIs)
-    - Needed: Firefox port (browser.* APIs, Manifest V2/V3 differences)
-    - Why: Expand user base, Firefox has privacy-focused users
-    - Files: Potentially all JavaScript files
-
-### 🌐 Internationalization & Accessibility (Nice-to-Have)
-
-16. **i18n Support**
-    - Current: All strings hardcoded in English
-    - Needed: Chrome i18n API (`chrome.i18n.getMessage()`), translation files
-    - Why: Non-English speakers, required for global Chrome Web Store distribution
-    - Files: All HTML/JS files, new `_locales/` directory
-
-17. **Accessibility Audit**
-    - Current: No ARIA labels, keyboard navigation incomplete
-    - Needed: Screen reader testing, ARIA attributes, full keyboard support
-    - Why: Legal compliance (ADA, WCAG), inclusive design
-    - Files: All HTML files, CSS for focus states
-
-### 📝 Documentation & Onboarding
-
-18. **First-Run Tutorial/Onboarding**
-    - Current: README is comprehensive but users may not read it
-    - Needed: In-extension tutorial on first install (popup overlay, tooltips)
-    - Why: Lower barrier to entry, increase successful setups
-    - Files: New `onboarding.html`, `onboarding.js`
-
-19. **Inline Help & Tooltips**
-    - Current: Settings page has some help text, but could be more comprehensive
-    - Needed: Contextual help icons (?) with tooltips explaining each field
-    - Why: Users shouldn't have to leave the extension to understand it
-    - Files: `settings.html`, `popup.html`
-
----
-
-**Priority Ranking for Next Phase:**
-
-🔥 **Critical (Do before public release):**
-- #1 CSP Hardening
-- #2 Input Sanitization
-- #4 Sensitive Data Handling Review
-- #7 Comprehensive Error Logging
-- #8 Q&A Database Management UI
-
-⚠️ **Important (Do soon to avoid refactor):**
-- #3 Rate Limiting
-- #5 Network Failure Retry
-- #6 Storage Quota Monitoring
-- #9 Export/Import All Settings
-- #14 UI Interaction Testing
-
-✨ **Nice-to-Have (Can defer):**
-- #10 Clipboard Macro Management in Settings
-- #11 Selector Testing Framework
-- #12 Q&A Database Size Limits
-- #16 i18n Support
-- #18 First-Run Tutorial
-
-</details>
+Put a list here containing critical TODOs or human verification steps:
 
 ---
 
