@@ -120,32 +120,61 @@ function initializeStorage() {
   // Setup clipboard macros in sync storage (synced across devices)
   chrome.storage.sync.get(['clipboardMacros'], (result) => {
     if (!result.clipboardMacros) {
+      // Initialize with new nested structure
       chrome.storage.sync.set({
         clipboardMacros: {
-          phone: '',
-          email: '',
-          address: '',
-          linkedin: '',
-          name: '',
-          website: ''
+          demographics: {
+            phone: '',
+            email: '',
+            address: '',
+            name: '',
+            linkedin: '',
+            website: ''
+          },
+          references: {},
+          education: {},
+          skills: {},
+          projects: {},
+          employment: {}
         }
       });
     } else {
-      // Ensure existing storage has all 6 macro keys (migration support)
+      // Migration: Convert old flat structure to new nested structure
       const macros = result.clipboardMacros;
-      let needsUpdate = false;
 
-      if (!macros.hasOwnProperty('name')) {
-        macros.name = '';
-        needsUpdate = true;
-      }
-      if (!macros.hasOwnProperty('website')) {
-        macros.website = '';
-        needsUpdate = true;
-      }
+      // Check if it's the old flat structure (has 'phone', 'email' at root level)
+      if (macros.phone !== undefined || macros.email !== undefined) {
+        // Migrate to new structure
+        const newStructure = {
+          demographics: {
+            phone: macros.phone || '',
+            email: macros.email || '',
+            address: macros.address || '',
+            name: macros.name || '',
+            linkedin: macros.linkedin || '',
+            website: macros.website || ''
+          },
+          references: {},
+          education: {},
+          skills: {},
+          projects: {},
+          employment: {}
+        };
 
-      if (needsUpdate) {
-        chrome.storage.sync.set({ clipboardMacros: macros });
+        chrome.storage.sync.set({ clipboardMacros: newStructure });
+        console.log('Migrated clipboard macros to new nested structure');
+      } else if (!macros.demographics) {
+        // Ensure all folders exist
+        chrome.storage.sync.set({
+          clipboardMacros: {
+            demographics: macros.demographics || {},
+            references: macros.references || {},
+            education: macros.education || {},
+            skills: macros.skills || {},
+            projects: macros.projects || {},
+            employment: macros.employment || {}
+          }
+        });
       }
     }
   });
@@ -173,8 +202,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   switch (message.action) {
     case 'getClipboardMacro':
-      // Retrieve saved clipboard macro from storage
+      // Retrieve saved clipboard macro from storage (legacy support)
       handleGetClipboardMacro(message.key, sendResponse);
+      return true; // Async: chrome.storage.sync.get
+
+    case 'getClipboardFolder':
+      // Retrieve all items in a clipboard folder
+      handleGetClipboardFolder(message.folder, sendResponse);
       return true; // Async: chrome.storage.sync.get
 
     case 'saveClipboardMacro':
@@ -229,13 +263,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ============ CLIPBOARD FEATURE ============
 
 /**
- * Get clipboard macro value from sync storage
+ * Get clipboard folder contents from sync storage
+ * @param {string} folder - Folder name (demographics, references, etc.)
+ * @param {Function} sendResponse - Response callback
+ */
+function handleGetClipboardFolder(folder, sendResponse) {
+  chrome.storage.sync.get(['clipboardMacros'], (result) => {
+    const items = result.clipboardMacros?.[folder] || {};
+    sendResponse({ success: true, items });
+  });
+}
+
+/**
+ * Get clipboard macro value from sync storage (legacy support)
  * @param {string} key - Macro key (phone, email, address, linkedin, name, website)
  * @param {Function} sendResponse - Response callback
  */
 function handleGetClipboardMacro(key, sendResponse) {
   chrome.storage.sync.get(['clipboardMacros'], (result) => {
-    const value = result.clipboardMacros?.[key] || '';
+    // Try to find in demographics folder (most common)
+    const value = result.clipboardMacros?.demographics?.[key] || '';
     sendResponse({ success: true, value });
   });
 }

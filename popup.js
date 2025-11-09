@@ -17,62 +17,212 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ============ CLIPBOARD MACROS ============
 
+// Folder titles mapping
+const FOLDER_TITLES = {
+  demographics: 'Demographics',
+  references: 'References',
+  education: 'Education',
+  skills: 'Skills',
+  projects: 'Projects',
+  employment: 'Employment'
+};
+
+// Current navigation state
+let currentFolder = null;
+
 /**
- * Initialize clipboard macro buttons and event listeners
- * Sets up click handlers for macro buttons (phone, email, address, linkedin, name, website)
+ * Initialize clipboard macro folder navigation
+ * Sets up click handlers for folder buttons and navigation
  */
 function initializeClipboardMacros() {
-  const macroButtons = document.querySelectorAll('.macro-btn');
-
-  macroButtons.forEach((button) => {
+  // Set up folder button click handlers
+  const folderButtons = document.querySelectorAll('.folder-btn');
+  folderButtons.forEach((button) => {
     button.addEventListener('click', () => {
-      const key = button.getAttribute('data-key');
-      handleMacroClick(key);
+      const folder = button.getAttribute('data-folder');
+      openFolder(folder);
     });
+  });
+
+  // Set up back button
+  const backButton = document.getElementById('backButton');
+  if (backButton) {
+    backButton.addEventListener('click', closeFolder);
+  }
+}
+
+/**
+ * Open a folder and show its items
+ * @param {string} folder - Folder name (demographics, references, etc.)
+ */
+function openFolder(folder) {
+  currentFolder = folder;
+
+  // Get folder data from storage
+  chrome.runtime.sendMessage(
+    { action: 'getClipboardFolder', folder },
+    (response) => {
+      if (!response?.success) {
+        showError('Failed to load folder items');
+        return;
+      }
+
+      // Show sub-menu and hide folder view
+      document.getElementById('folderView').style.display = 'none';
+      document.getElementById('subMenuView').style.display = 'block';
+
+      // Hide other feature sections
+      hideOtherSections();
+
+      // Update sub-menu title
+      document.getElementById('subMenuTitle').textContent = FOLDER_TITLES[folder] || 'Items';
+
+      // Render items
+      renderSubMenuItems(response.items);
+    }
+  );
+}
+
+/**
+ * Close folder and return to main view
+ */
+function closeFolder() {
+  currentFolder = null;
+
+  // Show folder view and hide sub-menu
+  document.getElementById('folderView').style.display = 'grid';
+  document.getElementById('subMenuView').style.display = 'none';
+
+  // Show other feature sections
+  showOtherSections();
+}
+
+/**
+ * Render sub-menu items
+ * @param {Object} items - Object with key-value pairs of items
+ */
+function renderSubMenuItems(items) {
+  const container = document.getElementById('subMenuItems');
+  container.innerHTML = '';
+
+  // Convert items object to array
+  const itemsArray = Object.entries(items || {});
+
+  if (itemsArray.length === 0) {
+    // Show empty state
+    container.innerHTML = `
+      <div class="sub-menu-empty">
+        <div class="sub-menu-empty-icon">📭</div>
+        <div>No items configured</div>
+      </div>
+    `;
+    return;
+  }
+
+  // Render each item as a button
+  itemsArray.forEach(([key, value]) => {
+    if (!value || value.trim() === '') return; // Skip empty items
+
+    const button = document.createElement('button');
+    button.className = 'sub-menu-item-btn';
+    button.textContent = formatItemLabel(key, value);
+    button.title = value; // Show full value on hover
+    button.addEventListener('click', () => handleItemClick(key, value));
+
+    container.appendChild(button);
+  });
+
+  // If no non-empty items, show empty state
+  if (container.children.length === 0) {
+    container.innerHTML = `
+      <div class="sub-menu-empty">
+        <div class="sub-menu-empty-icon">📭</div>
+        <div>No items configured</div>
+      </div>
+    `;
+  }
+}
+
+/**
+ * Format item label for display
+ * @param {string} key - Item key
+ * @param {string} value - Item value
+ * @returns {string} Formatted label
+ */
+function formatItemLabel(key, value) {
+  // Capitalize first letter of key
+  const label = key.charAt(0).toUpperCase() + key.slice(1);
+
+  // Truncate value if too long
+  const maxLength = 30;
+  const truncatedValue = value.length > maxLength
+    ? value.substring(0, maxLength) + '...'
+    : value;
+
+  return `${label}: ${truncatedValue}`;
+}
+
+/**
+ * Handle item click - paste the value
+ * @param {string} key - Item key
+ * @param {string} value - Item value to paste
+ */
+function handleItemClick(key, value) {
+  // Query active tab
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const activeTab = tabs[0];
+    if (!activeTab) {
+      showError('No active tab found');
+      return;
+    }
+
+    // Send paste command to content script
+    chrome.tabs.sendMessage(
+      activeTab.id,
+      { action: 'pasteText', text: value },
+      (pasteResponse) => {
+        if (chrome.runtime.lastError) {
+          showError(`Failed to paste: ${chrome.runtime.lastError.message}`);
+          return;
+        }
+
+        console.log('Text pasted successfully');
+        window.close(); // Close popup after successful paste
+      }
+    );
   });
 }
 
 /**
- * Handle macro button click - retrieve value and paste to active field
- * Flow: Get value from storage -> Query active tab -> Send to content script -> Paste
- * @param {string} key - Macro key (phone, email, address, linkedin, name, website)
+ * Hide other feature sections when sub-menu is open
  */
-function handleMacroClick(key) {
-  // Step 1: Get the macro value from service worker storage
-  chrome.runtime.sendMessage(
-    { action: 'getClipboardMacro', key },
-    (response) => {
-      // Early return if no value is set
-      if (!response?.success || !response?.value) {
-        showError('No value set for this macro. Please configure it in Settings.');
-        return;
-      }
+function hideOtherSections() {
+  const sections = document.querySelectorAll('.feature-section:not(#clipboardSection)');
+  sections.forEach(section => {
+    section.classList.add('other-sections-hidden');
+  });
 
-      // Step 2: Query the active tab
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const activeTab = tabs[0];
-        if (!activeTab) {
-          showError('No active tab found');
-          return;
-        }
+  // Also hide footer
+  const footer = document.querySelector('footer');
+  if (footer) {
+    footer.classList.add('other-sections-hidden');
+  }
+}
 
-        // Step 3: Send paste command to content script
-        chrome.tabs.sendMessage(
-          activeTab.id,
-          { action: 'pasteText', text: response.value },
-          (pasteResponse) => {
-            if (chrome.runtime.lastError) {
-              showError(`Failed to paste: ${chrome.runtime.lastError.message}`);
-              return;
-            }
+/**
+ * Show other feature sections when returning to folder view
+ */
+function showOtherSections() {
+  const sections = document.querySelectorAll('.feature-section:not(#clipboardSection)');
+  sections.forEach(section => {
+    section.classList.remove('other-sections-hidden');
+  });
 
-            console.log('Text pasted successfully');
-            window.close(); // Close popup after successful paste
-          }
-        );
-      });
-    }
-  );
+  // Also show footer
+  const footer = document.querySelector('footer');
+  if (footer) {
+    footer.classList.remove('other-sections-hidden');
+  }
 }
 
 // ============ DATA EXTRACTION ============

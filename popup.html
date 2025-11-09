@@ -14,15 +14,29 @@
     </header>
 
     <!-- Clipboard Macros Section -->
-    <section class="feature-section">
+    <section class="feature-section" id="clipboardSection">
       <h2>Clipboard Macros</h2>
-      <div class="button-group">
-        <button class="macro-btn" data-key="phone">📞 Phone</button>
-        <button class="macro-btn" data-key="email">📧 Email</button>
-        <button class="macro-btn" data-key="address">📍 Address</button>
-        <button class="macro-btn" data-key="linkedin">💼 LinkedIn</button>
-        <button class="macro-btn" data-key="name">👤 Name</button>
-        <button class="macro-btn" data-key="website">🌐 Website</button>
+
+      <!-- Main folder view -->
+      <div id="folderView" class="button-group">
+        <button class="folder-btn" data-folder="demographics">👤 Demographics</button>
+        <button class="folder-btn" data-folder="references">📋 References</button>
+        <button class="folder-btn" data-folder="education">🎓 Education</button>
+        <button class="folder-btn" data-folder="skills">💡 Skills</button>
+        <button class="folder-btn" data-folder="projects">🚀 Projects</button>
+        <button class="folder-btn" data-folder="employment">💼 Employment</button>
+      </div>
+
+      <!-- Sub-menu view (hidden by default) -->
+      <div id="subMenuView" style="display: none;">
+        <div class="sub-menu-header">
+          <button id="backButton" class="nav-btn">← Back</button>
+          <h3 id="subMenuTitle">Items</h3>
+        </div>
+        <div id="subMenuItems" class="sub-menu-items"></div>
+        <div class="sub-menu-hint">
+          Configure items in Settings
+        </div>
       </div>
     </section>
 

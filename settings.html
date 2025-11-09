@@ -201,6 +201,129 @@
         .config-download button {
             width: 100%;
         }
+
+        /* Clipboard folder styles */
+        .clipboard-folder {
+            margin-bottom: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .folder-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px;
+            background: white;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.2s;
+        }
+
+        .folder-header:hover {
+            background: #f0f0f0;
+        }
+
+        .folder-header.expanded {
+            background: #e8f4f8;
+        }
+
+        .folder-icon {
+            font-size: 12px;
+            color: #666;
+            transition: transform 0.2s;
+        }
+
+        .folder-header.expanded .folder-icon {
+            transform: rotate(90deg);
+        }
+
+        .folder-title {
+            font-weight: 500;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .folder-content {
+            padding: 12px;
+            background: #fafafa;
+            border-top: 1px solid #ddd;
+        }
+
+        .folder-item {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            align-items: flex-start;
+        }
+
+        .folder-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .item-input-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .item-key-input {
+            padding: 6px 8px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            background: #e8f4f8;
+        }
+
+        .item-value-input {
+            padding: 6px 8px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .item-value-input:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
+        }
+
+        .btn-remove-item {
+            flex-shrink: 0;
+            padding: 6px 10px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            align-self: flex-start;
+            margin-top: 4px;
+        }
+
+        .btn-remove-item:hover {
+            background: #c0392b;
+        }
+
+        .btn-add-item {
+            width: 100%;
+            padding: 8px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            margin-top: 8px;
+        }
+
+        .btn-add-item:hover {
+            background: #2980b9;
+        }
     </style>
 </head>
 <body>
@@ -216,43 +339,78 @@
             <h3>Clipboard Macros</h3>
 
             <div class="alert alert-info">
-                Configure your personal information to quickly paste into job application forms. These values are stored locally in your browser and are never sent to any server.
+                Configure your personal information organized by category. Click on each category to expand and edit items. These values are stored locally in your browser and are never sent to any server.
             </div>
 
-            <div class="form-group">
-                <label for="macroPhone">📞 Phone Number</label>
-                <input type="text" id="macroPhone" placeholder="e.g., (555) 123-4567">
-                <small>Your phone number in your preferred format</small>
+            <!-- Demographics folder -->
+            <div class="clipboard-folder">
+                <div class="folder-header" data-folder="demographics">
+                    <span class="folder-icon">▶</span>
+                    <span class="folder-title">👤 Demographics</span>
+                </div>
+                <div class="folder-content" id="folder-demographics" style="display: none;">
+                    <div id="demographics-items"></div>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label for="macroEmail">📧 Email Address</label>
-                <input type="email" id="macroEmail" placeholder="e.g., your.name@example.com">
-                <small>Your primary email address</small>
+            <!-- References folder -->
+            <div class="clipboard-folder">
+                <div class="folder-header" data-folder="references">
+                    <span class="folder-icon">▶</span>
+                    <span class="folder-title">📋 References</span>
+                </div>
+                <div class="folder-content" id="folder-references" style="display: none;">
+                    <div id="references-items"></div>
+                    <button type="button" class="btn-add-item" data-folder="references">+ Add Reference</button>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label for="macroAddress">📍 Address</label>
-                <input type="text" id="macroAddress" placeholder="e.g., 123 Main St, City, ST 12345">
-                <small>Your full address (street, city, state, zip)</small>
+            <!-- Education folder -->
+            <div class="clipboard-folder">
+                <div class="folder-header" data-folder="education">
+                    <span class="folder-icon">▶</span>
+                    <span class="folder-title">🎓 Education</span>
+                </div>
+                <div class="folder-content" id="folder-education" style="display: none;">
+                    <div id="education-items"></div>
+                    <button type="button" class="btn-add-item" data-folder="education">+ Add Education</button>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label for="macroLinkedin">💼 LinkedIn Profile</label>
-                <input type="url" id="macroLinkedin" placeholder="e.g., https://linkedin.com/in/yourprofile">
-                <small>Your LinkedIn profile URL</small>
+            <!-- Skills folder -->
+            <div class="clipboard-folder">
+                <div class="folder-header" data-folder="skills">
+                    <span class="folder-icon">▶</span>
+                    <span class="folder-title">💡 Skills</span>
+                </div>
+                <div class="folder-content" id="folder-skills" style="display: none;">
+                    <div id="skills-items"></div>
+                    <button type="button" class="btn-add-item" data-folder="skills">+ Add Skill</button>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label for="macroName">👤 Full Name</label>
-                <input type="text" id="macroName" placeholder="e.g., Jane Doe">
-                <small>Your full name as it should appear on applications</small>
+            <!-- Projects folder -->
+            <div class="clipboard-folder">
+                <div class="folder-header" data-folder="projects">
+                    <span class="folder-icon">▶</span>
+                    <span class="folder-title">🚀 Projects</span>
+                </div>
+                <div class="folder-content" id="folder-projects" style="display: none;">
+                    <div id="projects-items"></div>
+                    <button type="button" class="btn-add-item" data-folder="projects">+ Add Project</button>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label for="macroWebsite">🌐 Website/Portfolio</label>
-                <input type="url" id="macroWebsite" placeholder="e.g., https://yourportfolio.com">
-                <small>Your personal website or online portfolio</small>
+            <!-- Employment folder -->
+            <div class="clipboard-folder">
+                <div class="folder-header" data-folder="employment">
+                    <span class="folder-icon">▶</span>
+                    <span class="folder-title">💼 Employment</span>
+                </div>
+                <div class="folder-content" id="folder-employment" style="display: none;">
+                    <div id="employment-items"></div>
+                    <button type="button" class="btn-add-item" data-folder="employment">+ Add Employment</button>
+                </div>
             </div>
         </div>
 
