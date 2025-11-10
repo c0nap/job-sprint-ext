@@ -41,9 +41,12 @@ let maxSearchResults = 10; // Default, will be loaded from settings
 function initializeClipboardMacros() {
   // Set up folder button click handlers
   const folderButtons = document.querySelectorAll('.folder-btn');
+  console.log('Found folder buttons:', folderButtons.length);
+
   folderButtons.forEach((button) => {
     button.addEventListener('click', () => {
       const folder = button.getAttribute('data-folder');
+      console.log('Folder button clicked:', folder);
       openFolder(folder);
     });
   });
@@ -63,18 +66,23 @@ function initializeClipboardMacros() {
  * @param {string} folder - Folder name (demographics, references, etc.)
  */
 function openFolder(folder) {
+  console.log('openFolder called for:', folder);
   currentFolder = folder;
 
   // Get folder data from storage
   chrome.runtime.sendMessage(
     { action: 'getClipboardFolder', folder },
     (response) => {
+      console.log('Got response from service worker:', response);
+
       if (!response?.success) {
+        console.error('Failed to load folder items');
         showError('Failed to load folder items');
         return;
       }
 
       // Show sub-menu and hide folder view
+      console.log('Showing sub-menu, hiding folder view');
       document.getElementById('folderView').style.display = 'none';
       document.getElementById('subMenuView').style.display = 'block';
 
@@ -85,6 +93,7 @@ function openFolder(folder) {
       document.getElementById('subMenuTitle').textContent = FOLDER_TITLES[folder] || 'Items';
 
       // Render items
+      console.log('Rendering items:', response.items);
       renderSubMenuItems(response.items);
     }
   );
