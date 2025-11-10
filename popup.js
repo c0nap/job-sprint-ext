@@ -21,15 +21,21 @@ document.addEventListener('DOMContentLoaded', () => {
 let debugConsoleEnabled = false;
 const debugLogs = [];
 const MAX_LOGS = 100;
+let consoleHeight = 200; // Default height in pixels
 
 /**
  * Initialize debug console
  * Loads settings and sets up UI
  */
 function initializeDebugConsole() {
-  // Load debug console setting
-  chrome.storage.sync.get(['debugConsoleEnabled'], (result) => {
+  // Load debug console settings
+  chrome.storage.sync.get(['debugConsoleEnabled', 'consoleHeight'], (result) => {
     debugConsoleEnabled = result.debugConsoleEnabled || false;
+    consoleHeight = result.consoleHeight || 200;
+
+    console.log('[Debug] Console enabled:', debugConsoleEnabled);
+    console.log('[Debug] Stored logs count:', debugLogs.length);
+
     updateDebugConsoleVisibility();
   });
 
@@ -44,6 +50,48 @@ function initializeDebugConsole() {
   if (toggleBtn) {
     toggleBtn.addEventListener('click', toggleDebugConsole);
   }
+
+  // Set up resize handle
+  initializeConsoleResize();
+}
+
+/**
+ * Initialize console resize functionality
+ */
+function initializeConsoleResize() {
+  const resizeHandle = document.getElementById('consoleResizeHandle');
+  const consolePanel = document.getElementById('debugConsole');
+
+  if (!resizeHandle || !consolePanel) return;
+
+  let isResizing = false;
+  let startY = 0;
+  let startHeight = 0;
+
+  resizeHandle.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    startY = e.clientY;
+    startHeight = consolePanel.offsetHeight;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    const deltaY = startY - e.clientY; // Inverted because we're dragging top edge
+    const newHeight = Math.min(Math.max(startHeight + deltaY, 100), 400); // Min 100px, max 400px
+
+    consolePanel.style.maxHeight = newHeight + 'px';
+    consoleHeight = newHeight;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      // Save the new height to storage
+      chrome.storage.sync.set({ consoleHeight });
+    }
+  });
 }
 
 /**
@@ -59,6 +107,7 @@ function log(message) {
     debugLogs.shift();
   }
 
+  // Always try to append if console is enabled (don't wait for flag)
   if (debugConsoleEnabled) {
     appendToConsole(logEntry);
   }
@@ -80,6 +129,7 @@ function logError(message) {
     debugLogs.shift();
   }
 
+  // Always try to append if console is enabled (don't wait for flag)
   if (debugConsoleEnabled) {
     appendToConsole(logEntry);
   }
@@ -134,15 +184,21 @@ function updateDebugConsoleVisibility() {
   const consolePanel = document.getElementById('debugConsole');
   if (consolePanel) {
     consolePanel.style.display = debugConsoleEnabled ? 'block' : 'none';
+    consolePanel.style.maxHeight = consoleHeight + 'px';
 
     // Render all existing logs if enabling
     if (debugConsoleEnabled) {
       const consoleOutput = document.getElementById('consoleOutput');
       if (consoleOutput) {
         consoleOutput.innerHTML = '';
+        console.log('[Debug] Replaying', debugLogs.length, 'logs');
         debugLogs.forEach(entry => appendToConsole(entry));
+      } else {
+        console.error('[Debug] consoleOutput element not found!');
       }
     }
+  } else {
+    console.error('[Debug] debugConsole panel not found!');
   }
 }
 

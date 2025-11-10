@@ -612,6 +612,27 @@ footer a:hover {
   display: flex;
   flex-direction: column;
   z-index: 2000;
+  resize: vertical;
+  overflow: hidden;
+}
+
+.console-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  background: transparent;
+  z-index: 2001;
+}
+
+.console-resize-handle:hover {
+  background: rgba(0, 123, 255, 0.3);
+}
+
+.console-resize-handle:active {
+  background: rgba(0, 123, 255, 0.5);
 }
 
 .debug-console-header {
