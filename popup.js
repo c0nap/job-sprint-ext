@@ -39,18 +39,11 @@ let maxSearchResults = 10; // Default, will be loaded from settings
  * Sets up click handlers for folder buttons and navigation
  */
 function initializeClipboardMacros() {
-  console.log('[DEBUG] initializeClipboardMacros called');
-
   // Set up folder button click handlers
   const folderButtons = document.querySelectorAll('.folder-btn');
-  console.log('[DEBUG] Found folder buttons:', folderButtons.length);
-
-  folderButtons.forEach((button, index) => {
-    const folder = button.getAttribute('data-folder');
-    console.log(`[DEBUG] Attaching listener to button ${index}, folder: ${folder}`);
-
+  folderButtons.forEach((button) => {
     button.addEventListener('click', () => {
-      console.log('[DEBUG] Folder button clicked:', folder);
+      const folder = button.getAttribute('data-folder');
       openFolder(folder);
     });
   });
@@ -63,7 +56,6 @@ function initializeClipboardMacros() {
 
   // Initialize search
   initializeSearch();
-  console.log('[DEBUG] initializeClipboardMacros complete');
 }
 
 /**
@@ -71,15 +63,12 @@ function initializeClipboardMacros() {
  * @param {string} folder - Folder name (demographics, references, etc.)
  */
 function openFolder(folder) {
-  console.log('openFolder called for:', folder);
   currentFolder = folder;
 
   // Get folder data from storage
   chrome.runtime.sendMessage(
     { action: 'getClipboardFolder', folder },
     (response) => {
-      console.log('Got response from service worker:', response);
-
       if (!response?.success) {
         console.error('Failed to load folder items');
         showError('Failed to load folder items');
@@ -87,7 +76,6 @@ function openFolder(folder) {
       }
 
       // Show sub-menu and hide folder view
-      console.log('Showing sub-menu, hiding folder view');
       document.getElementById('folderView').style.display = 'none';
       document.getElementById('subMenuView').style.display = 'block';
 
@@ -98,7 +86,6 @@ function openFolder(folder) {
       document.getElementById('subMenuTitle').textContent = FOLDER_TITLES[folder] || 'Items';
 
       // Render items
-      console.log('Rendering items:', response.items);
       renderSubMenuItems(response.items);
     }
   );
@@ -156,12 +143,12 @@ function renderSubMenuItems(items) {
       const button = document.createElement('button');
       button.className = 'sub-menu-item-btn folder-item';
       button.textContent = formatItemLabel(key, value);
-      button.title = 'Nested folder - use copy button to copy verbalized content';
+      button.title = 'Click to copy verbalized content';
 
-      // Folder main button doesn't do anything (or could navigate deeper in future)
+      // Folder main button copies verbalized content
       button.addEventListener('click', (e) => {
         e.stopPropagation();
-        // For now, folders don't navigate deeper - just use copy button
+        handleItemClick(key, value);
       });
 
       // Create copy button for folder
