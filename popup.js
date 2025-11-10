@@ -6,13 +6,20 @@
 
 // Initialize all popup features when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('=================================================');
   console.log('JobSprint Popup loaded');
+  console.log('Initializing features...');
+  console.log('=================================================');
 
   initializeClipboardMacros();
   initializeExtraction();
   initializeAutofill();
   initializeSettings();
   initializeManualEntryModal();
+
+  console.log('=================================================');
+  console.log('All features initialized successfully');
+  console.log('=================================================');
 });
 
 // ============ CLIPBOARD MACROS ============
@@ -39,19 +46,28 @@ let maxSearchResults = 10; // Default, will be loaded from settings
  * Sets up click handlers for folder buttons and navigation
  */
 function initializeClipboardMacros() {
+  console.log('[Clipboard] Initializing clipboard macros...');
+
   // Set up folder button click handlers
   const folderButtons = document.querySelectorAll('.folder-btn');
+  console.log(`[Clipboard] Found ${folderButtons.length} folder buttons`);
+
   folderButtons.forEach((button) => {
     const folderName = button.getAttribute('data-folder');
-    button.onclick = function() {
+    console.log(`[Clipboard] Setting up click handler for folder: ${folderName}`);
+
+    // Use addEventListener instead of onclick for better compatibility
+    button.addEventListener('click', function() {
+      console.log(`[Clipboard] Folder button clicked: ${folderName}`);
       openFolder(folderName);
-    };
+    });
   });
 
   // Set up back button
   const backButton = document.getElementById('backButton');
   if (backButton) {
-    backButton.onclick = closeFolder;
+    console.log('[Clipboard] Setting up back button handler');
+    backButton.addEventListener('click', closeFolder);
   }
 
   // Initialize search
@@ -63,32 +79,48 @@ function initializeClipboardMacros() {
  * @param {string} folder - Folder name (demographics, references, etc.)
  */
 function openFolder(folder) {
-  if (!folder) return;
+  if (!folder) {
+    console.error('[Clipboard] openFolder called with empty folder name');
+    return;
+  }
 
+  console.log(`[Clipboard] Opening folder: ${folder}`);
   currentFolder = folder;
 
   // Get folder data from storage
+  console.log(`[Clipboard] Sending getClipboardFolder message to service worker for folder: ${folder}`);
   chrome.runtime.sendMessage(
     { action: 'getClipboardFolder', folder },
     (response) => {
       if (chrome.runtime.lastError) {
-        console.error('Runtime error:', chrome.runtime.lastError);
+        console.error('[Clipboard] Runtime error:', chrome.runtime.lastError);
+        console.error('[Clipboard] Error details:', chrome.runtime.lastError.message);
         showError('Failed to communicate with extension');
         return;
       }
 
+      console.log(`[Clipboard] Received response from service worker:`, response);
+
       if (!response || !response.success) {
-        console.error('Failed to load folder items');
+        console.error('[Clipboard] Failed to load folder items, response:', response);
         showError('Failed to load folder items');
         return;
       }
+
+      console.log(`[Clipboard] Successfully loaded ${Object.keys(response.items || {}).length} items from folder: ${folder}`);
 
       // Show sub-menu and hide folder view
       const folderView = document.getElementById('folderView');
       const subMenuView = document.getElementById('subMenuView');
 
-      if (folderView) folderView.style.display = 'none';
-      if (subMenuView) subMenuView.style.display = 'block';
+      if (folderView) {
+        console.log('[Clipboard] Hiding folder view');
+        folderView.style.display = 'none';
+      }
+      if (subMenuView) {
+        console.log('[Clipboard] Showing sub-menu view');
+        subMenuView.style.display = 'block';
+      }
 
       // Hide other feature sections
       hideOtherSections();
@@ -96,10 +128,13 @@ function openFolder(folder) {
       // Update sub-menu title
       const subMenuTitle = document.getElementById('subMenuTitle');
       if (subMenuTitle) {
-        subMenuTitle.textContent = FOLDER_TITLES[folder] || 'Items';
+        const title = FOLDER_TITLES[folder] || 'Items';
+        console.log(`[Clipboard] Setting sub-menu title to: ${title}`);
+        subMenuTitle.textContent = title;
       }
 
       // Render items
+      console.log('[Clipboard] Rendering sub-menu items');
       renderSubMenuItems(response.items || {});
     }
   );
@@ -109,17 +144,25 @@ function openFolder(folder) {
  * Close folder and return to main view
  */
 function closeFolder() {
+  console.log(`[Clipboard] Closing folder, returning to main view`);
   currentFolder = null;
 
   // Show folder view and hide sub-menu
   const folderView = document.getElementById('folderView');
   const subMenuView = document.getElementById('subMenuView');
 
-  if (folderView) folderView.style.display = 'grid';
-  if (subMenuView) subMenuView.style.display = 'none';
+  if (folderView) {
+    console.log('[Clipboard] Showing folder view');
+    folderView.style.display = 'grid';
+  }
+  if (subMenuView) {
+    console.log('[Clipboard] Hiding sub-menu view');
+    subMenuView.style.display = 'none';
+  }
 
   // Show other feature sections
   showOtherSections();
+  console.log('[Clipboard] Back to main view complete');
 }
 
 /**
@@ -127,18 +170,28 @@ function closeFolder() {
  * @param {Object} items - Object with key-value pairs of items
  */
 function renderSubMenuItems(items) {
+  console.log('[Clipboard] renderSubMenuItems called');
+  console.log('[Clipboard] Items to render:', items);
+
   const container = document.getElementById('subMenuItems');
+  if (!container) {
+    console.error('[Clipboard] subMenuItems container not found!');
+    return;
+  }
 
   // Clear container
+  console.log('[Clipboard] Clearing existing items from container');
   while (container.firstChild) {
     container.removeChild(container.firstChild);
   }
 
   // Convert items object to array
   const itemsArray = Object.entries(items || {});
+  console.log(`[Clipboard] Processing ${itemsArray.length} items`);
 
   if (itemsArray.length === 0) {
     // Show empty state
+    console.log('[Clipboard] No items found, showing empty state');
     showEmptyState(container);
     return;
   }
@@ -318,20 +371,25 @@ function verbalizeValue(value, indent = 0) {
  * @param {string|Object} value - Item value to copy (string or nested object)
  */
 async function handleItemClick(key, value) {
+  console.log(`[Clipboard] Item clicked - Key: ${key}, Value type: ${typeof value}`);
+
   // Verbalize the value (converts objects to readable text, keeps strings as-is)
   const textToCopy = verbalizeValue(value);
+  console.log(`[Clipboard] Text to copy (${textToCopy.length} chars):`, textToCopy);
 
   try {
     // Copy to clipboard using Clipboard API
     await navigator.clipboard.writeText(textToCopy);
 
-    console.log('✓ Copied to clipboard:', textToCopy);
+    console.log('[Clipboard] ✓ Successfully copied to clipboard');
+    console.log('[Clipboard] Copied text:', textToCopy);
 
     // Show visual feedback (similar to search copy)
     // Keep popup open so user can copy multiple items
   } catch (error) {
+    console.error('[Clipboard] ✗ Failed to copy to clipboard');
+    console.error('[Clipboard] Error details:', error);
     showError('Failed to copy to clipboard');
-    console.error('Clipboard error:', error);
   }
 }
 
