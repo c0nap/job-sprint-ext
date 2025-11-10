@@ -39,11 +39,18 @@ let maxSearchResults = 10; // Default, will be loaded from settings
  * Sets up click handlers for folder buttons and navigation
  */
 function initializeClipboardMacros() {
+  console.log('[DEBUG] initializeClipboardMacros called');
+
   // Set up folder button click handlers
   const folderButtons = document.querySelectorAll('.folder-btn');
-  folderButtons.forEach((button) => {
+  console.log('[DEBUG] Found folder buttons:', folderButtons.length);
+
+  folderButtons.forEach((button, index) => {
+    const folder = button.getAttribute('data-folder');
+    console.log(`[DEBUG] Attaching listener to button ${index}, folder: ${folder}`);
+
     button.addEventListener('click', () => {
-      const folder = button.getAttribute('data-folder');
+      console.log('[DEBUG] Folder button clicked:', folder);
       openFolder(folder);
     });
   });
@@ -56,6 +63,7 @@ function initializeClipboardMacros() {
 
   // Initialize search
   initializeSearch();
+  console.log('[DEBUG] initializeClipboardMacros complete');
 }
 
 /**
