@@ -24,7 +24,9 @@ describe('Clipboard Service Worker Functions', () => {
         phone: '555-1234',
         email: 'test@example.com',
         address: '123 Main St',
-        linkedin: 'linkedin.com/in/test'
+        linkedin: 'linkedin.com/in/test',
+        name: 'John Doe',
+        website: 'https://johndoe.com'
       };
 
       // Mock chrome.storage.sync.get to return mock data
@@ -252,6 +254,188 @@ describe('Clipboard Service Worker Functions', () => {
           expect(getResponse.success).toBe(true);
           expect(getResponse.value).toBe('555-TEST');
           done();
+        });
+      });
+    });
+  });
+
+  describe('6-Macro MVP Tests', () => {
+    test('should support all 6 macros (phone, email, address, linkedin, name, website)', (done) => {
+      const allMacros = {
+        phone: '(555) 123-4567',
+        email: 'user@example.com',
+        address: '123 Main St, San Francisco, CA 94105',
+        linkedin: 'https://linkedin.com/in/username',
+        name: 'Jane Smith',
+        website: 'https://janesmith.dev'
+      };
+
+      chrome.storage.sync.get.mockImplementation((keys, callback) => {
+        callback({ clipboardMacros: allMacros });
+      });
+
+      function handleGetClipboardMacro(key, sendResponse) {
+        chrome.storage.sync.get(['clipboardMacros'], (result) => {
+          const value = result.clipboardMacros?.[key] || '';
+          sendResponse({ success: true, value });
+        });
+      }
+
+      // Test all 6 macros
+      const macrosToTest = ['phone', 'email', 'address', 'linkedin', 'name', 'website'];
+      let completedTests = 0;
+
+      macrosToTest.forEach((key) => {
+        handleGetClipboardMacro(key, (response) => {
+          expect(response.success).toBe(true);
+          expect(response.value).toBe(allMacros[key]);
+          completedTests++;
+
+          if (completedTests === macrosToTest.length) {
+            done();
+          }
+        });
+      });
+    });
+
+    test('should save and retrieve name macro', (done) => {
+      let storedData = { clipboardMacros: {} };
+
+      chrome.storage.sync.get.mockImplementation((keys, callback) => {
+        callback(storedData);
+      });
+
+      chrome.storage.sync.set.mockImplementation((data, callback) => {
+        storedData = { ...storedData, ...data };
+        callback();
+      });
+
+      function handleSaveClipboardMacro(key, value, sendResponse) {
+        chrome.storage.sync.get(['clipboardMacros'], (result) => {
+          const macros = result.clipboardMacros || {};
+          macros[key] = value;
+          chrome.storage.sync.set({ clipboardMacros: macros }, () => {
+            sendResponse({ success: true });
+          });
+        });
+      }
+
+      function handleGetClipboardMacro(key, sendResponse) {
+        chrome.storage.sync.get(['clipboardMacros'], (result) => {
+          const value = result.clipboardMacros?.[key] || '';
+          sendResponse({ success: true, value });
+        });
+      }
+
+      handleSaveClipboardMacro('name', 'John Doe', (saveResponse) => {
+        expect(saveResponse.success).toBe(true);
+
+        handleGetClipboardMacro('name', (getResponse) => {
+          expect(getResponse.success).toBe(true);
+          expect(getResponse.value).toBe('John Doe');
+          done();
+        });
+      });
+    });
+
+    test('should save and retrieve website macro', (done) => {
+      let storedData = { clipboardMacros: {} };
+
+      chrome.storage.sync.get.mockImplementation((keys, callback) => {
+        callback(storedData);
+      });
+
+      chrome.storage.sync.set.mockImplementation((data, callback) => {
+        storedData = { ...storedData, ...data };
+        callback();
+      });
+
+      function handleSaveClipboardMacro(key, value, sendResponse) {
+        chrome.storage.sync.get(['clipboardMacros'], (result) => {
+          const macros = result.clipboardMacros || {};
+          macros[key] = value;
+          chrome.storage.sync.set({ clipboardMacros: macros }, () => {
+            sendResponse({ success: true });
+          });
+        });
+      }
+
+      function handleGetClipboardMacro(key, sendResponse) {
+        chrome.storage.sync.get(['clipboardMacros'], (result) => {
+          const value = result.clipboardMacros?.[key] || '';
+          sendResponse({ success: true, value });
+        });
+      }
+
+      handleSaveClipboardMacro('website', 'https://portfolio.example.com', (saveResponse) => {
+        expect(saveResponse.success).toBe(true);
+
+        handleGetClipboardMacro('website', (getResponse) => {
+          expect(getResponse.success).toBe(true);
+          expect(getResponse.value).toBe('https://portfolio.example.com');
+          done();
+        });
+      });
+    });
+
+    test('should handle all 6 macros in mixed save/get operations', (done) => {
+      let storedData = { clipboardMacros: {} };
+
+      chrome.storage.sync.get.mockImplementation((keys, callback) => {
+        callback(storedData);
+      });
+
+      chrome.storage.sync.set.mockImplementation((data, callback) => {
+        storedData = { ...storedData, ...data };
+        callback();
+      });
+
+      function handleSaveClipboardMacro(key, value, sendResponse) {
+        chrome.storage.sync.get(['clipboardMacros'], (result) => {
+          const macros = result.clipboardMacros || {};
+          macros[key] = value;
+          chrome.storage.sync.set({ clipboardMacros: macros }, () => {
+            sendResponse({ success: true });
+          });
+        });
+      }
+
+      function handleGetClipboardMacro(key, sendResponse) {
+        chrome.storage.sync.get(['clipboardMacros'], (result) => {
+          const value = result.clipboardMacros?.[key] || '';
+          sendResponse({ success: true, value });
+        });
+      }
+
+      // Save all 6 macros sequentially
+      handleSaveClipboardMacro('phone', '(555) 111-2222', () => {
+        handleSaveClipboardMacro('email', 'test@test.com', () => {
+          handleSaveClipboardMacro('address', '456 Elm St', () => {
+            handleSaveClipboardMacro('linkedin', 'https://linkedin.com/in/test', () => {
+              handleSaveClipboardMacro('name', 'Test User', () => {
+                handleSaveClipboardMacro('website', 'https://test.dev', () => {
+                  // Verify all macros are stored correctly
+                  expect(storedData.clipboardMacros).toEqual({
+                    phone: '(555) 111-2222',
+                    email: 'test@test.com',
+                    address: '456 Elm St',
+                    linkedin: 'https://linkedin.com/in/test',
+                    name: 'Test User',
+                    website: 'https://test.dev'
+                  });
+
+                  // Retrieve and verify each macro
+                  handleGetClipboardMacro('name', (response) => {
+                    expect(response.value).toBe('Test User');
+                    handleGetClipboardMacro('website', (response2) => {
+                      expect(response2.value).toBe('https://test.dev');
+                      done();
+                    });
+                  });
+                });
+              });
+            });
+          });
         });
       });
     });

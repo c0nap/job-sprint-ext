@@ -10,7 +10,7 @@ Built for Chrome using **Manifest V3**, this extension speeds up high-volume job
 
 ## Features at a Glance
 
-1. **Clipboard Macros** - Instantly paste common resume text (phone, email, address, LinkedIn) into any form field with one click
+1. **Clipboard Macros** - Instantly paste common resume text (phone, email, address, LinkedIn, name, website) into any form field with one click
 2. **Job Data Extraction** - Capture and log job details (title, company, location) from any posting to your private Google Sheet
 3. **Semi-Supervised Autofill** - Automatically fill application forms based on past answers, with approval prompts for every field
 4. **Settings Page** - Easy configuration of Google Sheets credentials, manual entry preferences, and more
@@ -523,7 +523,7 @@ Yes, at any time:
 
 | Data Type | Storage Location | Synced? | Purpose |
 |-----------|-----------------|---------|---------|
-| **Clipboard Macros** (phone, email, LinkedIn, address) | `chrome.storage.sync` | Yes (across your Chrome browsers) | Quick-paste personal info |
+| **Clipboard Macros** (phone, email, address, LinkedIn, name, website) | `chrome.storage.sync` | Yes (across your Chrome browsers) | Quick-paste personal info |
 | **Q&A Autofill Database** | `chrome.storage.local` | No (device-specific) | Store previous form answers |
 | **Configuration** (endpoint URL, Spreadsheet ID, Project ID) | `chrome.storage.sync` + `config.local.js` | Sync storage: Yes / File: No | Remember your settings |
 | **Job Data** | Not stored locally | N/A | Immediately sent to your Google Sheet |
@@ -723,7 +723,10 @@ See [`.github/workflows/README.md`](.github/workflows/README.md) for detailed CI
 
 ## 🔧 Developer Notes
 
-Put a list here containing critical TODOs or human verification steps:
+
+---
+
+### Critical TODOs or Human Verification Steps:
 
 ---
 
