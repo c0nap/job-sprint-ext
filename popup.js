@@ -6,21 +6,145 @@
 
 // Initialize all popup features when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('=================================================');
-  console.log('JobSprint Popup loaded');
-  console.log('Initializing features...');
-  console.log('=================================================');
+  initializeDebugConsole();
+  log('JobSprint Popup loaded');
 
   initializeClipboardMacros();
   initializeExtraction();
   initializeAutofill();
   initializeSettings();
   initializeManualEntryModal();
-
-  console.log('=================================================');
-  console.log('All features initialized successfully');
-  console.log('=================================================');
 });
+
+// ============ DEBUG CONSOLE ============
+
+let debugConsoleEnabled = false;
+const debugLogs = [];
+const MAX_LOGS = 100;
+
+/**
+ * Initialize debug console
+ * Loads settings and sets up UI
+ */
+function initializeDebugConsole() {
+  // Load debug console setting
+  chrome.storage.sync.get(['debugConsoleEnabled'], (result) => {
+    debugConsoleEnabled = result.debugConsoleEnabled || false;
+    updateDebugConsoleVisibility();
+  });
+
+  // Set up clear button
+  const clearBtn = document.getElementById('clearConsoleBtn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', clearDebugConsole);
+  }
+
+  // Set up toggle button
+  const toggleBtn = document.getElementById('toggleConsoleBtn');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', toggleDebugConsole);
+  }
+}
+
+/**
+ * Log a message to debug console
+ * @param {string} message - Message to log
+ */
+function log(message) {
+  const timestamp = new Date().toLocaleTimeString();
+  const logEntry = { timestamp, message, type: 'log' };
+
+  debugLogs.push(logEntry);
+  if (debugLogs.length > MAX_LOGS) {
+    debugLogs.shift();
+  }
+
+  if (debugConsoleEnabled) {
+    appendToConsole(logEntry);
+  }
+
+  // Also log to browser console
+  console.log(message);
+}
+
+/**
+ * Log an error to debug console
+ * @param {string} message - Error message to log
+ */
+function logError(message) {
+  const timestamp = new Date().toLocaleTimeString();
+  const logEntry = { timestamp, message, type: 'error' };
+
+  debugLogs.push(logEntry);
+  if (debugLogs.length > MAX_LOGS) {
+    debugLogs.shift();
+  }
+
+  if (debugConsoleEnabled) {
+    appendToConsole(logEntry);
+  }
+
+  // Also log to browser console
+  console.error(message);
+}
+
+/**
+ * Append log entry to console UI
+ * @param {Object} entry - Log entry
+ */
+function appendToConsole(entry) {
+  const consoleOutput = document.getElementById('consoleOutput');
+  if (!consoleOutput) return;
+
+  const logLine = document.createElement('div');
+  logLine.className = `console-line console-${entry.type}`;
+  logLine.textContent = `[${entry.timestamp}] ${entry.message}`;
+
+  consoleOutput.appendChild(logLine);
+  consoleOutput.scrollTop = consoleOutput.scrollHeight;
+}
+
+/**
+ * Clear debug console
+ */
+function clearDebugConsole() {
+  debugLogs.length = 0;
+  const consoleOutput = document.getElementById('consoleOutput');
+  if (consoleOutput) {
+    consoleOutput.innerHTML = '';
+  }
+  log('Console cleared');
+}
+
+/**
+ * Toggle debug console visibility
+ */
+function toggleDebugConsole() {
+  const consolePanel = document.getElementById('debugConsole');
+  if (consolePanel) {
+    const isVisible = consolePanel.style.display !== 'none';
+    consolePanel.style.display = isVisible ? 'none' : 'block';
+  }
+}
+
+/**
+ * Update debug console visibility based on settings
+ */
+function updateDebugConsoleVisibility() {
+  const consolePanel = document.getElementById('debugConsole');
+  if (consolePanel) {
+    consolePanel.style.display = debugConsoleEnabled ? 'block' : 'none';
+
+    // Render all existing logs if enabling
+    if (debugConsoleEnabled) {
+      const consoleOutput = document.getElementById('consoleOutput');
+      if (consoleOutput) {
+        consoleOutput.innerHTML = '';
+        debugLogs.forEach(entry => appendToConsole(entry));
+      }
+    }
+  }
+}
 
 // ============ CLIPBOARD MACROS ============
 
@@ -46,16 +170,12 @@ let maxSearchResults = 10; // Default, will be loaded from settings
  * Sets up click handlers for folder buttons and navigation
  */
 function initializeClipboardMacros() {
-  console.log('[Clipboard] Initializing clipboard macros...');
-
   // Set up folder button click handlers
   const folderButtons = document.querySelectorAll('.folder-btn');
-  console.log(`[Clipboard] Found ${folderButtons.length} folder buttons`);
-
   folderButtons.forEach((button) => {
     button.addEventListener('click', () => {
       const folder = button.getAttribute('data-folder');
-      console.log(`[Clipboard] Folder button clicked: ${folder}`);
+      log(`[Clipboard] Opening folder: ${folder}`);
       openFolder(folder);
     });
   });
@@ -63,7 +183,6 @@ function initializeClipboardMacros() {
   // Set up back button
   const backButton = document.getElementById('backButton');
   if (backButton) {
-    console.log('[Clipboard] Setting up back button handler');
     backButton.addEventListener('click', closeFolder);
   }
 
@@ -76,48 +195,34 @@ function initializeClipboardMacros() {
  * @param {string} folder - Folder name (demographics, references, etc.)
  */
 function openFolder(folder) {
-  if (!folder) {
-    console.error('[Clipboard] openFolder called with empty folder name');
-    return;
-  }
+  if (!folder) return;
 
-  console.log(`[Clipboard] Opening folder: ${folder}`);
   currentFolder = folder;
 
   // Get folder data from storage
-  console.log(`[Clipboard] Sending getClipboardFolder message to service worker for folder: ${folder}`);
   chrome.runtime.sendMessage(
     { action: 'getClipboardFolder', folder },
     (response) => {
       if (chrome.runtime.lastError) {
-        console.error('[Clipboard] Runtime error:', chrome.runtime.lastError);
-        console.error('[Clipboard] Error details:', chrome.runtime.lastError.message);
+        logError('[Clipboard] Runtime error: ' + chrome.runtime.lastError.message);
         showError('Failed to communicate with extension');
         return;
       }
 
-      console.log(`[Clipboard] Received response from service worker:`, response);
-
       if (!response || !response.success) {
-        console.error('[Clipboard] Failed to load folder items, response:', response);
+        logError('[Clipboard] Failed to load folder items');
         showError('Failed to load folder items');
         return;
       }
 
-      console.log(`[Clipboard] Successfully loaded ${Object.keys(response.items || {}).length} items from folder: ${folder}`);
+      log(`[Clipboard] Loaded ${Object.keys(response.items || {}).length} items from ${folder}`);
 
       // Show sub-menu and hide folder view
       const folderView = document.getElementById('folderView');
       const subMenuView = document.getElementById('subMenuView');
 
-      if (folderView) {
-        console.log('[Clipboard] Hiding folder view');
-        folderView.style.display = 'none';
-      }
-      if (subMenuView) {
-        console.log('[Clipboard] Showing sub-menu view');
-        subMenuView.style.display = 'block';
-      }
+      if (folderView) folderView.style.display = 'none';
+      if (subMenuView) subMenuView.style.display = 'block';
 
       // Hide other feature sections
       hideOtherSections();
@@ -125,13 +230,10 @@ function openFolder(folder) {
       // Update sub-menu title
       const subMenuTitle = document.getElementById('subMenuTitle');
       if (subMenuTitle) {
-        const title = FOLDER_TITLES[folder] || 'Items';
-        console.log(`[Clipboard] Setting sub-menu title to: ${title}`);
-        subMenuTitle.textContent = title;
+        subMenuTitle.textContent = FOLDER_TITLES[folder] || 'Items';
       }
 
       // Render items
-      console.log('[Clipboard] Rendering sub-menu items');
       renderSubMenuItems(response.items || {});
     }
   );
@@ -141,25 +243,17 @@ function openFolder(folder) {
  * Close folder and return to main view
  */
 function closeFolder() {
-  console.log(`[Clipboard] Closing folder, returning to main view`);
   currentFolder = null;
 
   // Show folder view and hide sub-menu
   const folderView = document.getElementById('folderView');
   const subMenuView = document.getElementById('subMenuView');
 
-  if (folderView) {
-    console.log('[Clipboard] Showing folder view');
-    folderView.style.display = 'grid';
-  }
-  if (subMenuView) {
-    console.log('[Clipboard] Hiding sub-menu view');
-    subMenuView.style.display = 'none';
-  }
+  if (folderView) folderView.style.display = 'grid';
+  if (subMenuView) subMenuView.style.display = 'none';
 
   // Show other feature sections
   showOtherSections();
-  console.log('[Clipboard] Back to main view complete');
 }
 
 /**
@@ -167,28 +261,18 @@ function closeFolder() {
  * @param {Object} items - Object with key-value pairs of items
  */
 function renderSubMenuItems(items) {
-  console.log('[Clipboard] renderSubMenuItems called');
-  console.log('[Clipboard] Items to render:', items);
-
   const container = document.getElementById('subMenuItems');
-  if (!container) {
-    console.error('[Clipboard] subMenuItems container not found!');
-    return;
-  }
 
   // Clear container
-  console.log('[Clipboard] Clearing existing items from container');
   while (container.firstChild) {
     container.removeChild(container.firstChild);
   }
 
   // Convert items object to array
   const itemsArray = Object.entries(items || {});
-  console.log(`[Clipboard] Processing ${itemsArray.length} items`);
 
   if (itemsArray.length === 0) {
     // Show empty state
-    console.log('[Clipboard] No items found, showing empty state');
     showEmptyState(container);
     return;
   }
@@ -368,24 +452,18 @@ function verbalizeValue(value, indent = 0) {
  * @param {string|Object} value - Item value to copy (string or nested object)
  */
 async function handleItemClick(key, value) {
-  console.log(`[Clipboard] Item clicked - Key: ${key}, Value type: ${typeof value}`);
-
   // Verbalize the value (converts objects to readable text, keeps strings as-is)
   const textToCopy = verbalizeValue(value);
-  console.log(`[Clipboard] Text to copy (${textToCopy.length} chars):`, textToCopy);
 
   try {
     // Copy to clipboard using Clipboard API
     await navigator.clipboard.writeText(textToCopy);
-
-    console.log('[Clipboard] ✓ Successfully copied to clipboard');
-    console.log('[Clipboard] Copied text:', textToCopy);
+    log(`[Clipboard] Copied: ${key}`);
 
     // Show visual feedback (similar to search copy)
     // Keep popup open so user can copy multiple items
   } catch (error) {
-    console.error('[Clipboard] ✗ Failed to copy to clipboard');
-    console.error('[Clipboard] Error details:', error);
+    logError('[Clipboard] Failed to copy: ' + error.message);
     showError('Failed to copy to clipboard');
   }
 }

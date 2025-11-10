@@ -268,19 +268,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  * @param {Function} sendResponse - Response callback
  */
 function handleGetClipboardFolder(folder, sendResponse) {
-  console.log(`[Service Worker] Getting clipboard folder: ${folder}`);
-
   chrome.storage.sync.get(['clipboardMacros'], (result) => {
-    if (chrome.runtime.lastError) {
-      console.error('[Service Worker] Error reading from storage:', chrome.runtime.lastError);
-      sendResponse({ success: false, error: chrome.runtime.lastError.message });
-      return;
-    }
-
     const items = result.clipboardMacros?.[folder] || {};
-    console.log(`[Service Worker] Found ${Object.keys(items).length} items in folder: ${folder}`);
-    console.log(`[Service Worker] Folder items:`, items);
-
     sendResponse({ success: true, items });
   });
 }

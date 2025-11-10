@@ -64,6 +64,18 @@
     <footer>
       <a href="#" id="settingsLink">Settings</a>
     </footer>
+
+    <!-- Debug Console (hidden by default) -->
+    <div id="debugConsole" class="debug-console" style="display: none;">
+      <div class="debug-console-header">
+        <span>Debug Console</span>
+        <div class="debug-console-actions">
+          <button id="clearConsoleBtn" class="console-btn" title="Clear console">Clear</button>
+          <button id="toggleConsoleBtn" class="console-btn" title="Minimize console">−</button>
+        </div>
+      </div>
+      <div id="consoleOutput" class="console-output"></div>
+    </div>
   </div>
 
   <!-- Manual Data Entry Modal -->
