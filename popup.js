@@ -4,9 +4,12 @@
  * Features: Clipboard macros, job data extraction, autofill
  */
 
+// Log script loading
+console.log('popup.js loaded');
+
 // Initialize all popup features when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('JobSprint Popup loaded');
+  console.log('JobSprint Popup loaded - DOMContentLoaded fired');
 
   initializeClipboardMacros();
   initializeExtraction();
@@ -14,6 +17,18 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeSettings();
   initializeManualEntryModal();
 });
+
+// Also try immediate initialization in case DOMContentLoaded already fired
+if (document.readyState === 'loading') {
+  console.log('Document still loading, waiting for DOMContentLoaded');
+} else {
+  console.log('Document already loaded, initializing immediately');
+  initializeClipboardMacros();
+  initializeExtraction();
+  initializeAutofill();
+  initializeSettings();
+  initializeManualEntryModal();
+}
 
 // ============ CLIPBOARD MACROS ============
 
@@ -39,26 +54,41 @@ let maxSearchResults = 10; // Default, will be loaded from settings
  * Sets up click handlers for folder buttons and navigation
  */
 function initializeClipboardMacros() {
+  console.log('initializeClipboardMacros called');
+
   // Set up folder button click handlers
   const folderButtons = document.querySelectorAll('.folder-btn');
   console.log('Found folder buttons:', folderButtons.length);
 
-  folderButtons.forEach((button) => {
-    button.addEventListener('click', () => {
+  if (folderButtons.length === 0) {
+    console.error('No folder buttons found! Retrying in 100ms...');
+    setTimeout(initializeClipboardMacros, 100);
+    return;
+  }
+
+  folderButtons.forEach((button, index) => {
+    console.log(`Attaching listener to folder button ${index}:`, button.getAttribute('data-folder'));
+    button.addEventListener('click', (event) => {
       const folder = button.getAttribute('data-folder');
-      console.log('Folder button clicked:', folder);
+      console.log('Folder button clicked:', folder, 'Event:', event);
+      event.preventDefault();
+      event.stopPropagation();
       openFolder(folder);
-    });
+    }, true); // Use capture phase
   });
 
   // Set up back button
   const backButton = document.getElementById('backButton');
   if (backButton) {
     backButton.addEventListener('click', closeFolder);
+    console.log('Back button listener attached');
+  } else {
+    console.warn('Back button not found');
   }
 
   // Initialize search
   initializeSearch();
+  console.log('Clipboard macros initialization complete');
 }
 
 /**
