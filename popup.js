@@ -7,27 +7,34 @@
 // Log script loading
 console.log('popup.js loaded');
 
-// Initialize all popup features when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  console.log('JobSprint Popup loaded - DOMContentLoaded fired');
+// Track if initialization has run to prevent duplicates
+let initialized = false;
+
+function initialize() {
+  if (initialized) {
+    console.log('Already initialized, skipping duplicate initialization');
+    return;
+  }
+  initialized = true;
+  console.log('Initializing JobSprint Popup');
 
   initializeClipboardMacros();
   initializeExtraction();
   initializeAutofill();
   initializeSettings();
   initializeManualEntryModal();
+}
+
+// Initialize all popup features when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOMContentLoaded fired');
+  initialize();
 });
 
 // Also try immediate initialization in case DOMContentLoaded already fired
-if (document.readyState === 'loading') {
-  console.log('Document still loading, waiting for DOMContentLoaded');
-} else {
+if (document.readyState !== 'loading') {
   console.log('Document already loaded, initializing immediately');
-  initializeClipboardMacros();
-  initializeExtraction();
-  initializeAutofill();
-  initializeSettings();
-  initializeManualEntryModal();
+  initialize();
 }
 
 // ============ CLIPBOARD MACROS ============
@@ -67,14 +74,14 @@ function initializeClipboardMacros() {
   }
 
   folderButtons.forEach((button, index) => {
-    console.log(`Attaching listener to folder button ${index}:`, button.getAttribute('data-folder'));
-    button.addEventListener('click', (event) => {
-      const folder = button.getAttribute('data-folder');
-      console.log('Folder button clicked:', folder, 'Event:', event);
-      event.preventDefault();
-      event.stopPropagation();
+    const folder = button.getAttribute('data-folder');
+    console.log(`Attaching listener to folder button ${index}:`, folder);
+
+    // Use a simple click handler without capture phase or event manipulation
+    button.onclick = function(event) {
+      console.log('Folder button clicked:', folder);
       openFolder(folder);
-    }, true); // Use capture phase
+    };
   });
 
   // Set up back button
