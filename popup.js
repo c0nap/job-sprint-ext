@@ -42,16 +42,16 @@ function initializeClipboardMacros() {
   // Set up folder button click handlers
   const folderButtons = document.querySelectorAll('.folder-btn');
   folderButtons.forEach((button) => {
-    button.addEventListener('click', () => {
-      const folder = button.getAttribute('data-folder');
-      openFolder(folder);
-    });
+    const folderName = button.getAttribute('data-folder');
+    button.onclick = function() {
+      openFolder(folderName);
+    };
   });
 
   // Set up back button
   const backButton = document.getElementById('backButton');
   if (backButton) {
-    backButton.addEventListener('click', closeFolder);
+    backButton.onclick = closeFolder;
   }
 
   // Initialize search
@@ -63,30 +63,44 @@ function initializeClipboardMacros() {
  * @param {string} folder - Folder name (demographics, references, etc.)
  */
 function openFolder(folder) {
+  if (!folder) return;
+
   currentFolder = folder;
 
   // Get folder data from storage
   chrome.runtime.sendMessage(
     { action: 'getClipboardFolder', folder },
     (response) => {
-      if (!response?.success) {
+      if (chrome.runtime.lastError) {
+        console.error('Runtime error:', chrome.runtime.lastError);
+        showError('Failed to communicate with extension');
+        return;
+      }
+
+      if (!response || !response.success) {
         console.error('Failed to load folder items');
         showError('Failed to load folder items');
         return;
       }
 
       // Show sub-menu and hide folder view
-      document.getElementById('folderView').style.display = 'none';
-      document.getElementById('subMenuView').style.display = 'block';
+      const folderView = document.getElementById('folderView');
+      const subMenuView = document.getElementById('subMenuView');
+
+      if (folderView) folderView.style.display = 'none';
+      if (subMenuView) subMenuView.style.display = 'block';
 
       // Hide other feature sections
       hideOtherSections();
 
       // Update sub-menu title
-      document.getElementById('subMenuTitle').textContent = FOLDER_TITLES[folder] || 'Items';
+      const subMenuTitle = document.getElementById('subMenuTitle');
+      if (subMenuTitle) {
+        subMenuTitle.textContent = FOLDER_TITLES[folder] || 'Items';
+      }
 
       // Render items
-      renderSubMenuItems(response.items);
+      renderSubMenuItems(response.items || {});
     }
   );
 }
@@ -98,8 +112,11 @@ function closeFolder() {
   currentFolder = null;
 
   // Show folder view and hide sub-menu
-  document.getElementById('folderView').style.display = 'grid';
-  document.getElementById('subMenuView').style.display = 'none';
+  const folderView = document.getElementById('folderView');
+  const subMenuView = document.getElementById('subMenuView');
+
+  if (folderView) folderView.style.display = 'grid';
+  if (subMenuView) subMenuView.style.display = 'none';
 
   // Show other feature sections
   showOtherSections();
@@ -143,12 +160,12 @@ function renderSubMenuItems(items) {
       const button = document.createElement('button');
       button.className = 'sub-menu-item-btn folder-item';
       button.textContent = formatItemLabel(key, value);
-      button.title = 'Click to copy verbalized content';
+      button.title = 'Nested folder - use copy button to copy verbalized content';
 
-      // Folder main button copies verbalized content
+      // Folder main button doesn't do anything (or could navigate deeper in future)
       button.addEventListener('click', (e) => {
         e.stopPropagation();
-        handleItemClick(key, value);
+        // For now, folders don't navigate deeper - just use copy button
       });
 
       // Create copy button for folder
