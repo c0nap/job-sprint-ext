@@ -192,19 +192,29 @@ button {
   background: #555;
 }
 
+/* Container for each item (main button + copy button) */
+.sub-menu-item-container {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  align-items: stretch;
+}
+
+.sub-menu-item-container:last-child {
+  margin-bottom: 0;
+}
+
+/* Main item button */
 .sub-menu-item-btn {
   color: white;
   padding: 10px 12px;
   font-size: 13px;
   text-align: left;
-  width: 100%;
-  margin-bottom: 6px;
+  flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  border-radius: 4px;
 }
 
 /* Basic/leaf items - blue */
@@ -229,16 +239,48 @@ button {
   transform: scale(0.98);
 }
 
-.sub-menu-item-btn:last-child {
-  margin-bottom: 0;
+/* Separate copy button */
+.sub-menu-copy-btn {
+  background-color: #6c757d;
+  color: white;
+  padding: 8px 10px;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 40px;
 }
 
-/* Copy icon for folders */
-.copy-icon {
-  font-size: 14px;
-  opacity: 0.8;
-  margin-left: 8px;
-  flex-shrink: 0;
+.sub-menu-copy-btn:hover {
+  background-color: #5a6268;
+}
+
+.sub-menu-copy-btn:active {
+  transform: scale(0.95);
+}
+
+/* Layered copy icon using document emojis */
+.copy-icon-layered {
+  font-size: 0.875em;
+  margin-right: 0.125em;
+  position: relative;
+  top: -0.25em;
+  left: -0.125em;
+  display: inline-block;
+}
+
+.copy-doc-1 {
+  position: relative;
+}
+
+.copy-doc-2 {
+  position: absolute;
+  top: 0.25em;
+  left: 0.25em;
 }
 
 .sub-menu-hint {
