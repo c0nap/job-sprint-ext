@@ -305,15 +305,10 @@ async function handleItemClick(key, value) {
     // Copy to clipboard using Clipboard API
     await navigator.clipboard.writeText(textToCopy);
 
-    // Show success message
-    showSuccess('Copied to clipboard!');
+    console.log('✓ Copied to clipboard:', textToCopy);
 
-    console.log('Text copied successfully:', textToCopy);
-
-    // Close popup after 500ms (give user time to see success message)
-    setTimeout(() => {
-      window.close();
-    }, 500);
+    // Show visual feedback (similar to search copy)
+    // Keep popup open so user can copy multiple items
   } catch (error) {
     showError('Failed to copy to clipboard');
     console.error('Clipboard error:', error);
