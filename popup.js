@@ -53,13 +53,10 @@ function initializeClipboardMacros() {
   console.log(`[Clipboard] Found ${folderButtons.length} folder buttons`);
 
   folderButtons.forEach((button) => {
-    const folderName = button.getAttribute('data-folder');
-    console.log(`[Clipboard] Setting up click handler for folder: ${folderName}`);
-
-    // Use addEventListener instead of onclick for better compatibility
-    button.addEventListener('click', function() {
-      console.log(`[Clipboard] Folder button clicked: ${folderName}`);
-      openFolder(folderName);
+    button.addEventListener('click', () => {
+      const folder = button.getAttribute('data-folder');
+      console.log(`[Clipboard] Folder button clicked: ${folder}`);
+      openFolder(folder);
     });
   });
 
