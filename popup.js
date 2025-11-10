@@ -131,70 +131,72 @@ function renderSubMenuItems(items) {
     if (typeof value === 'string' && value.trim() === '') return;
     if (!value) return;
 
-    // Create container for item (holds main button + copy button)
-    const itemContainer = document.createElement('div');
-    itemContainer.className = 'sub-menu-item-container';
-
-    // Create main button
-    const button = document.createElement('button');
     const isFolder = typeof value === 'object' && value !== null && !Array.isArray(value);
 
-    // Set class based on type - folders (green) vs basic items (blue)
     if (isFolder) {
+      // Folder item - render with main button + copy button
+      const itemContainer = document.createElement('div');
+      itemContainer.className = 'sub-menu-item-container';
+
+      // Create main folder button
+      const button = document.createElement('button');
       button.className = 'sub-menu-item-btn folder-item';
+      button.textContent = formatItemLabel(key, value);
+      button.title = 'Nested folder - use copy button to copy verbalized content';
+
+      // Folder main button doesn't do anything (or could navigate deeper in future)
+      button.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // For now, folders don't navigate deeper - just use copy button
+      });
+
+      // Create copy button for folder
+      const copyButton = document.createElement('button');
+      copyButton.className = 'sub-menu-copy-btn';
+      copyButton.setAttribute('aria-label', 'Copy');
+      copyButton.title = 'Copy verbalized content to clipboard';
+
+      // Use layered document emoji for copy icon
+      const copyIcon = document.createElement('span');
+      copyIcon.className = 'copy-icon-layered';
+
+      const doc1 = document.createElement('span');
+      doc1.textContent = '📄';
+      doc1.className = 'copy-doc-1';
+
+      const doc2 = document.createElement('span');
+      doc2.textContent = '📄';
+      doc2.className = 'copy-doc-2';
+
+      copyIcon.appendChild(doc1);
+      copyIcon.appendChild(doc2);
+      copyButton.appendChild(copyIcon);
+
+      // Copy button copies verbalized content
+      copyButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleItemClick(key, value);
+      });
+
+      itemContainer.appendChild(button);
+      itemContainer.appendChild(copyButton);
+      container.appendChild(itemContainer);
     } else {
+      // Regular item - just one button that copies when clicked
+      const button = document.createElement('button');
       button.className = 'sub-menu-item-btn basic-item';
-    }
-
-    // Set button text
-    const labelText = formatItemLabel(key, value);
-    button.textContent = labelText;
-
-    // Set tooltip
-    if (isFolder) {
-      button.title = `Click to copy verbalized:\n${verbalizeValue(value)}`;
-    } else {
+      button.textContent = formatItemLabel(key, value);
       button.title = `Click to copy: ${value}`;
+
+      // Click to copy
+      button.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleItemClick(key, value);
+      });
+
+      // Add button directly (no container, no copy button for items)
+      container.appendChild(button);
     }
-
-    // Main button click handler - copy the value
-    button.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleItemClick(key, value);
-    });
-
-    // Create separate copy button
-    const copyButton = document.createElement('button');
-    copyButton.className = 'sub-menu-copy-btn';
-    copyButton.setAttribute('aria-label', 'Copy');
-    copyButton.title = 'Copy to clipboard';
-
-    // Use layered document emoji for copy icon
-    const copyIcon = document.createElement('span');
-    copyIcon.className = 'copy-icon-layered';
-
-    const doc1 = document.createElement('span');
-    doc1.textContent = '📄';
-    doc1.className = 'copy-doc-1';
-
-    const doc2 = document.createElement('span');
-    doc2.textContent = '📄';
-    doc2.className = 'copy-doc-2';
-
-    copyIcon.appendChild(doc1);
-    copyIcon.appendChild(doc2);
-    copyButton.appendChild(copyIcon);
-
-    // Copy button click handler
-    copyButton.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleItemClick(key, value);
-    });
-
-    // Append buttons to container
-    itemContainer.appendChild(button);
-    itemContainer.appendChild(copyButton);
-    container.appendChild(itemContainer);
   });
 
   // If no non-empty items, show empty state

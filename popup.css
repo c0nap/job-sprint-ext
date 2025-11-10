@@ -192,7 +192,7 @@ button {
   background: #555;
 }
 
-/* Container for each item (main button + copy button) */
+/* Container for folder items (main button + copy button) */
 .sub-menu-item-container {
   display: flex;
   gap: 6px;
@@ -210,11 +210,25 @@ button {
   padding: 10px 12px;
   font-size: 13px;
   text-align: left;
-  flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   border-radius: 4px;
+}
+
+/* When button is in a container (folders), it should flex */
+.sub-menu-item-container .sub-menu-item-btn {
+  flex: 1;
+}
+
+/* When button is standalone (basic items), it should be full width */
+.sub-menu-items > .sub-menu-item-btn {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.sub-menu-items > .sub-menu-item-btn:last-child {
+  margin-bottom: 0;
 }
 
 /* Basic/leaf items - blue */
