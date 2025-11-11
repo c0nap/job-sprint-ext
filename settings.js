@@ -270,30 +270,20 @@ function downloadConfig() {
   const spreadsheetId = document.getElementById('spreadsheetId').value.trim();
   const projectId = document.getElementById('projectId').value.trim();
 
-  // Generate config file content
   const configContent = `// JobSprint Configuration
-// This file is generated from the settings page
 // Do not commit this file to version control
 
 const CONFIG = {
-  APPS_SCRIPT_ENDPOINT: '${endpoint || 'YOUR_APPS_SCRIPT_URL_HERE'}',
-  SPREADSHEET_ID: '${spreadsheetId || 'YOUR_SPREADSHEET_ID_HERE'}',
-  PROJECT_ID: '${projectId || 'YOUR_PROJECT_ID_HERE'}',
+  APPS_SCRIPT_ENDPOINT: '${endpoint || ''}',
+  SPREADSHEET_ID: '${spreadsheetId || ''}',
+  PROJECT_ID: '${projectId || ''}',
 };
 
-// Expose CONFIG to different environments
-if (typeof self !== 'undefined') {
-  self.APP_CONFIG = CONFIG;
-}
-if (typeof global !== 'undefined') {
-  global.APP_CONFIG = CONFIG;
-}
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = CONFIG;
-}
+if (typeof self !== 'undefined') self.APP_CONFIG = CONFIG;
+if (typeof global !== 'undefined') global.APP_CONFIG = CONFIG;
+if (typeof module !== 'undefined' && module.exports) module.exports = CONFIG;
 `;
 
-  // Create blob and download
   const blob = new Blob([configContent], { type: 'text/javascript' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -304,7 +294,7 @@ if (typeof module !== 'undefined' && module.exports) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 
-  showStatus('Config file downloaded! Place it in the extension root directory.', 'success');
+  showStatus('Config file downloaded!', 'success');
 }
 
 // Update connection status based on current settings
@@ -313,39 +303,23 @@ function updateConnectionStatus(settings) {
   const openSheetLink = document.getElementById('openSheetLink');
   const testConnectionBtn = document.getElementById('testConnection');
 
-  const hasEndpoint = settings.APPS_SCRIPT_ENDPOINT &&
-                      settings.APPS_SCRIPT_ENDPOINT !== 'YOUR_APPS_SCRIPT_URL_HERE' &&
-                      settings.APPS_SCRIPT_ENDPOINT !== '';
-  const hasSpreadsheetId = settings.SPREADSHEET_ID &&
-                           settings.SPREADSHEET_ID !== 'YOUR_SPREADSHEET_ID_HERE' &&
-                           settings.SPREADSHEET_ID !== '';
-  const hasProjectId = settings.PROJECT_ID &&
-                       settings.PROJECT_ID !== 'YOUR_PROJECT_ID_HERE' &&
-                       settings.PROJECT_ID !== '';
+  const isConfigured = settings.APPS_SCRIPT_ENDPOINT && settings.SPREADSHEET_ID && settings.PROJECT_ID;
 
-  if (hasEndpoint && hasSpreadsheetId && hasProjectId) {
+  if (isConfigured) {
     statusDiv.textContent = '✓ Connected to Google Sheets';
     statusDiv.className = 'connection-status connected';
-
-    // Enable the "Open Sheet" link
     openSheetLink.href = `https://docs.google.com/spreadsheets/d/${settings.SPREADSHEET_ID}/edit`;
     openSheetLink.target = '_blank';
     openSheetLink.classList.remove('disabled');
     openSheetLink.textContent = '📊 Open Google Sheet';
-
-    // Enable the "Test Connection" button
     testConnectionBtn.disabled = false;
   } else {
-    statusDiv.textContent = 'Please configure all fields to connect';
+    statusDiv.textContent = 'Please configure all fields';
     statusDiv.className = 'connection-status disconnected';
-
-    // Disable the "Open Sheet" link
     openSheetLink.href = '#';
     openSheetLink.removeAttribute('target');
     openSheetLink.classList.add('disabled');
     openSheetLink.textContent = 'Open Google Sheet (Configure first)';
-
-    // Disable the "Test Connection" button
     testConnectionBtn.disabled = true;
   }
 }

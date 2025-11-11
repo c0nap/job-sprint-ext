@@ -80,11 +80,6 @@ function extractJobData() {
     data.company = extractField(companySelectors, 'company');
     data.location = extractField(locationSelectors, 'location');
 
-    // Log warning if extraction failed
-    if (!data.title && !data.company) {
-      console.warn('JobSprint: Could not extract meaningful job data from this page');
-    }
-
     return data;
   } catch (error) {
     console.error('Error extracting job data:', error);

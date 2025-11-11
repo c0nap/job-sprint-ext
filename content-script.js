@@ -121,10 +121,6 @@ function extractJobData() {
     data.company = extractField(companySelectors);
     data.location = extractField(locationSelectors);
 
-    if (!data.title && !data.company) {
-      console.warn('JobSprint: Could not extract meaningful job data from this page');
-    }
-
     console.log('Extracted job data:', data);
     return data;
   } catch (error) {
@@ -147,13 +143,9 @@ function extractJobData() {
  */
 function extractField(selectors) {
   for (const selector of selectors) {
-    try {
-      const element = document.querySelector(selector);
-      if (element && element.textContent.trim()) {
-        return cleanText(element.textContent.trim());
-      }
-    } catch (error) {
-      console.debug(`Failed to query selector "${selector}":`, error);
+    const element = document.querySelector(selector);
+    if (element?.textContent?.trim()) {
+      return cleanText(element.textContent.trim());
     }
   }
   return '';

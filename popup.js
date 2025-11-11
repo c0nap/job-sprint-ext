@@ -42,45 +42,31 @@ function initializeClipboardMacros() {
 
 /**
  * Handle macro button click - retrieve value and paste to active field
- * Flow: Get value from storage -> Query active tab -> Send to content script -> Paste
  * @param {string} key - Macro key (phone, email, address, linkedin)
  */
 function handleMacroClick(key) {
-  // Step 1: Get the macro value from service worker storage
-  chrome.runtime.sendMessage(
-    { action: 'getClipboardMacro', key },
-    (response) => {
-      // Early return if no value is set
-      if (!response?.success || !response?.value) {
-        showError('No value set for this macro. Please edit macros first.');
+  chrome.runtime.sendMessage({ action: 'getClipboardMacro', key }, (response) => {
+    if (!response?.success || !response?.value) {
+      showError('No value set for this macro');
+      return;
+    }
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs[0]) {
+        showError('No active tab found');
         return;
       }
 
-      // Step 2: Query the active tab
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const activeTab = tabs[0];
-        if (!activeTab) {
-          showError('No active tab found');
+      chrome.tabs.sendMessage(tabs[0].id, { action: 'pasteText', text: response.value }, (pasteResponse) => {
+        if (chrome.runtime.lastError) {
+          showError('Failed to paste');
           return;
         }
-
-        // Step 3: Send paste command to content script
-        chrome.tabs.sendMessage(
-          activeTab.id,
-          { action: 'pasteText', text: response.value },
-          (pasteResponse) => {
-            if (chrome.runtime.lastError) {
-              showError(`Failed to paste: ${chrome.runtime.lastError.message}`);
-              return;
-            }
-
-            console.log('Text pasted successfully');
-            window.close(); // Close popup after successful paste
-          }
-        );
+        console.log('Text pasted successfully');
+        window.close();
       });
-    }
-  );
+    });
+  });
 }
 
 // ============ DATA EXTRACTION ============
@@ -103,65 +89,32 @@ function initializeExtraction() {
 
 /**
  * Handle extract button click
- * Coordinates the full extraction and logging workflow
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  */
 function handleExtractClick(button, statusDiv) {
-  // Set button to loading state
   setButtonLoading(button, 'Extracting...');
   clearStatus(statusDiv);
 
-  // Step 1: Query active tab
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const activeTab = tabs[0];
-    if (!activeTab) {
-      handleExtractError(button, statusDiv, 'No active tab found. Please make sure you have a tab open.');
+    if (!tabs[0]) {
+      handleExtractError(button, statusDiv, 'No active tab found');
       return;
     }
 
-    // Check if tab URL is accessible
-    if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
-      handleExtractError(button, statusDiv, 'Cannot extract from this page. Chrome extension pages and settings are not supported.');
-      return;
-    }
-
-    // Step 2: Request extraction from content script
-    chrome.tabs.sendMessage(
-      activeTab.id,
-      { action: 'extractJobData' },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          // Handle the common "Receiving end does not exist" error
-          const errorMsg = chrome.runtime.lastError.message;
-
-          if (errorMsg.includes('Receiving end does not exist')) {
-            handleExtractError(
-              button,
-              statusDiv,
-              'Please reload the page and try again. The extension needs to reinitialize.'
-            );
-          } else if (errorMsg.includes('Cannot access')) {
-            handleExtractError(
-              button,
-              statusDiv,
-              'Cannot access this page. Please make sure you are on a job posting page.'
-            );
-          } else {
-            handleExtractError(button, statusDiv, `Error: ${errorMsg}`);
-          }
-          return;
-        }
-
-        if (!response?.success) {
-          handleExtractError(button, statusDiv, 'Failed to extract job data from page');
-          return;
-        }
-
-        // Step 3: Send extracted data to service worker for logging
-        logJobData(button, statusDiv, response.data);
+    chrome.tabs.sendMessage(tabs[0].id, { action: 'extractJobData' }, (response) => {
+      if (chrome.runtime.lastError) {
+        handleExtractError(button, statusDiv, 'Please reload the page and try again');
+        return;
       }
-    );
+
+      if (!response?.success) {
+        handleExtractError(button, statusDiv, 'Failed to extract job data');
+        return;
+      }
+
+      logJobData(button, statusDiv, response.data);
+    });
   });
 }
 
@@ -215,13 +168,7 @@ function submitJobData(button, statusDiv, jobData) {
  * @returns {boolean} True if missing required data
  */
 function isMissingRequiredData(jobData) {
-  const title = (jobData.title || '').trim();
-  const company = (jobData.company || '').trim();
-
-  // Consider data missing if title or company is empty or placeholder
-  return !title || !company ||
-         title === '(No title)' ||
-         company === '(No company)';
+  return !jobData.title?.trim() || !jobData.company?.trim();
 }
 
 /**
@@ -264,43 +211,33 @@ function initializeAutofill() {
 
 /**
  * Handle autofill button click
- * Triggers the autofill process on the active page
  * @param {HTMLButtonElement} button - Autofill button element
  * @param {HTMLElement} statusDiv - Status message display element
  */
 function handleAutofillClick(button, statusDiv) {
-  // Set button to loading state
   setButtonLoading(button, 'Starting...');
-  showStatus(statusDiv, 'info', 'ℹ Autofill process started. Check the page for prompts.');
+  showStatus(statusDiv, 'info', 'ℹ Autofill started. Check the page for prompts.');
 
-  // Query active tab and send autofill command
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const activeTab = tabs[0];
-    if (!activeTab) {
+    if (!tabs[0]) {
       handleAutofillError(button, statusDiv, 'No active tab found');
       return;
     }
 
-    // Send autofill command to content script
-    chrome.tabs.sendMessage(
-      activeTab.id,
-      { action: 'startAutofill' },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          handleAutofillError(button, statusDiv, `Could not access page: ${chrome.runtime.lastError.message}`);
-          return;
-        }
-
-        if (response?.success) {
-          showStatus(statusDiv, 'success', '✓ Autofill started! Answer prompts on the page.');
-        } else {
-          handleAutofillError(button, statusDiv, 'Failed to start autofill process');
-        }
-
-        // Reset button after short delay
-        setTimeout(() => resetAutofillButton(button), 2000);
+    chrome.tabs.sendMessage(tabs[0].id, { action: 'startAutofill' }, (response) => {
+      if (chrome.runtime.lastError) {
+        handleAutofillError(button, statusDiv, 'Could not access page');
+        return;
       }
-    );
+
+      if (response?.success) {
+        showStatus(statusDiv, 'success', '✓ Autofill started!');
+      } else {
+        handleAutofillError(button, statusDiv, 'Failed to start autofill');
+      }
+
+      setTimeout(() => resetAutofillButton(button), 2000);
+    });
   });
 }
 
