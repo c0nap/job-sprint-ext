@@ -41,7 +41,8 @@ async function loadSettings() {
       'PROJECT_ID',
       'ENABLE_MANUAL_ENTRY',
       'clipboardMacros',
-      'maxSearchResults'
+      'maxSearchResults',
+      'debugConsoleEnabled'
     ]);
 
     // Populate form fields
@@ -53,6 +54,9 @@ async function loadSettings() {
 
     // Populate search settings
     document.getElementById('maxSearchResults').value = result.maxSearchResults || 10;
+
+    // Populate debug console setting
+    document.getElementById('debugConsoleEnabled').checked = result.debugConsoleEnabled || false;
 
     // Populate clipboard macro folders
     const macros = result.clipboardMacros || DEFAULT_MACROS;
@@ -235,6 +239,9 @@ async function saveClipboardMacros() {
   // Get search settings
   const maxSearchResults = parseInt(document.getElementById('maxSearchResults').value, 10);
 
+  // Get debug console setting
+  const debugConsoleEnabled = document.getElementById('debugConsoleEnabled').checked;
+
   // Validate search results count
   if (isNaN(maxSearchResults) || maxSearchResults < 5 || maxSearchResults > 50) {
     showClipboardStatus('Maximum search results must be between 5 and 50', 'error');
@@ -242,11 +249,12 @@ async function saveClipboardMacros() {
   }
 
   try {
-    // Save clipboard macros and search settings to Chrome storage
-    await chrome.storage.sync.set({ clipboardMacros, maxSearchResults });
-    showClipboardStatus('Clipboard macros saved successfully!', 'success');
+    // Save clipboard macros and settings to Chrome storage
+    await chrome.storage.sync.set({ clipboardMacros, maxSearchResults, debugConsoleEnabled });
+    showClipboardStatus('Settings saved successfully!', 'success');
     console.log('Clipboard macros saved:', clipboardMacros);
     console.log('Max search results:', maxSearchResults);
+    console.log('Debug console enabled:', debugConsoleEnabled);
   } catch (error) {
     showClipboardStatus('Error saving clipboard macros', 'error');
     console.error('Error saving clipboard macros:', error);

@@ -39,9 +39,10 @@
           <button id="backButton" class="nav-btn">← Back</button>
           <h3 id="subMenuTitle">Items</h3>
         </div>
+        <div id="subMenuStatus" class="sub-menu-status" style="display: none;"></div>
         <div id="subMenuItems" class="sub-menu-items"></div>
         <div class="sub-menu-hint">
-          Configure items in Settings
+          Configure items in <a href="#" id="subMenuSettingsLink">Settings</a>
         </div>
       </div>
     </section>
@@ -64,6 +65,19 @@
     <footer>
       <a href="#" id="settingsLink">Settings</a>
     </footer>
+
+    <!-- Debug Console (hidden by default) -->
+    <div id="debugConsole" class="debug-console" style="display: none;">
+      <div id="consoleResizeHandle" class="console-resize-handle" title="Drag to resize"></div>
+      <div class="debug-console-header">
+        <span>Debug Console</span>
+        <div class="debug-console-actions">
+          <button id="clearConsoleBtn" class="console-btn" title="Clear console">Clear</button>
+          <button id="toggleConsoleBtn" class="console-btn" title="Minimize console">−</button>
+        </div>
+      </div>
+      <div id="consoleOutput" class="console-output"></div>
+    </div>
   </div>
 
   <!-- Manual Data Entry Modal -->

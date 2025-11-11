@@ -6,7 +6,8 @@
 
 // Initialize all popup features when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('JobSprint Popup loaded');
+  initializeDebugConsole();
+  log('JobSprint Popup loaded');
 
   initializeClipboardMacros();
   initializeExtraction();
@@ -14,6 +15,192 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeSettings();
   initializeManualEntryModal();
 });
+
+// ============ DEBUG CONSOLE ============
+
+let debugConsoleEnabled = false;
+const debugLogs = [];
+const MAX_LOGS = 100;
+let consoleHeight = 200; // Default height in pixels
+
+/**
+ * Initialize debug console
+ * Loads settings and sets up UI
+ */
+function initializeDebugConsole() {
+  // Load debug console settings
+  chrome.storage.sync.get(['debugConsoleEnabled', 'consoleHeight'], (result) => {
+    debugConsoleEnabled = result.debugConsoleEnabled || false;
+    consoleHeight = result.consoleHeight || 200;
+
+    console.log('[Debug] Console enabled:', debugConsoleEnabled);
+    console.log('[Debug] Stored logs count:', debugLogs.length);
+
+    updateDebugConsoleVisibility();
+  });
+
+  // Set up clear button
+  const clearBtn = document.getElementById('clearConsoleBtn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', clearDebugConsole);
+  }
+
+  // Set up toggle button
+  const toggleBtn = document.getElementById('toggleConsoleBtn');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', toggleDebugConsole);
+  }
+
+  // Set up resize handle
+  initializeConsoleResize();
+}
+
+/**
+ * Initialize console resize functionality
+ */
+function initializeConsoleResize() {
+  const resizeHandle = document.getElementById('consoleResizeHandle');
+  const consolePanel = document.getElementById('debugConsole');
+
+  if (!resizeHandle || !consolePanel) return;
+
+  let isResizing = false;
+  let startY = 0;
+  let startHeight = 0;
+
+  resizeHandle.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    startY = e.clientY;
+    startHeight = consolePanel.offsetHeight;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    const deltaY = startY - e.clientY; // Inverted because we're dragging top edge
+    const newHeight = Math.min(Math.max(startHeight + deltaY, 50), 400); // Min 50px, max 400px
+
+    consolePanel.style.height = newHeight + 'px';
+    consoleHeight = newHeight;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      // Save the new height to storage
+      chrome.storage.sync.set({ consoleHeight });
+    }
+  });
+}
+
+/**
+ * Log a message to debug console
+ * @param {string} message - Message to log
+ */
+function log(message) {
+  const timestamp = new Date().toLocaleTimeString();
+  const logEntry = { timestamp, message, type: 'log' };
+
+  debugLogs.push(logEntry);
+  if (debugLogs.length > MAX_LOGS) {
+    debugLogs.shift();
+  }
+
+  // Always try to append if console is enabled (don't wait for flag)
+  if (debugConsoleEnabled) {
+    appendToConsole(logEntry);
+  }
+
+  // Also log to browser console
+  console.log(message);
+}
+
+/**
+ * Log an error to debug console
+ * @param {string} message - Error message to log
+ */
+function logError(message) {
+  const timestamp = new Date().toLocaleTimeString();
+  const logEntry = { timestamp, message, type: 'error' };
+
+  debugLogs.push(logEntry);
+  if (debugLogs.length > MAX_LOGS) {
+    debugLogs.shift();
+  }
+
+  // Always try to append if console is enabled (don't wait for flag)
+  if (debugConsoleEnabled) {
+    appendToConsole(logEntry);
+  }
+
+  // Also log to browser console
+  console.error(message);
+}
+
+/**
+ * Append log entry to console UI
+ * @param {Object} entry - Log entry
+ */
+function appendToConsole(entry) {
+  const consoleOutput = document.getElementById('consoleOutput');
+  if (!consoleOutput) return;
+
+  const logLine = document.createElement('div');
+  logLine.className = `console-line console-${entry.type}`;
+  logLine.textContent = `[${entry.timestamp}] ${entry.message}`;
+
+  consoleOutput.appendChild(logLine);
+  consoleOutput.scrollTop = consoleOutput.scrollHeight;
+}
+
+/**
+ * Clear debug console
+ */
+function clearDebugConsole() {
+  debugLogs.length = 0;
+  const consoleOutput = document.getElementById('consoleOutput');
+  if (consoleOutput) {
+    consoleOutput.innerHTML = '';
+  }
+  log('Console cleared');
+}
+
+/**
+ * Toggle debug console visibility
+ */
+function toggleDebugConsole() {
+  const consolePanel = document.getElementById('debugConsole');
+  if (consolePanel) {
+    const isVisible = consolePanel.style.display !== 'none';
+    consolePanel.style.display = isVisible ? 'none' : 'block';
+  }
+}
+
+/**
+ * Update debug console visibility based on settings
+ */
+function updateDebugConsoleVisibility() {
+  const consolePanel = document.getElementById('debugConsole');
+  if (consolePanel) {
+    consolePanel.style.display = debugConsoleEnabled ? 'block' : 'none';
+    consolePanel.style.height = consoleHeight + 'px';
+
+    // Render all existing logs if enabling
+    if (debugConsoleEnabled) {
+      const consoleOutput = document.getElementById('consoleOutput');
+      if (consoleOutput) {
+        consoleOutput.innerHTML = '';
+        console.log('[Debug] Replaying', debugLogs.length, 'logs');
+        debugLogs.forEach(entry => appendToConsole(entry));
+      } else {
+        console.error('[Debug] consoleOutput element not found!');
+      }
+    }
+  } else {
+    console.error('[Debug] debugConsole panel not found!');
+  }
+}
 
 // ============ CLIPBOARD MACROS ============
 
@@ -29,6 +216,8 @@ const FOLDER_TITLES = {
 
 // Current navigation state
 let currentFolder = null;
+let navigationPath = []; // Track path for nested navigation
+let currentData = null; // Current folder data being displayed
 
 // Search cache
 let searchIndex = null;
@@ -42,16 +231,26 @@ function initializeClipboardMacros() {
   // Set up folder button click handlers
   const folderButtons = document.querySelectorAll('.folder-btn');
   folderButtons.forEach((button) => {
-    const folderName = button.getAttribute('data-folder');
-    button.onclick = function() {
-      openFolder(folderName);
-    };
+    button.addEventListener('click', () => {
+      const folder = button.getAttribute('data-folder');
+      log(`[Clipboard] Opening folder: ${folder}`);
+      openFolder(folder);
+    });
   });
 
   // Set up back button
   const backButton = document.getElementById('backButton');
   if (backButton) {
-    backButton.onclick = closeFolder;
+    backButton.addEventListener('click', closeFolder);
+  }
+
+  // Set up sub-menu settings link
+  const subMenuSettingsLink = document.getElementById('subMenuSettingsLink');
+  if (subMenuSettingsLink) {
+    subMenuSettingsLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.tabs.create({ url: 'settings.html' });
+    });
   }
 
   // Initialize search
@@ -66,22 +265,27 @@ function openFolder(folder) {
   if (!folder) return;
 
   currentFolder = folder;
+  navigationPath = [folder]; // Reset navigation to top level
 
   // Get folder data from storage
   chrome.runtime.sendMessage(
     { action: 'getClipboardFolder', folder },
     (response) => {
       if (chrome.runtime.lastError) {
-        console.error('Runtime error:', chrome.runtime.lastError);
+        logError('[Clipboard] Runtime error: ' + chrome.runtime.lastError.message);
         showError('Failed to communicate with extension');
         return;
       }
 
       if (!response || !response.success) {
-        console.error('Failed to load folder items');
+        logError('[Clipboard] Failed to load folder items');
         showError('Failed to load folder items');
         return;
       }
+
+      log(`[Clipboard] Loaded ${Object.keys(response.items || {}).length} items from ${folder}`);
+
+      currentData = response.items || {};
 
       // Show sub-menu and hide folder view
       const folderView = document.getElementById('folderView');
@@ -94,22 +298,82 @@ function openFolder(folder) {
       hideOtherSections();
 
       // Update sub-menu title
-      const subMenuTitle = document.getElementById('subMenuTitle');
-      if (subMenuTitle) {
-        subMenuTitle.textContent = FOLDER_TITLES[folder] || 'Items';
-      }
+      updateSubMenuTitle();
 
       // Render items
-      renderSubMenuItems(response.items || {});
+      renderSubMenuItems(currentData);
     }
   );
 }
 
 /**
- * Close folder and return to main view
+ * Open a nested folder (navigate deeper)
+ * @param {string} key - Item key
+ * @param {Object} value - Nested object
+ */
+function openNestedFolder(key, value) {
+  log(`[Clipboard] Opening nested folder: ${key}`);
+
+  navigationPath.push(key);
+  currentData = value;
+
+  // Update title and render new level
+  updateSubMenuTitle();
+  renderSubMenuItems(currentData);
+}
+
+/**
+ * Update sub-menu title with navigation breadcrumbs
+ */
+function updateSubMenuTitle() {
+  const subMenuTitle = document.getElementById('subMenuTitle');
+  if (subMenuTitle) {
+    // Build breadcrumb path
+    const breadcrumbs = navigationPath.map((pathItem, index) => {
+      if (index === 0) {
+        return FOLDER_TITLES[pathItem] || pathItem;
+      }
+      return pathItem.charAt(0).toUpperCase() + pathItem.slice(1);
+    });
+    subMenuTitle.textContent = breadcrumbs.join(' → ');
+  }
+}
+
+/**
+ * Close folder and return to main view or go back one level
  */
 function closeFolder() {
+  // If we're nested, go back one level
+  if (navigationPath.length > 1) {
+    log(`[Clipboard] Going back one level`);
+    navigationPath.pop();
+
+    // Navigate back to parent
+    // We need to traverse from root to get the parent data
+    chrome.runtime.sendMessage(
+      { action: 'getClipboardFolder', folder: navigationPath[0] },
+      (response) => {
+        if (response && response.success) {
+          let data = response.items || {};
+
+          // Traverse to current level
+          for (let i = 1; i < navigationPath.length; i++) {
+            data = data[navigationPath[i]];
+          }
+
+          currentData = data;
+          updateSubMenuTitle();
+          renderSubMenuItems(currentData);
+        }
+      }
+    );
+    return;
+  }
+
+  // Otherwise, return to main folder view
   currentFolder = null;
+  navigationPath = [];
+  currentData = null;
 
   // Show folder view and hide sub-menu
   const folderView = document.getElementById('folderView');
@@ -160,12 +424,12 @@ function renderSubMenuItems(items) {
       const button = document.createElement('button');
       button.className = 'sub-menu-item-btn folder-item';
       button.textContent = formatItemLabel(key, value);
-      button.title = 'Nested folder - use copy button to copy verbalized content';
+      button.title = 'Click to open nested folder';
 
-      // Folder main button doesn't do anything (or could navigate deeper in future)
+      // Clicking folder button opens nested folder
       button.addEventListener('click', (e) => {
         e.stopPropagation();
-        // For now, folders don't navigate deeper - just use copy button
+        openNestedFolder(key, value);
       });
 
       // Create copy button for folder
@@ -253,19 +517,14 @@ function formatItemLabel(key, value) {
   // Capitalize first letter of key
   const label = key.charAt(0).toUpperCase() + key.slice(1);
 
-  // If value is an object (nested), show folder icon
+  // If value is an object (nested), show folder icon and count
   if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
     const itemCount = Object.keys(value).length;
     return `📁 ${label} (${itemCount} items)`;
   }
 
-  // If value is a string, show preview
-  const maxLength = 30;
-  const truncatedValue = value.length > maxLength
-    ? value.substring(0, maxLength) + '...'
-    : value;
-
-  return `${label}: ${truncatedValue}`;
+  // For regular items, just show the label
+  return label;
 }
 
 /**
@@ -324,15 +583,33 @@ async function handleItemClick(key, value) {
   try {
     // Copy to clipboard using Clipboard API
     await navigator.clipboard.writeText(textToCopy);
+    log(`[Clipboard] Copied: ${key}`);
 
-    console.log('✓ Copied to clipboard:', textToCopy);
-
-    // Show visual feedback (similar to search copy)
-    // Keep popup open so user can copy multiple items
+    // Show visual feedback
+    showCopySuccess(key);
   } catch (error) {
+    logError('[Clipboard] Failed to copy: ' + error.message);
     showError('Failed to copy to clipboard');
-    console.error('Clipboard error:', error);
   }
+}
+
+/**
+ * Show success message when item is copied
+ * @param {string} itemName - Name of the copied item
+ */
+function showCopySuccess(itemName) {
+  const statusDiv = document.getElementById('subMenuStatus');
+  if (!statusDiv) return;
+
+  const label = itemName.charAt(0).toUpperCase() + itemName.slice(1);
+  statusDiv.textContent = `✓ Copied: ${label}`;
+  statusDiv.className = 'sub-menu-status success';
+  statusDiv.style.display = 'block';
+
+  // Auto-hide after 2 seconds
+  setTimeout(() => {
+    statusDiv.style.display = 'none';
+  }, 2000);
 }
 
 /**
