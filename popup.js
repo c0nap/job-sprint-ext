@@ -216,6 +216,8 @@ const FOLDER_TITLES = {
 
 // Current navigation state
 let currentFolder = null;
+let navigationPath = []; // Track path for nested navigation
+let currentData = null; // Current folder data being displayed
 
 // Search cache
 let searchIndex = null;
@@ -254,6 +256,7 @@ function openFolder(folder) {
   if (!folder) return;
 
   currentFolder = folder;
+  navigationPath = [folder]; // Reset navigation to top level
 
   // Get folder data from storage
   chrome.runtime.sendMessage(
@@ -273,6 +276,8 @@ function openFolder(folder) {
 
       log(`[Clipboard] Loaded ${Object.keys(response.items || {}).length} items from ${folder}`);
 
+      currentData = response.items || {};
+
       // Show sub-menu and hide folder view
       const folderView = document.getElementById('folderView');
       const subMenuView = document.getElementById('subMenuView');
@@ -284,22 +289,82 @@ function openFolder(folder) {
       hideOtherSections();
 
       // Update sub-menu title
-      const subMenuTitle = document.getElementById('subMenuTitle');
-      if (subMenuTitle) {
-        subMenuTitle.textContent = FOLDER_TITLES[folder] || 'Items';
-      }
+      updateSubMenuTitle();
 
       // Render items
-      renderSubMenuItems(response.items || {});
+      renderSubMenuItems(currentData);
     }
   );
 }
 
 /**
- * Close folder and return to main view
+ * Open a nested folder (navigate deeper)
+ * @param {string} key - Item key
+ * @param {Object} value - Nested object
+ */
+function openNestedFolder(key, value) {
+  log(`[Clipboard] Opening nested folder: ${key}`);
+
+  navigationPath.push(key);
+  currentData = value;
+
+  // Update title and render new level
+  updateSubMenuTitle();
+  renderSubMenuItems(currentData);
+}
+
+/**
+ * Update sub-menu title with navigation breadcrumbs
+ */
+function updateSubMenuTitle() {
+  const subMenuTitle = document.getElementById('subMenuTitle');
+  if (subMenuTitle) {
+    // Build breadcrumb path
+    const breadcrumbs = navigationPath.map((pathItem, index) => {
+      if (index === 0) {
+        return FOLDER_TITLES[pathItem] || pathItem;
+      }
+      return pathItem.charAt(0).toUpperCase() + pathItem.slice(1);
+    });
+    subMenuTitle.textContent = breadcrumbs.join(' → ');
+  }
+}
+
+/**
+ * Close folder and return to main view or go back one level
  */
 function closeFolder() {
+  // If we're nested, go back one level
+  if (navigationPath.length > 1) {
+    log(`[Clipboard] Going back one level`);
+    navigationPath.pop();
+
+    // Navigate back to parent
+    // We need to traverse from root to get the parent data
+    chrome.runtime.sendMessage(
+      { action: 'getClipboardFolder', folder: navigationPath[0] },
+      (response) => {
+        if (response && response.success) {
+          let data = response.items || {};
+
+          // Traverse to current level
+          for (let i = 1; i < navigationPath.length; i++) {
+            data = data[navigationPath[i]];
+          }
+
+          currentData = data;
+          updateSubMenuTitle();
+          renderSubMenuItems(currentData);
+        }
+      }
+    );
+    return;
+  }
+
+  // Otherwise, return to main folder view
   currentFolder = null;
+  navigationPath = [];
+  currentData = null;
 
   // Show folder view and hide sub-menu
   const folderView = document.getElementById('folderView');
@@ -350,13 +415,12 @@ function renderSubMenuItems(items) {
       const button = document.createElement('button');
       button.className = 'sub-menu-item-btn folder-item';
       button.textContent = formatItemLabel(key, value);
-      button.title = 'Click to copy verbalized content';
+      button.title = 'Click to open nested folder';
 
-      // Clicking folder button copies verbalized content
+      // Clicking folder button opens nested folder
       button.addEventListener('click', (e) => {
         e.stopPropagation();
-        log(`[Clipboard] Clicked nested folder: ${key}, copying verbalized content`);
-        handleItemClick(key, value);
+        openNestedFolder(key, value);
       });
 
       // Create copy button for folder
