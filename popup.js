@@ -350,13 +350,13 @@ function renderSubMenuItems(items) {
       const button = document.createElement('button');
       button.className = 'sub-menu-item-btn folder-item';
       button.textContent = formatItemLabel(key, value);
-      button.title = 'Nested folder - use copy button to copy verbalized content';
+      button.title = 'Click to copy verbalized content';
 
-      // Folder main button doesn't do anything (or could navigate deeper in future)
+      // Clicking folder button copies verbalized content
       button.addEventListener('click', (e) => {
         e.stopPropagation();
-        log(`[Clipboard] Clicked nested folder: ${key} (use copy button to copy)`);
-        // For now, folders don't navigate deeper - just use copy button
+        log(`[Clipboard] Clicked nested folder: ${key}, copying verbalized content`);
+        handleItemClick(key, value);
       });
 
       // Create copy button for folder
