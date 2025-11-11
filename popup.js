@@ -79,7 +79,7 @@ function initializeConsoleResize() {
     if (!isResizing) return;
 
     const deltaY = startY - e.clientY; // Inverted because we're dragging top edge
-    const newHeight = Math.min(Math.max(startHeight + deltaY, 100), 400); // Min 100px, max 400px
+    const newHeight = Math.min(Math.max(startHeight + deltaY, 50), 400); // Min 50px, max 400px
 
     consolePanel.style.maxHeight = newHeight + 'px';
     consoleHeight = newHeight;
@@ -355,6 +355,7 @@ function renderSubMenuItems(items) {
       // Folder main button doesn't do anything (or could navigate deeper in future)
       button.addEventListener('click', (e) => {
         e.stopPropagation();
+        log(`[Clipboard] Clicked nested folder: ${key} (use copy button to copy)`);
         // For now, folders don't navigate deeper - just use copy button
       });
 

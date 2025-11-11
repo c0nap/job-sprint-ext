@@ -674,6 +674,7 @@ footer a:hover {
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 11px;
   line-height: 1.4;
+  min-height: 30px;
 }
 
 .console-line {
