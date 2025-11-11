@@ -81,7 +81,7 @@ function initializeConsoleResize() {
     const deltaY = startY - e.clientY; // Inverted because we're dragging top edge
     const newHeight = Math.min(Math.max(startHeight + deltaY, 50), 400); // Min 50px, max 400px
 
-    consolePanel.style.maxHeight = newHeight + 'px';
+    consolePanel.style.height = newHeight + 'px';
     consoleHeight = newHeight;
   });
 
@@ -184,7 +184,7 @@ function updateDebugConsoleVisibility() {
   const consolePanel = document.getElementById('debugConsole');
   if (consolePanel) {
     consolePanel.style.display = debugConsoleEnabled ? 'block' : 'none';
-    consolePanel.style.maxHeight = consoleHeight + 'px';
+    consolePanel.style.height = consoleHeight + 'px';
 
     // Render all existing logs if enabling
     if (debugConsoleEnabled) {

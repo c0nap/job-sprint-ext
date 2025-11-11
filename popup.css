@@ -608,11 +608,10 @@ footer a:hover {
   background: #1e1e1e;
   color: #d4d4d4;
   border-top: 2px solid #007bff;
-  max-height: 200px;
+  height: 200px;
   display: flex;
   flex-direction: column;
   z-index: 2000;
-  resize: vertical;
   overflow: hidden;
 }
 
