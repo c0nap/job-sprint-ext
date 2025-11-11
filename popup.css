@@ -307,6 +307,30 @@ button {
   margin-top: 8px;
 }
 
+.sub-menu-hint a {
+  color: #007bff;
+  text-decoration: none;
+}
+
+.sub-menu-hint a:hover {
+  text-decoration: underline;
+}
+
+.sub-menu-status {
+  padding: 8px 12px;
+  margin: 8px 0;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+  display: none;
+}
+
+.sub-menu-status.success {
+  background-color: #d1ecf1;
+  color: #0c5460;
+  border: 1px solid #bee5eb;
+}
+
 .sub-menu-empty {
   text-align: center;
   padding: 24px;

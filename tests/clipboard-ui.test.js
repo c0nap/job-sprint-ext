@@ -71,7 +71,8 @@ describe('Clipboard Macros UI - Folder Structure', () => {
     });
 
     test('should have configure hint in sub-menu', () => {
-      expect(popupHtml).toContain('Configure items in Settings');
+      expect(popupHtml).toContain('Configure items in');
+      expect(popupHtml).toContain('Settings</a>');
     });
 
     test('should NOT have old macro-btn class', () => {

@@ -244,6 +244,15 @@ function initializeClipboardMacros() {
     backButton.addEventListener('click', closeFolder);
   }
 
+  // Set up sub-menu settings link
+  const subMenuSettingsLink = document.getElementById('subMenuSettingsLink');
+  if (subMenuSettingsLink) {
+    subMenuSettingsLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.tabs.create({ url: 'settings.html' });
+    });
+  }
+
   // Initialize search
   initializeSearch();
 }
@@ -508,19 +517,14 @@ function formatItemLabel(key, value) {
   // Capitalize first letter of key
   const label = key.charAt(0).toUpperCase() + key.slice(1);
 
-  // If value is an object (nested), show folder icon
+  // If value is an object (nested), show folder icon and count
   if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
     const itemCount = Object.keys(value).length;
     return `📁 ${label} (${itemCount} items)`;
   }
 
-  // If value is a string, show preview
-  const maxLength = 30;
-  const truncatedValue = value.length > maxLength
-    ? value.substring(0, maxLength) + '...'
-    : value;
-
-  return `${label}: ${truncatedValue}`;
+  // For regular items, just show the label
+  return label;
 }
 
 /**
@@ -581,12 +585,31 @@ async function handleItemClick(key, value) {
     await navigator.clipboard.writeText(textToCopy);
     log(`[Clipboard] Copied: ${key}`);
 
-    // Show visual feedback (similar to search copy)
-    // Keep popup open so user can copy multiple items
+    // Show visual feedback
+    showCopySuccess(key);
   } catch (error) {
     logError('[Clipboard] Failed to copy: ' + error.message);
     showError('Failed to copy to clipboard');
   }
+}
+
+/**
+ * Show success message when item is copied
+ * @param {string} itemName - Name of the copied item
+ */
+function showCopySuccess(itemName) {
+  const statusDiv = document.getElementById('subMenuStatus');
+  if (!statusDiv) return;
+
+  const label = itemName.charAt(0).toUpperCase() + itemName.slice(1);
+  statusDiv.textContent = `✓ Copied: ${label}`;
+  statusDiv.className = 'sub-menu-status success';
+  statusDiv.style.display = 'block';
+
+  // Auto-hide after 2 seconds
+  setTimeout(() => {
+    statusDiv.style.display = 'none';
+  }, 2000);
 }
 
 /**
