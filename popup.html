@@ -14,15 +14,37 @@
     </header>
 
     <!-- Clipboard Macros Section -->
-    <section class="feature-section">
+    <section class="feature-section" id="clipboardSection">
       <h2>Clipboard Macros</h2>
-      <div class="button-group">
-        <button class="macro-btn" data-key="phone">Phone</button>
-        <button class="macro-btn" data-key="email">Email</button>
-        <button class="macro-btn" data-key="address">Address</button>
-        <button class="macro-btn" data-key="linkedin">LinkedIn</button>
+
+      <!-- Search bar -->
+      <div class="search-container">
+        <input type="text" id="clipboardSearch" placeholder="Search clipboard items (e.g., employment.walmart)">
+        <div id="searchResults" class="search-results" style="display: none;"></div>
       </div>
-      <button class="secondary-btn" id="editMacros">Edit Macros</button>
+
+      <!-- Main folder view -->
+      <div id="folderView" class="button-group">
+        <button class="folder-btn" data-folder="demographics">Demographics</button>
+        <button class="folder-btn" data-folder="references">References</button>
+        <button class="folder-btn" data-folder="education">Education</button>
+        <button class="folder-btn" data-folder="skills">Skills</button>
+        <button class="folder-btn" data-folder="projects">Projects</button>
+        <button class="folder-btn" data-folder="employment">Employment</button>
+      </div>
+
+      <!-- Sub-menu view (hidden by default) -->
+      <div id="subMenuView" style="display: none;">
+        <div class="sub-menu-header">
+          <button id="backButton" class="nav-btn">← Back</button>
+          <h3 id="subMenuTitle">Items</h3>
+        </div>
+        <div id="subMenuStatus" class="sub-menu-status" style="display: none;"></div>
+        <div id="subMenuItems" class="sub-menu-items"></div>
+        <div class="sub-menu-hint">
+          Configure items in <a href="#" id="subMenuSettingsLink">Settings</a>
+        </div>
+      </div>
     </section>
 
     <!-- Data Extraction Section -->
@@ -43,6 +65,19 @@
     <footer>
       <a href="#" id="settingsLink">Settings</a>
     </footer>
+
+    <!-- Debug Console (hidden by default) -->
+    <div id="debugConsole" class="debug-console" style="display: none;">
+      <div id="consoleResizeHandle" class="console-resize-handle" title="Drag to resize"></div>
+      <div class="debug-console-header">
+        <span>Debug Console</span>
+        <div class="debug-console-actions">
+          <button id="clearConsoleBtn" class="console-btn" title="Clear console">Clear</button>
+          <button id="toggleConsoleBtn" class="console-btn" title="Minimize console">−</button>
+        </div>
+      </div>
+      <div id="consoleOutput" class="console-output"></div>
+    </div>
   </div>
 
   <!-- Manual Data Entry Modal -->

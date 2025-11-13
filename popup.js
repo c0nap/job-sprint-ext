@@ -6,7 +6,8 @@
 
 // Initialize all popup features when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('JobSprint Popup loaded');
+  initializeDebugConsole();
+  log('JobSprint Popup loaded');
 
   initializeClipboardMacros();
   initializeExtraction();
@@ -15,75 +16,868 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeManualEntryModal();
 });
 
+// ============ DEBUG CONSOLE ============
+
+let debugConsoleEnabled = false;
+const debugLogs = [];
+const MAX_LOGS = 100;
+let consoleHeight = 200; // Default height in pixels
+
+/**
+ * Initialize debug console
+ * Loads settings and sets up UI
+ */
+function initializeDebugConsole() {
+  // Load debug console settings
+  chrome.storage.sync.get(['debugConsoleEnabled', 'consoleHeight'], (result) => {
+    debugConsoleEnabled = result.debugConsoleEnabled || false;
+    consoleHeight = result.consoleHeight || 200;
+
+    updateDebugConsoleVisibility();
+  });
+
+  // Set up clear button
+  const clearBtn = document.getElementById('clearConsoleBtn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', clearDebugConsole);
+  }
+
+  // Set up toggle button
+  const toggleBtn = document.getElementById('toggleConsoleBtn');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', toggleDebugConsole);
+  }
+
+  // Set up resize handle
+  initializeConsoleResize();
+}
+
+/**
+ * Initialize console resize functionality
+ */
+function initializeConsoleResize() {
+  const resizeHandle = document.getElementById('consoleResizeHandle');
+  const consolePanel = document.getElementById('debugConsole');
+
+  if (!resizeHandle || !consolePanel) return;
+
+  let isResizing = false;
+  let startY = 0;
+  let startHeight = 0;
+
+  resizeHandle.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    startY = e.clientY;
+    startHeight = consolePanel.offsetHeight;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    const deltaY = startY - e.clientY; // Inverted because we're dragging top edge
+    const newHeight = Math.min(Math.max(startHeight + deltaY, 50), 400); // Min 50px, max 400px
+
+    consolePanel.style.height = newHeight + 'px';
+    consoleHeight = newHeight;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      // Save the new height to storage
+      chrome.storage.sync.set({ consoleHeight });
+    }
+  });
+}
+
+/**
+ * Log a message to debug console
+ * @param {string} message - Message to log
+ */
+function log(message) {
+  const timestamp = new Date().toLocaleTimeString();
+  const logEntry = { timestamp, message, type: 'log' };
+
+  debugLogs.push(logEntry);
+  if (debugLogs.length > MAX_LOGS) {
+    debugLogs.shift();
+  }
+
+  // Always try to append if console is enabled (don't wait for flag)
+  if (debugConsoleEnabled) {
+    appendToConsole(logEntry);
+  }
+}
+
+/**
+ * Log an error to debug console
+ * @param {string} message - Error message to log
+ */
+function logError(message) {
+  const timestamp = new Date().toLocaleTimeString();
+  const logEntry = { timestamp, message, type: 'error' };
+
+  debugLogs.push(logEntry);
+  if (debugLogs.length > MAX_LOGS) {
+    debugLogs.shift();
+  }
+
+  // Always try to append if console is enabled (don't wait for flag)
+  if (debugConsoleEnabled) {
+    appendToConsole(logEntry);
+  }
+}
+
+/**
+ * Append log entry to console UI
+ * @param {Object} entry - Log entry
+ */
+function appendToConsole(entry) {
+  const consoleOutput = document.getElementById('consoleOutput');
+  if (!consoleOutput) return;
+
+  const logLine = document.createElement('div');
+  logLine.className = `console-line console-${entry.type}`;
+  logLine.textContent = `[${entry.timestamp}] ${entry.message}`;
+
+  consoleOutput.appendChild(logLine);
+  consoleOutput.scrollTop = consoleOutput.scrollHeight;
+}
+
+/**
+ * Clear debug console
+ */
+function clearDebugConsole() {
+  debugLogs.length = 0;
+  const consoleOutput = document.getElementById('consoleOutput');
+  if (consoleOutput) {
+    consoleOutput.innerHTML = '';
+  }
+  log('Console cleared');
+}
+
+/**
+ * Toggle debug console visibility
+ */
+function toggleDebugConsole() {
+  const consolePanel = document.getElementById('debugConsole');
+  if (consolePanel) {
+    const isVisible = consolePanel.style.display !== 'none';
+    consolePanel.style.display = isVisible ? 'none' : 'block';
+  }
+}
+
+/**
+ * Update debug console visibility based on settings
+ */
+function updateDebugConsoleVisibility() {
+  const consolePanel = document.getElementById('debugConsole');
+  if (consolePanel) {
+    consolePanel.style.display = debugConsoleEnabled ? 'block' : 'none';
+    consolePanel.style.height = consoleHeight + 'px';
+
+    // Render all existing logs if enabling
+    if (debugConsoleEnabled) {
+      const consoleOutput = document.getElementById('consoleOutput');
+      if (consoleOutput) {
+        consoleOutput.innerHTML = '';
+        debugLogs.forEach(entry => appendToConsole(entry));
+      }
+    }
+  }
+}
+
 // ============ CLIPBOARD MACROS ============
 
 /**
- * Initialize clipboard macro buttons and event listeners
- * Sets up click handlers for macro buttons (phone, email, address, linkedin)
+ * Check if value is a plain object (not array, not null)
+ * @param {*} value - Value to check
+ * @returns {boolean} True if value is a plain object
+ */
+function isPlainObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// Folder titles mapping
+const FOLDER_TITLES = {
+  demographics: 'Demographics',
+  references: 'References',
+  education: 'Education',
+  skills: 'Skills',
+  projects: 'Projects',
+  employment: 'Employment'
+};
+
+// Current navigation state
+let currentFolder = null;
+let navigationPath = []; // Track path for nested navigation
+let currentData = null; // Current folder data being displayed
+
+// Search cache
+let searchIndex = null;
+let maxSearchResults = 10; // Default, will be loaded from settings
+
+/**
+ * Initialize clipboard macro folder navigation
+ * Sets up click handlers for folder buttons and navigation
  */
 function initializeClipboardMacros() {
-  const macroButtons = document.querySelectorAll('.macro-btn');
-
-  macroButtons.forEach((button) => {
+  // Set up folder button click handlers
+  const folderButtons = document.querySelectorAll('.folder-btn');
+  folderButtons.forEach((button) => {
     button.addEventListener('click', () => {
-      const key = button.getAttribute('data-key');
-      handleMacroClick(key);
+      const folder = button.getAttribute('data-folder');
+      log(`[Clipboard] Opening folder: ${folder}`);
+      openFolder(folder);
     });
   });
 
-  // Edit macros button - TODO: Implement settings modal or page for editing macro values
-  const editButton = document.getElementById('editMacros');
-  if (editButton) {
-    editButton.addEventListener('click', () => {
-      alert('Edit macros functionality coming soon!');
+  // Set up back button
+  const backButton = document.getElementById('backButton');
+  if (backButton) {
+    backButton.addEventListener('click', closeFolder);
+  }
+
+  // Set up sub-menu settings link
+  const subMenuSettingsLink = document.getElementById('subMenuSettingsLink');
+  if (subMenuSettingsLink) {
+    subMenuSettingsLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.tabs.create({ url: 'settings.html' });
+    });
+  }
+
+  // Initialize search
+  initializeSearch();
+}
+
+/**
+ * Open a folder and show its items
+ * @param {string} folder - Folder name (demographics, references, etc.)
+ */
+function openFolder(folder) {
+  if (!folder) return;
+
+  currentFolder = folder;
+  navigationPath = [folder]; // Reset navigation to top level
+
+  // Get folder data from storage
+  chrome.runtime.sendMessage(
+    { action: 'getClipboardFolder', folder },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        logError('[Clipboard] Runtime error: ' + chrome.runtime.lastError.message);
+        showError('Failed to communicate with extension');
+        return;
+      }
+
+      if (!response || !response.success) {
+        logError('[Clipboard] Failed to load folder items');
+        showError('Failed to load folder items');
+        return;
+      }
+
+      log(`[Clipboard] Loaded ${Object.keys(response.items || {}).length} items from ${folder}`);
+
+      currentData = response.items || {};
+
+      // Show sub-menu and hide folder view
+      const folderView = document.getElementById('folderView');
+      const subMenuView = document.getElementById('subMenuView');
+
+      if (folderView) folderView.style.display = 'none';
+      if (subMenuView) subMenuView.style.display = 'block';
+
+      // Hide other feature sections
+      hideOtherSections();
+
+      // Update sub-menu title
+      updateSubMenuTitle();
+
+      // Render items
+      renderSubMenuItems(currentData);
+    }
+  );
+}
+
+/**
+ * Open a nested folder (navigate deeper)
+ * @param {string} key - Item key
+ * @param {Object} value - Nested object
+ */
+function openNestedFolder(key, value) {
+  log(`[Clipboard] Opening nested folder: ${key}`);
+
+  navigationPath.push(key);
+  currentData = value;
+
+  // Update title and render new level
+  updateSubMenuTitle();
+  renderSubMenuItems(currentData);
+}
+
+/**
+ * Update sub-menu title with navigation breadcrumbs
+ */
+function updateSubMenuTitle() {
+  const subMenuTitle = document.getElementById('subMenuTitle');
+  if (subMenuTitle) {
+    // Build breadcrumb path
+    const breadcrumbs = navigationPath.map((pathItem, index) => {
+      if (index === 0) {
+        return FOLDER_TITLES[pathItem] || pathItem;
+      }
+      return pathItem.charAt(0).toUpperCase() + pathItem.slice(1);
+    });
+    subMenuTitle.textContent = breadcrumbs.join(' → ');
+  }
+}
+
+/**
+ * Close folder and return to main view or go back one level
+ */
+function closeFolder() {
+  // If we're nested, go back one level
+  if (navigationPath.length > 1) {
+    log(`[Clipboard] Going back one level`);
+    navigationPath.pop();
+
+    // Navigate back to parent
+    // We need to traverse from root to get the parent data
+    chrome.runtime.sendMessage(
+      { action: 'getClipboardFolder', folder: navigationPath[0] },
+      (response) => {
+        if (response && response.success) {
+          let data = response.items || {};
+
+          // Traverse to current level
+          for (let i = 1; i < navigationPath.length; i++) {
+            data = data[navigationPath[i]];
+          }
+
+          currentData = data;
+          updateSubMenuTitle();
+          renderSubMenuItems(currentData);
+        }
+      }
+    );
+    return;
+  }
+
+  // Otherwise, return to main folder view
+  currentFolder = null;
+  navigationPath = [];
+  currentData = null;
+
+  // Show folder view and hide sub-menu
+  const folderView = document.getElementById('folderView');
+  const subMenuView = document.getElementById('subMenuView');
+
+  if (folderView) folderView.style.display = 'grid';
+  if (subMenuView) subMenuView.style.display = 'none';
+
+  // Show other feature sections
+  showOtherSections();
+}
+
+/**
+ * Render sub-menu items
+ * @param {Object} items - Object with key-value pairs of items
+ */
+function renderSubMenuItems(items) {
+  const container = document.getElementById('subMenuItems');
+
+  // Clear container
+  while (container.firstChild) {
+    container.removeChild(container.firstChild);
+  }
+
+  // Convert items object to array
+  const itemsArray = Object.entries(items || {});
+
+  if (itemsArray.length === 0) {
+    // Show empty state
+    showEmptyState(container);
+    return;
+  }
+
+  // Render each item as a button
+  itemsArray.forEach(([key, value]) => {
+    // Skip empty or invalid values
+    if (!value || (typeof value === 'string' && value.trim() === '')) return;
+
+    const isFolder = isPlainObject(value);
+
+    if (isFolder) {
+      // Folder item - render with main button + copy button
+      const itemContainer = document.createElement('div');
+      itemContainer.className = 'sub-menu-item-container';
+
+      // Create main folder button
+      const button = document.createElement('button');
+      button.className = 'sub-menu-item-btn folder-item';
+      button.textContent = formatItemLabel(key, value);
+      button.title = 'Click to open nested folder';
+
+      // Clicking folder button opens nested folder
+      button.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openNestedFolder(key, value);
+      });
+
+      // Create copy button for folder
+      const copyButton = document.createElement('button');
+      copyButton.className = 'sub-menu-copy-btn';
+      copyButton.setAttribute('aria-label', 'Copy');
+      copyButton.title = 'Copy verbalized content to clipboard';
+
+      // Use layered document emoji for copy icon
+      const copyIcon = document.createElement('span');
+      copyIcon.className = 'copy-icon-layered';
+
+      const doc1 = document.createElement('span');
+      doc1.textContent = '📄';
+      doc1.className = 'copy-doc-1';
+
+      const doc2 = document.createElement('span');
+      doc2.textContent = '📄';
+      doc2.className = 'copy-doc-2';
+
+      copyIcon.appendChild(doc1);
+      copyIcon.appendChild(doc2);
+      copyButton.appendChild(copyIcon);
+
+      // Copy button copies verbalized content
+      copyButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleItemClick(key, value);
+      });
+
+      itemContainer.appendChild(button);
+      itemContainer.appendChild(copyButton);
+      container.appendChild(itemContainer);
+    } else {
+      // Regular item - just one button that copies when clicked
+      const button = document.createElement('button');
+      button.className = 'sub-menu-item-btn basic-item';
+      button.textContent = formatItemLabel(key, value);
+      button.title = `Click to copy: ${value}`;
+
+      // Click to copy
+      button.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleItemClick(key, value);
+      });
+
+      // Add button directly (no container, no copy button for items)
+      container.appendChild(button);
+    }
+  });
+
+  // If no non-empty items, show empty state
+  if (container.children.length === 0) {
+    showEmptyState(container);
+  }
+}
+
+/**
+ * Show empty state in container
+ * @param {HTMLElement} container - Container element
+ */
+function showEmptyState(container) {
+  const emptyDiv = document.createElement('div');
+  emptyDiv.className = 'sub-menu-empty';
+
+  const iconDiv = document.createElement('div');
+  iconDiv.className = 'sub-menu-empty-icon';
+  iconDiv.textContent = '📭';
+
+  const textDiv = document.createElement('div');
+  textDiv.textContent = 'No items configured';
+
+  emptyDiv.appendChild(iconDiv);
+  emptyDiv.appendChild(textDiv);
+  container.appendChild(emptyDiv);
+}
+
+/**
+ * Format item label for display
+ * @param {string} key - Item key
+ * @param {string|Object} value - Item value
+ * @returns {string} Formatted label
+ */
+function formatItemLabel(key, value) {
+  // Capitalize first letter of key
+  const label = key.charAt(0).toUpperCase() + key.slice(1);
+
+  // If value is an object (nested), show folder icon and count
+  if (isPlainObject(value)) {
+    const itemCount = Object.keys(value).length;
+    return `📁 ${label} (${itemCount} items)`;
+  }
+
+  // For regular items, just show the label
+  return label;
+}
+
+/**
+ * Verbalize a value - convert nested objects to readable text
+ * If value is a string, return as-is. If object, convert to bulleted list.
+ * @param {string|Object} value - Value to verbalize
+ * @param {number} indent - Indentation level (for recursion)
+ * @returns {string} Verbalized text
+ */
+function verbalizeValue(value, indent = 0) {
+  // Base case: if it's a string, return it
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  // If it's an object, convert to list format
+  if (isPlainObject(value)) {
+    const entries = Object.entries(value);
+    if (entries.length === 0) {
+      return '(empty)';
+    }
+
+    const lines = [];
+    const indentStr = '  '.repeat(indent);
+
+    entries.forEach(([key, val]) => {
+      const label = key.charAt(0).toUpperCase() + key.slice(1);
+
+      if (typeof val === 'string') {
+        // Leaf node - format as "- Key: value"
+        lines.push(`${indentStr}- ${label}: ${val}`);
+      } else if (isPlainObject(val)) {
+        // Nested object - format with sub-items
+        lines.push(`${indentStr}- ${label}:`);
+        const nested = verbalizeValue(val, indent + 1);
+        lines.push(nested);
+      }
+    });
+
+    return lines.join('\n');
+  }
+
+  // Fallback for unexpected types
+  return String(value);
+}
+
+/**
+ * Handle item click - copy the value to clipboard
+ * @param {string} key - Item key
+ * @param {string|Object} value - Item value to copy (string or nested object)
+ */
+async function handleItemClick(key, value) {
+  // Verbalize the value (converts objects to readable text, keeps strings as-is)
+  const textToCopy = verbalizeValue(value);
+
+  try {
+    // Copy to clipboard using Clipboard API
+    await navigator.clipboard.writeText(textToCopy);
+    log(`[Clipboard] Copied: ${key}`);
+
+    // Show visual feedback
+    showCopySuccess(key);
+  } catch (error) {
+    logError('[Clipboard] Failed to copy: ' + error.message);
+    showError('Failed to copy to clipboard');
+  }
+}
+
+/**
+ * Show success message when item is copied
+ * @param {string} itemName - Name of the copied item
+ */
+function showCopySuccess(itemName) {
+  const statusDiv = document.getElementById('subMenuStatus');
+  if (!statusDiv) return;
+
+  const label = itemName.charAt(0).toUpperCase() + itemName.slice(1);
+  statusDiv.textContent = `✓ Copied: ${label}`;
+  statusDiv.className = 'sub-menu-status success';
+  statusDiv.style.display = 'block';
+
+  // Auto-hide after 2 seconds
+  setTimeout(() => {
+    statusDiv.style.display = 'none';
+  }, 2000);
+}
+
+/**
+ * Hide other feature sections when sub-menu is open
+ */
+function hideOtherSections() {
+  const sections = document.querySelectorAll('.feature-section:not(#clipboardSection)');
+  sections.forEach(section => {
+    section.classList.add('other-sections-hidden');
+  });
+
+  // Also hide footer
+  const footer = document.querySelector('footer');
+  if (footer) {
+    footer.classList.add('other-sections-hidden');
+  }
+}
+
+/**
+ * Show other feature sections when returning to folder view
+ */
+function showOtherSections() {
+  const sections = document.querySelectorAll('.feature-section:not(#clipboardSection)');
+  sections.forEach(section => {
+    section.classList.remove('other-sections-hidden');
+  });
+
+  // Also show footer
+  const footer = document.querySelector('footer');
+  if (footer) {
+    footer.classList.remove('other-sections-hidden');
+  }
+}
+
+// ============ CLIPBOARD SEARCH ============
+
+/**
+ * Initialize clipboard search functionality
+ */
+function initializeSearch() {
+  // Load search settings
+  chrome.storage.sync.get(['maxSearchResults'], (result) => {
+    if (result.maxSearchResults) {
+      maxSearchResults = result.maxSearchResults;
+    }
+  });
+
+  // Set up search input handler
+  const searchInput = document.getElementById('clipboardSearch');
+  if (searchInput) {
+    searchInput.addEventListener('input', handleSearchInput);
+    searchInput.addEventListener('focus', () => {
+      if (searchInput.value.trim()) {
+        handleSearchInput(); // Show results if there's already a value
+      }
+    });
+  }
+
+  // Hide results when clicking outside
+  document.addEventListener('click', (e) => {
+    const searchContainer = document.querySelector('.search-container');
+    if (searchContainer && !searchContainer.contains(e.target)) {
+      hideSearchResults();
+    }
+  });
+
+  // Build search index
+  buildSearchIndex();
+}
+
+/**
+ * Build search index from all clipboard macros
+ */
+function buildSearchIndex() {
+  chrome.storage.sync.get(['clipboardMacros'], (result) => {
+    const macros = result.clipboardMacros || {};
+    searchIndex = [];
+
+    // Recursively index all items
+    Object.entries(macros).forEach(([folderKey, folderData]) => {
+      indexFolder(folderKey, folderData, [folderKey]);
+    });
+  });
+}
+
+/**
+ * Recursively index a folder and its contents
+ * @param {string} key - Current key
+ * @param {*} value - Current value
+ * @param {Array<string>} path - Path from root to current item
+ */
+function indexFolder(key, value, path) {
+  if (typeof value === 'string') {
+    // Leaf node - add to index
+    searchIndex.push({
+      path: path,
+      dotPath: path.join('.'),
+      value: value,
+      displayPath: path.map(capitalizeFirst).join(' → ')
+    });
+  } else if (isPlainObject(value)) {
+    // Object node - recurse into children
+    Object.entries(value).forEach(([childKey, childValue]) => {
+      indexFolder(childKey, childValue, [...path, childKey]);
     });
   }
 }
 
 /**
- * Handle macro button click - retrieve value and paste to active field
- * Flow: Get value from storage -> Query active tab -> Send to content script -> Paste
- * @param {string} key - Macro key (phone, email, address, linkedin)
+ * Handle search input changes
  */
-function handleMacroClick(key) {
-  // Step 1: Get the macro value from service worker storage
-  chrome.runtime.sendMessage(
-    { action: 'getClipboardMacro', key },
-    (response) => {
-      // Early return if no value is set
-      if (!response?.success || !response?.value) {
-        showError('No value set for this macro. Please edit macros first.');
-        return;
-      }
+function handleSearchInput() {
+  const searchInput = document.getElementById('clipboardSearch');
+  const query = searchInput.value.trim().toLowerCase();
 
-      // Step 2: Query the active tab
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const activeTab = tabs[0];
-        if (!activeTab) {
-          showError('No active tab found');
-          return;
-        }
+  if (!query) {
+    hideSearchResults();
+    return;
+  }
 
-        // Step 3: Send paste command to content script
-        chrome.tabs.sendMessage(
-          activeTab.id,
-          { action: 'pasteText', text: response.value },
-          (pasteResponse) => {
-            if (chrome.runtime.lastError) {
-              showError(`Failed to paste: ${chrome.runtime.lastError.message}`);
-              return;
-            }
+  if (!searchIndex) {
+    buildSearchIndex();
+    setTimeout(handleSearchInput, 100); // Retry after index is built
+    return;
+  }
 
-            console.log('Text pasted successfully');
-            window.close(); // Close popup after successful paste
-          }
-        );
-      });
-    }
-  );
+  // Search through index
+  const results = searchIndex.filter((item) => {
+    // Match against dot path (e.g., "employment.walmart.start_date")
+    const dotPathMatch = item.dotPath.toLowerCase().includes(query);
+    // Match against display path (e.g., "Employment → Walmart → Start Date")
+    const displayPathMatch = item.displayPath.toLowerCase().includes(query);
+    // Match against value
+    const valueMatch = item.value.toLowerCase().includes(query);
+
+    return dotPathMatch || displayPathMatch || valueMatch;
+  }).slice(0, maxSearchResults);
+
+  displaySearchResults(results);
+}
+
+/**
+ * Display search results in dropdown
+ * @param {Array<Object>} results - Search results to display
+ */
+function displaySearchResults(results) {
+  const resultsContainer = document.getElementById('searchResults');
+
+  // Clear container
+  while (resultsContainer.firstChild) {
+    resultsContainer.removeChild(resultsContainer.firstChild);
+  }
+
+  if (results.length === 0) {
+    const noResults = document.createElement('div');
+    noResults.className = 'search-no-results';
+    noResults.textContent = 'No results found';
+    resultsContainer.appendChild(noResults);
+    resultsContainer.style.display = 'block';
+    return;
+  }
+
+  results.forEach((result) => {
+    const resultItem = document.createElement('div');
+    resultItem.className = 'search-result-item';
+
+    const pathDiv = document.createElement('div');
+    pathDiv.className = 'search-result-path';
+
+    const breadcrumbSpan = document.createElement('span');
+    breadcrumbSpan.className = 'search-result-breadcrumb';
+    breadcrumbSpan.textContent = result.displayPath;
+
+    const valuePreview = document.createElement('div');
+    valuePreview.style.fontSize = '11px';
+    valuePreview.style.color = '#999';
+    valuePreview.style.marginTop = '2px';
+    valuePreview.textContent = result.value.length > 50
+      ? result.value.substring(0, 50) + '...'
+      : result.value;
+
+    pathDiv.appendChild(breadcrumbSpan);
+    pathDiv.appendChild(valuePreview);
+
+    const copyButton = document.createElement('button');
+    copyButton.className = 'search-result-copy';
+    copyButton.textContent = 'Copy';
+    copyButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copySearchResult(result);
+    });
+
+    // Click on result item navigates to it
+    resultItem.addEventListener('click', () => {
+      navigateToSearchResult(result);
+    });
+
+    resultItem.appendChild(pathDiv);
+    resultItem.appendChild(copyButton);
+    resultsContainer.appendChild(resultItem);
+  });
+
+  resultsContainer.style.display = 'block';
+}
+
+/**
+ * Hide search results dropdown
+ */
+function hideSearchResults() {
+  const resultsContainer = document.getElementById('searchResults');
+  if (resultsContainer) {
+    resultsContainer.style.display = 'none';
+  }
+}
+
+/**
+ * Copy search result value to clipboard
+ * @param {Object} result - Search result to copy
+ */
+async function copySearchResult(result) {
+  try {
+    await navigator.clipboard.writeText(result.value);
+    log(`[Clipboard] Copied search result: ${result.displayPath}`);
+
+    // Visual feedback
+    const searchInput = document.getElementById('clipboardSearch');
+    const originalPlaceholder = searchInput.placeholder;
+    searchInput.placeholder = '✓ Copied!';
+    setTimeout(() => {
+      searchInput.placeholder = originalPlaceholder;
+    }, 1500);
+  } catch (error) {
+    logError(`[Clipboard] Failed to copy: ${error.message}`);
+    showError('Failed to copy to clipboard');
+  }
+}
+
+/**
+ * Navigate to search result location
+ * @param {Object} result - Search result to navigate to
+ */
+function navigateToSearchResult(result) {
+  // Hide search results
+  hideSearchResults();
+
+  // Clear search input
+  const searchInput = document.getElementById('clipboardSearch');
+  if (searchInput) {
+    searchInput.value = '';
+  }
+
+  // Navigate to the folder
+  const folder = result.path[0]; // First element is the folder name
+  openFolder(folder);
+
+  // If there are more levels, we need to handle nested navigation
+  // For now, opening the folder will show all items including nested ones
+}
+
+/**
+ * Capitalize first letter of a string
+ * @param {string} str - String to capitalize
+ * @returns {string} Capitalized string
+ */
+function capitalizeFirst(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 // ============ DATA EXTRACTION ============
+
+// Rate limiting for extract button (prevent accidental spam)
+let lastExtractTime = 0;
+const EXTRACT_COOLDOWN_MS = 2000; // 2 seconds
 
 /**
  * Initialize job data extraction feature
@@ -104,10 +898,20 @@ function initializeExtraction() {
 /**
  * Handle extract button click
  * Coordinates the full extraction and logging workflow
+ * Includes rate limiting to prevent accidental spam to Apps Script
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  */
 function handleExtractClick(button, statusDiv) {
+  // Rate limiting check
+  const now = Date.now();
+  if (now - lastExtractTime < EXTRACT_COOLDOWN_MS) {
+    const remainingSeconds = Math.ceil((EXTRACT_COOLDOWN_MS - (now - lastExtractTime)) / 1000);
+    showStatus(statusDiv, 'info', `ℹ Please wait ${remainingSeconds}s before extracting again`);
+    return;
+  }
+  lastExtractTime = now;
+
   // Set button to loading state
   setButtonLoading(button, 'Extracting...');
   clearStatus(statusDiv);
@@ -492,4 +1296,13 @@ function setButtonLoading(button, text) {
  */
 function showError(message) {
   alert(`✗ ${message}`);
+}
+
+/**
+ * Display success message
+ * Uses consistent success format: "✓ message"
+ * @param {string} message - Success message to display
+ */
+function showSuccess(message) {
+  log(`✓ ${message}`);
 }
