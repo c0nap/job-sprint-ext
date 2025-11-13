@@ -5,7 +5,8 @@ const DEFAULT_CONFIG = {
   APPS_SCRIPT_ENDPOINT: '',
   SPREADSHEET_ID: '',
   PROJECT_ID: '',
-  ENABLE_MANUAL_ENTRY: true
+  ENABLE_MANUAL_ENTRY: true,
+  TARGET_SHEET_NAME: 'Job Applications'
 };
 
 // Default clipboard macros (nested structure)
@@ -57,6 +58,7 @@ async function loadSettings() {
       'SPREADSHEET_ID',
       'PROJECT_ID',
       'ENABLE_MANUAL_ENTRY',
+      'TARGET_SHEET_NAME',
       'clipboardMacros',
       'maxSearchResults',
       'debugConsoleEnabled'
@@ -66,6 +68,7 @@ async function loadSettings() {
     document.getElementById('appsScriptEndpoint').value = result.APPS_SCRIPT_ENDPOINT || '';
     document.getElementById('spreadsheetId').value = result.SPREADSHEET_ID || '';
     document.getElementById('projectId').value = result.PROJECT_ID || '';
+    document.getElementById('targetSheetName').value = result.TARGET_SHEET_NAME || 'Job Applications';
     document.getElementById('enableManualEntry').checked =
       result.ENABLE_MANUAL_ENTRY !== undefined ? result.ENABLE_MANUAL_ENTRY : true;
 
@@ -309,7 +312,8 @@ async function saveSettings() {
     APPS_SCRIPT_ENDPOINT: document.getElementById('appsScriptEndpoint').value.trim(),
     SPREADSHEET_ID: document.getElementById('spreadsheetId').value.trim(),
     PROJECT_ID: document.getElementById('projectId').value.trim(),
-    ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked
+    ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked,
+    TARGET_SHEET_NAME: document.getElementById('targetSheetName').value.trim() || 'Job Applications'
   };
 
   // Get and validate clipboard macros
@@ -461,7 +465,8 @@ async function handleConfigFileUpload(event) {
       APPS_SCRIPT_ENDPOINT: config.APPS_SCRIPT_ENDPOINT || '',
       SPREADSHEET_ID: config.SPREADSHEET_ID || '',
       PROJECT_ID: config.PROJECT_ID || '',
-      ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked
+      ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked,
+      TARGET_SHEET_NAME: document.getElementById('targetSheetName').value.trim() || 'Job Applications'
     };
 
     await chrome.storage.sync.set(settings);
@@ -543,7 +548,8 @@ async function testConnection() {
       APPS_SCRIPT_ENDPOINT: document.getElementById('appsScriptEndpoint').value.trim(),
       SPREADSHEET_ID: document.getElementById('spreadsheetId').value.trim(),
       PROJECT_ID: document.getElementById('projectId').value.trim(),
-      ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked
+      ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked,
+      TARGET_SHEET_NAME: document.getElementById('targetSheetName').value.trim() || 'Job Applications'
     };
 
     await chrome.storage.sync.set(settings);

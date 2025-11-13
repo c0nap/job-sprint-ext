@@ -261,44 +261,66 @@ function logJobToSheet(jobData, config, requestId) {
       spreadsheetName: spreadsheet.getName()
     });
 
-    // Get or create the "Job Applications" sheet
-    sheet = spreadsheet.getSheetByName('Job Applications');
+    // Get sheet name from config, default to "Job Applications"
+    var sheetName = jobData.targetSheetName || 'Job Applications';
+
+    // Get or create the target sheet
+    sheet = spreadsheet.getSheetByName(sheetName);
     if (!sheet) {
       console.info({
-        message: 'JobSprint: Creating new Job Applications sheet',
-        requestId: requestId
+        message: 'JobSprint: Creating new sheet',
+        requestId: requestId,
+        sheetName: sheetName
       });
 
-      sheet = spreadsheet.insertSheet('Job Applications');
+      sheet = spreadsheet.insertSheet(sheetName);
 
-      // Add header row if this is a new sheet
+      // Add header row if this is a new sheet (new schema)
       sheet.appendRow([
-        'Timestamp',
+        'Employer',
+        'Status',
         'Job Title',
-        'Company',
         'Location',
-        'URL',
-        'Source',
-        'Date Added'
+        'Applied',
+        'Decision',
+        'Role',
+        'Tailor',
+        'Notes',
+        'Compensation',
+        'Pay',
+        'Portal Link',
+        'Board'
       ]);
 
       // Format header row (bold, frozen)
-      var headerRange = sheet.getRange('A1:G1');
+      var headerRange = sheet.getRange('A1:M1');
       headerRange.setFontWeight('bold');
       headerRange.setBackground('#4285f4');
       headerRange.setFontColor('#ffffff');
       sheet.setFrozenRows(1);
     }
 
-    // Prepare the row data - use defaults for missing/empty fields (MVP: accept partial data)
+    // Infer Board from URL or source
+    var board = inferBoard(jobData.url, jobData.source);
+
+    // Format the Applied date as MM/DD/YYYY
+    var appliedDate = formatAppliedDate(jobData.timestamp);
+
+    // Prepare the row data with new schema - use defaults for missing/empty fields
     var rowData = [
-      jobData.timestamp || new Date().toISOString(),
-      jobData.title || '(No title)',
-      jobData.company || '(No company)',
-      jobData.location || '(No location)',
-      jobData.url || '',
-      jobData.source || '',
-      new Date().toISOString()
+      jobData.company || '',                    // Employer
+      'No response',                             // Status (always "No response")
+      jobData.title || '',                       // Job Title
+      jobData.location || '',                    // Location
+      appliedDate,                               // Applied (date only)
+      '',                                        // Decision (empty)
+      inferRole(jobData.title),                  // Role (infer from title)
+      inferRole(jobData.title),                  // Tailor (same as Role for now)
+      jobData.description || '',                 // Notes (description if available)
+      '',                                        // Compensation (empty)
+      '',                                        // Pay (empty)
+      jobData.url || '',                         // Portal Link
+      board                                      // Board (inferred from URL/source)
     ];
 
     console.log({
@@ -312,7 +334,7 @@ function logJobToSheet(jobData, config, requestId) {
     sheet.appendRow(rowData);
 
     // Auto-resize columns for better readability
-    sheet.autoResizeColumns(1, 7);
+    sheet.autoResizeColumns(1, 13);
 
     console.info({
       message: 'JobSprint: Job logged to sheet successfully',
@@ -355,6 +377,117 @@ function logJobToSheet(jobData, config, requestId) {
       errorDetails: errorDetails
     };
   }
+}
+
+/**
+ * Infer the job board from URL or source
+ * @param {string} url - Job posting URL
+ * @param {string} source - Source field from job data
+ * @returns {string} Inferred board name
+ */
+function inferBoard(url, source) {
+  if (!url && !source) return 'Other';
+
+  var urlLower = (url || '').toLowerCase();
+  var sourceLower = (source || '').toLowerCase();
+
+  // Check URL and source for known boards
+  if (urlLower.indexOf('indeed.com') !== -1 || sourceLower.indexOf('indeed') !== -1) {
+    return 'Indeed';
+  } else if (urlLower.indexOf('linkedin.com') !== -1 || sourceLower.indexOf('linkedin') !== -1) {
+    return 'LinkedIn';
+  } else if (urlLower.indexOf('handshake') !== -1 || sourceLower.indexOf('handshake') !== -1) {
+    return 'Handshake';
+  } else if (urlLower.indexOf('symplicity') !== -1 || sourceLower.indexOf('symplicity') !== -1) {
+    return 'Symplicity';
+  } else if (urlLower.indexOf('google.com/about/careers') !== -1 || sourceLower.indexOf('google') !== -1) {
+    return 'Google';
+  } else if (urlLower.indexOf('greenhouse.io') !== -1) {
+    return 'Website';
+  } else if (urlLower.indexOf('lever.co') !== -1) {
+    return 'Website';
+  } else if (urlLower.indexOf('workday.com') !== -1) {
+    return 'Website';
+  } else if (urlLower.indexOf('myworkdayjobs.com') !== -1) {
+    return 'Website';
+  } else if (urlLower.indexOf('taleo') !== -1) {
+    return 'Website';
+  } else if (urlLower.indexOf('icims.com') !== -1) {
+    return 'Website';
+  } else if (urlLower.indexOf('jobs.') !== -1 || urlLower.indexOf('careers.') !== -1) {
+    return 'Website';
+  }
+
+  return 'Other';
+}
+
+/**
+ * Format timestamp to MM/DD/YYYY date
+ * @param {string} timestamp - ISO timestamp or date string
+ * @returns {string} Formatted date MM/DD/YYYY
+ */
+function formatAppliedDate(timestamp) {
+  if (!timestamp) {
+    var today = new Date();
+    return Utilities.formatDate(today, Session.getScriptTimeZone(), 'M/d/yyyy');
+  }
+
+  try {
+    var date = new Date(timestamp);
+    return Utilities.formatDate(date, Session.getScriptTimeZone(), 'M/d/yyyy');
+  } catch (e) {
+    // If parsing fails, return today's date
+    var today = new Date();
+    return Utilities.formatDate(today, Session.getScriptTimeZone(), 'M/d/yyyy');
+  }
+}
+
+/**
+ * Infer role category from job title
+ * @param {string} title - Job title
+ * @returns {string} Role category (CODE, DSCI, STAT, R&D, or empty)
+ */
+function inferRole(title) {
+  if (!title) return '';
+
+  var titleLower = title.toLowerCase();
+
+  // Data Science / Data Analyst / ML Engineer
+  if (titleLower.indexOf('data scien') !== -1 ||
+      titleLower.indexOf('data analy') !== -1 ||
+      titleLower.indexOf('machine learning') !== -1 ||
+      titleLower.indexOf('ml engineer') !== -1 ||
+      titleLower.indexOf('ai engineer') !== -1) {
+    return 'DSCI';
+  }
+
+  // Software Engineer / Developer / Programmer
+  if (titleLower.indexOf('software') !== -1 ||
+      titleLower.indexOf('developer') !== -1 ||
+      titleLower.indexOf('engineer') !== -1 ||
+      titleLower.indexOf('programmer') !== -1 ||
+      titleLower.indexOf('full stack') !== -1 ||
+      titleLower.indexOf('backend') !== -1 ||
+      titleLower.indexOf('frontend') !== -1) {
+    return 'CODE';
+  }
+
+  // Statistician / Quantitative Analyst
+  if (titleLower.indexOf('statistic') !== -1 ||
+      titleLower.indexOf('quantitative') !== -1 ||
+      titleLower.indexOf('quant ') !== -1) {
+    return 'STAT';
+  }
+
+  // Research & Development / Research Scientist
+  if (titleLower.indexOf('research') !== -1 ||
+      titleLower.indexOf('scientist') !== -1 ||
+      titleLower.indexOf('r&d') !== -1) {
+    return 'R&D';
+  }
+
+  // Default to empty if no match
+  return '';
 }
 
 /**
