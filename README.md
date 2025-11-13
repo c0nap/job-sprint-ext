@@ -484,6 +484,13 @@ JobSprint is designed with security-first principles. Your sensitive information
 - Clears clipboard macros, autofill database, and all settings
 - Gives users full control over their personal information
 
+**5. Network Failure Resilience**
+- Automatic retry with exponential backoff for job data logging
+- Max 3 attempts (initial + 2 retries) with 1s, 2s delays
+- Only retries network errors and timeouts (not HTTP 4xx/5xx errors)
+- Prevents job data loss due to transient network issues
+- 15-second timeout per attempt
+
 ### Data Security
 
 **Is my data secure?**
