@@ -875,6 +875,10 @@ function capitalizeFirst(str) {
 
 // ============ DATA EXTRACTION ============
 
+// Rate limiting for extract button (prevent accidental spam)
+let lastExtractTime = 0;
+const EXTRACT_COOLDOWN_MS = 2000; // 2 seconds
+
 /**
  * Initialize job data extraction feature
  * Sets up the extract button to pull job posting data from the current page
@@ -894,10 +898,20 @@ function initializeExtraction() {
 /**
  * Handle extract button click
  * Coordinates the full extraction and logging workflow
+ * Includes rate limiting to prevent accidental spam to Apps Script
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  */
 function handleExtractClick(button, statusDiv) {
+  // Rate limiting check
+  const now = Date.now();
+  if (now - lastExtractTime < EXTRACT_COOLDOWN_MS) {
+    const remainingSeconds = Math.ceil((EXTRACT_COOLDOWN_MS - (now - lastExtractTime)) / 1000);
+    showStatus(statusDiv, 'info', `ℹ Please wait ${remainingSeconds}s before extracting again`);
+    return;
+  }
+  lastExtractTime = now;
+
   // Set button to loading state
   setButtonLoading(button, 'Extracting...');
   clearStatus(statusDiv);
