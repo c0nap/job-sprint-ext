@@ -30,7 +30,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   setupEventListeners();
   setupFolderHandlers();
+  setupCloseLink();
 });
+
+// Setup close settings link
+function setupCloseLink() {
+  const closeLink = document.getElementById('closeSettingsLink');
+  if (closeLink) {
+    closeLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      // Close the current tab
+      chrome.tabs.getCurrent((tab) => {
+        if (tab) {
+          chrome.tabs.remove(tab.id);
+        }
+      });
+    });
+  }
+}
 
 // Load settings from Chrome storage
 async function loadSettings() {
