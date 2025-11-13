@@ -293,6 +293,68 @@
         .folder-error.visible {
             display: block;
         }
+
+        /* Tooltip styles */
+        .help-icon {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            line-height: 16px;
+            text-align: center;
+            background: #3498db;
+            color: white;
+            border-radius: 50%;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: help;
+            margin-left: 5px;
+            position: relative;
+            vertical-align: middle;
+        }
+
+        .help-icon:hover {
+            background: #2980b9;
+        }
+
+        .tooltip {
+            position: relative;
+        }
+
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            width: 280px;
+            background-color: #2c3e50;
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 10px;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -140px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 12px;
+            line-height: 1.5;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .tooltip .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #2c3e50 transparent transparent transparent;
+        }
+
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -393,7 +455,13 @@
             <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
                 <h4 style="margin-bottom: 10px; font-size: 14px;">Search Settings</h4>
                 <div class="form-group">
-                    <label for="maxSearchResults">Maximum Search Results</label>
+                    <label for="maxSearchResults">
+                        Maximum Search Results
+                        <span class="tooltip">
+                            <span class="help-icon">?</span>
+                            <span class="tooltip-text">Controls how many clipboard macro items appear in the search dropdown when you search for items. Higher values show more results but may make the dropdown longer. Range: 5-50.</span>
+                        </span>
+                    </label>
                     <input type="number" id="maxSearchResults" min="5" max="50" value="10" style="width: 100px;">
                     <small>Number of results to show in search dropdown (5-50)</small>
                 </div>
@@ -404,7 +472,13 @@
                 <h4 style="margin-bottom: 10px; font-size: 14px;">Debug Console</h4>
                 <div class="checkbox-group">
                     <input type="checkbox" id="debugConsoleEnabled">
-                    <label for="debugConsoleEnabled">Enable Debug Console</label>
+                    <label for="debugConsoleEnabled">
+                        Enable Debug Console
+                        <span class="tooltip">
+                            <span class="help-icon">?</span>
+                            <span class="tooltip-text">When enabled, shows a console panel at the bottom of the popup window. Useful for troubleshooting extension operations and viewing detailed logs of clipboard actions, autofill operations, and API calls.</span>
+                        </span>
+                    </label>
                 </div>
                 <small style="margin-left: 28px; display: block; margin-top: 5px;">Shows a console panel at the bottom of the popup for debugging extension operations</small>
             </div>
@@ -425,20 +499,38 @@
             </div>
 
             <div class="form-group">
-                <label for="appsScriptEndpoint">Apps Script Endpoint URL</label>
+                <label for="appsScriptEndpoint">
+                    Apps Script Endpoint URL
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">This is the public URL of your deployed Google Apps Script web app. Find it by deploying your Apps Script project as a web app. This is the only URL that receives requests from the extension.</span>
+                    </span>
+                </label>
                 <input type="url" id="appsScriptEndpoint" placeholder="https://script.google.com/macros/s/.../exec">
                 <small>The URL of your deployed Google Apps Script web app (this is the only value sent in requests)</small>
             </div>
 
             <div class="form-group">
-                <label for="spreadsheetId">Google Spreadsheet ID</label>
+                <label for="spreadsheetId">
+                    Google Spreadsheet ID
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Found in your Google Sheet URL between /d/ and /edit. Example: docs.google.com/spreadsheets/d/<strong>SPREADSHEET_ID</strong>/edit. This ID is stored locally and used to configure Apps Script and open the sheet directly.</span>
+                    </span>
+                </label>
                 <input type="text" id="spreadsheetId" placeholder="1a2B3c4D5e6F7g8H9i0J...">
                 <small>Found in the URL: docs.google.com/spreadsheets/d/<strong>SPREADSHEET_ID</strong>/edit<br>
                 Used to: (1) Configure Apps Script via setupConfiguration(), (2) Open sheet from extension</small>
             </div>
 
             <div class="form-group">
-                <label for="projectId">Google Cloud Project ID</label>
+                <label for="projectId">
+                    Google Cloud Project ID
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Your Google Cloud Project's numeric ID (not the project name). Find it in the Google Cloud Console dashboard. Used for Apps Script configuration and logging purposes.</span>
+                    </span>
+                </label>
                 <input type="text" id="projectId" placeholder="123456789012">
                 <small>Your Google Cloud numeric project ID (for Apps Script configuration and logging)</small>
             </div>
@@ -459,15 +551,47 @@
             <div class="form-group">
                 <div class="checkbox-group">
                     <input type="checkbox" id="enableManualEntry" checked>
-                    <label for="enableManualEntry">Show manual entry form when extraction fails</label>
+                    <label for="enableManualEntry">
+                        Show manual entry form when extraction fails
+                        <span class="tooltip">
+                            <span class="help-icon">?</span>
+                            <span class="tooltip-text">When job data extraction fails or returns incomplete information, a form will appear allowing you to manually fill in missing details like job title, company, and location before submitting to Google Sheets.</span>
+                        </span>
+                    </label>
                 </div>
                 <small style="margin-left: 28px;">When enabled, you can manually fill in missing job data before submitting</small>
             </div>
         </div>
 
+        <!-- Full Backup & Restore -->
+        <div class="settings-section">
+            <h3>
+                Full Backup & Restore
+                <span class="tooltip">
+                    <span class="help-icon">?</span>
+                    <span class="tooltip-text">Export all extension data including clipboard macros, Q&A database, and all settings to a JSON file. Import to restore everything. Perfect for switching devices or backing up before reinstall.</span>
+                </span>
+            </h3>
+
+            <div class="alert alert-info">
+                <strong>💾 Complete Backup:</strong> Export and import ALL extension data including clipboard macros, autofill Q&A database, and all settings. This is the recommended way to backup or transfer your extension configuration.
+            </div>
+
+            <div class="config-download">
+                <button id="exportAllSettings" class="btn-primary" style="margin-bottom: 10px; background: #27ae60;">📤 Export All Settings</button>
+                <small style="display: block; margin-bottom: 15px;">Download a complete backup of all extension data as a JSON file</small>
+
+                <button id="importAllSettings" class="btn-primary" style="background: #e67e22;">📥 Import All Settings</button>
+                <small style="display: block; margin-top: 8px;">Upload a backup file to restore all extension data</small>
+            </div>
+
+            <!-- Hidden file input for import -->
+            <input type="file" id="importFileInput" accept=".json" style="display: none;">
+        </div>
+
         <!-- Configuration File Management -->
         <div class="settings-section">
-            <h3>Configuration File</h3>
+            <h3>Configuration File (Legacy)</h3>
 
             <div class="alert alert-info">
                 Settings are stored in Chrome sync storage and can be exported to <code>config.local.js</code> for the service worker. Your configuration is stored locally in the extension only - sensitive IDs are configured server-side in Apps Script and never transmitted over the network.

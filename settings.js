@@ -108,6 +108,11 @@ function setupEventListeners() {
   document.getElementById('spreadsheetId').addEventListener('input', updateConnectionStatusFromInputs);
   document.getElementById('appsScriptEndpoint').addEventListener('input', updateConnectionStatusFromInputs);
   document.getElementById('projectId').addEventListener('input', updateConnectionStatusFromInputs);
+
+  // Export/Import all settings buttons
+  document.getElementById('exportAllSettings').addEventListener('click', exportAllSettings);
+  document.getElementById('importAllSettings').addEventListener('click', importAllSettings);
+  document.getElementById('importFileInput').addEventListener('change', handleImportFile);
 }
 
 // Setup folder expand/collapse and JSON validation
@@ -683,4 +688,121 @@ function showStatus(message, type) {
   setTimeout(() => {
     statusDiv.style.display = 'none';
   }, 5000);
+}
+
+// Export all settings to JSON file
+async function exportAllSettings() {
+  try {
+    // Get all data from chrome.storage.sync
+    const syncData = await chrome.storage.sync.get(null);
+
+    // Get all data from chrome.storage.local (includes qaDatabase)
+    const localData = await chrome.storage.local.get(null);
+
+    // Combine all data
+    const exportData = {
+      version: '1.0',
+      exportDate: new Date().toISOString(),
+      sync: syncData,
+      local: localData
+    };
+
+    // Create JSON blob
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    // Create download link with timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `jobsprint-backup-${timestamp}.json`;
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showStatus('All settings exported successfully!', 'success');
+    console.log('Export complete. Data exported:', exportData);
+  } catch (error) {
+    console.error('Error exporting settings:', error);
+    showStatus('Error exporting settings: ' + error.message, 'error');
+  }
+}
+
+// Trigger import file picker
+function importAllSettings() {
+  document.getElementById('importFileInput').click();
+}
+
+// Handle import file upload
+async function handleImportFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // Check file extension
+  if (!file.name.endsWith('.json')) {
+    showStatus('Please select a valid .json file', 'error');
+    return;
+  }
+
+  // Confirm before importing (data will be overwritten)
+  const confirmMessage =
+    'Importing will REPLACE all current extension data.\n\n' +
+    'Current data will be overwritten including:\n' +
+    '• Clipboard macros\n' +
+    '• Autofill Q&A database\n' +
+    '• All settings\n\n' +
+    'Are you sure you want to continue?';
+
+  if (!confirm(confirmMessage)) {
+    event.target.value = ''; // Clear the file input
+    return;
+  }
+
+  try {
+    // Read file content
+    const content = await file.text();
+    const importData = JSON.parse(content);
+
+    // Validate import data structure
+    if (!importData.version || !importData.sync) {
+      showStatus('Invalid backup file format', 'error');
+      event.target.value = '';
+      return;
+    }
+
+    // Restore sync storage
+    if (importData.sync && Object.keys(importData.sync).length > 0) {
+      await chrome.storage.sync.clear();
+      await chrome.storage.sync.set(importData.sync);
+      console.log('Sync storage restored:', importData.sync);
+    }
+
+    // Restore local storage
+    if (importData.local && Object.keys(importData.local).length > 0) {
+      await chrome.storage.local.clear();
+      await chrome.storage.local.set(importData.local);
+      console.log('Local storage restored:', importData.local);
+    }
+
+    showStatus('All settings imported successfully! Reloading...', 'success');
+
+    // Notify service worker that config has changed
+    chrome.runtime.sendMessage({ action: 'configUpdated' });
+
+    // Reload the page after a short delay to show the imported settings
+    setTimeout(() => {
+      window.location.reload();
+    }, 1500);
+
+  } catch (error) {
+    console.error('Error importing settings:', error);
+    showStatus('Error importing settings: ' + error.message, 'error');
+  }
+
+  // Clear the file input so the same file can be selected again
+  event.target.value = '';
 }
