@@ -450,14 +450,67 @@ Job applications have legal and professional implications. Requiring approval fo
 
 ---
 
-## 🔒 Security
+## 🔒 Security & Privacy
 
 <details>
-<summary><b>Security Architecture & Privacy</b></summary>
+<summary><b>Security Architecture & Privacy Controls</b></summary>
 
 ### Overview
 
-JobSprint is designed with security-first principles. Your sensitive information stays private, and configuration secrets never traverse the network.
+JobSprint is designed with security-first principles. Your sensitive information stays private, your data stays under your control, and the extension follows industry-standard security practices.
+
+### Security Implementations
+
+**1. Content Security Policy (CSP) Hardening**
+- **Explicit CSP directive** in manifest.json prevents inline scripts and `eval()`
+- All code is loaded from vetted extension files only (`script-src 'self'`)
+- Prevents XSS attacks even if malicious job postings contain scripts
+- **Required for Chrome Web Store** submission
+
+**2. XSS Prevention & Input Sanitization**
+- No `innerHTML` usage anywhere in the codebase
+- All DOM manipulation uses safe methods: `textContent`, `createElement`, `appendChild`
+- User input from job postings is sanitized before display
+- Protects against malicious content in job descriptions
+
+**3. Rate Limiting**
+- Extract button has 2-second cooldown to prevent accidental spam
+- Protects your Apps Script quota from rapid-fire requests
+- Prevents DoS of your own logging endpoint
+
+**4. Privacy Controls**
+- **Clear All Data** button in Settings for complete data removal
+- Double-confirmation required to prevent accidental deletion
+- Clears clipboard macros, autofill database, and all settings
+- Gives users full control over their personal information
+
+**5. Network Failure Resilience**
+- Automatic retry with exponential backoff for job data logging
+- Max 3 attempts (initial + 2 retries) with 1s, 2s delays
+- Only retries network errors and timeouts (not HTTP 4xx/5xx errors)
+- Prevents job data loss due to transient network issues
+- 15-second timeout per attempt
+
+### Data Security
+
+**Is my data secure?**
+
+Yes! Here's what happens:
+1. Your extension runs locally in your browser
+2. Job data goes directly from your browser to your personal Google Apps Script
+3. Your Apps Script writes to your personal Google Sheet
+4. No third-party services or databases are involved
+
+**Who can access my data?**
+
+Only you. The Apps Script URL is private (only you know it), and the Google Sheet is in your Google Drive with your normal Drive permissions.
+
+**Can I revoke access?**
+
+Yes, at any time:
+1. In Apps Script, click Deploy → Manage deployments
+2. Click the Archive button (🗑️) next to your deployment
+3. The extension will stop being able to add jobs to your sheet
 
 ### Server-Side Secrets Storage
 
@@ -489,33 +542,6 @@ JobSprint is designed with security-first principles. Your sensitive information
 - Any credentials or authentication tokens
 - Personal information from clipboard macros (phone, email, etc.)
 - Q&A autofill database entries
-
-# TODO: Incporate into main security section here. The phrasing and info of both should be preserved
-
-
-## Security & Privacy
-
-**Is my data secure?**
-
-Yes! Here's what happens:
-1. Your extension runs locally in your browser
-2. Job data goes directly from your browser to your personal Google Apps Script
-3. Your Apps Script writes to your personal Google Sheet
-4. No third-party services or databases are involved
-
-**Who can access my data?**
-
-Only you. The Apps Script URL is private (only you know it), and the Google Sheet is in your Google Drive with your normal Drive permissions.
-
-**Can I revoke access?**
-
-Yes, at any time:
-1. In Apps Script, click Deploy → Manage deployments
-2. Click the Archive button (🗑️) next to your deployment
-3. The extension will stop being able to add jobs to your sheet
-
----
-
 
 ### Local Storage
 

@@ -430,7 +430,48 @@ function testConnection(sendResponse) {
 }
 
 /**
+ * Fetch with retry logic for transient network failures
+ * Retries only on network errors and timeouts, not HTTP errors
+ * @param {string} url - URL to fetch
+ * @param {Object} options - Fetch options
+ * @param {number} maxRetries - Maximum retry attempts (default 2)
+ * @returns {Promise<Response>} Fetch response
+ */
+async function fetchWithRetry(url, options, maxRetries = 2) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      return response; // Success - return immediately
+    } catch (error) {
+      lastError = error;
+
+      // Only retry on network errors and timeouts
+      const isRetriable =
+        error.name === 'TypeError' || // Network failure
+        error.name === 'AbortError' || // Timeout
+        error.message.includes('Failed to fetch') ||
+        error.message.includes('timeout');
+
+      // Don't retry if error is not retriable or we're out of attempts
+      if (!isRetriable || attempt === maxRetries) {
+        throw error;
+      }
+
+      // Exponential backoff: 1s, 2s
+      const delayMs = 1000 * Math.pow(2, attempt);
+      console.log(`Network error on attempt ${attempt + 1}/${maxRetries + 1}. Retrying in ${delayMs}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  throw lastError;
+}
+
+/**
  * Log job data to Google Sheets via Apps Script endpoint
+ * Includes retry logic for transient network failures
  * @param {Object} data - Job data to log
  * @param {Function} sendResponse - Response callback
  */
@@ -465,15 +506,15 @@ function handleLogJobData(data, sendResponse) {
   // 1. Settings UI display and "Open Sheet" link
   // 2. User convenience (remembering configuration)
 
-  // Send data to endpoint
+  // Send data to endpoint with retry logic
   // Note: Apps Script Web Apps support CORS, so we don't need 'no-cors' mode
-  fetch(endpoint, {
+  fetchWithRetry(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(data), // Only job data fields, no secrets
-    signal: AbortSignal.timeout(15000) // 15 second timeout
+    signal: AbortSignal.timeout(15000) // 15 second timeout per attempt
   })
     .then((response) => {
       // Check if the response is ok (status 200-299)

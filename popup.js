@@ -33,9 +33,6 @@ function initializeDebugConsole() {
     debugConsoleEnabled = result.debugConsoleEnabled || false;
     consoleHeight = result.consoleHeight || 200;
 
-    console.log('[Debug] Console enabled:', debugConsoleEnabled);
-    console.log('[Debug] Stored logs count:', debugLogs.length);
-
     updateDebugConsoleVisibility();
   });
 
@@ -111,9 +108,6 @@ function log(message) {
   if (debugConsoleEnabled) {
     appendToConsole(logEntry);
   }
-
-  // Also log to browser console
-  console.log(message);
 }
 
 /**
@@ -133,9 +127,6 @@ function logError(message) {
   if (debugConsoleEnabled) {
     appendToConsole(logEntry);
   }
-
-  // Also log to browser console
-  console.error(message);
 }
 
 /**
@@ -191,18 +182,22 @@ function updateDebugConsoleVisibility() {
       const consoleOutput = document.getElementById('consoleOutput');
       if (consoleOutput) {
         consoleOutput.innerHTML = '';
-        console.log('[Debug] Replaying', debugLogs.length, 'logs');
         debugLogs.forEach(entry => appendToConsole(entry));
-      } else {
-        console.error('[Debug] consoleOutput element not found!');
       }
     }
-  } else {
-    console.error('[Debug] debugConsole panel not found!');
   }
 }
 
 // ============ CLIPBOARD MACROS ============
+
+/**
+ * Check if value is a plain object (not array, not null)
+ * @param {*} value - Value to check
+ * @returns {boolean} True if value is a plain object
+ */
+function isPlainObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 // Folder titles mapping
 const FOLDER_TITLES = {
@@ -409,11 +404,10 @@ function renderSubMenuItems(items) {
 
   // Render each item as a button
   itemsArray.forEach(([key, value]) => {
-    // Skip empty values (but allow objects)
-    if (typeof value === 'string' && value.trim() === '') return;
-    if (!value) return;
+    // Skip empty or invalid values
+    if (!value || (typeof value === 'string' && value.trim() === '')) return;
 
-    const isFolder = typeof value === 'object' && value !== null && !Array.isArray(value);
+    const isFolder = isPlainObject(value);
 
     if (isFolder) {
       // Folder item - render with main button + copy button
@@ -518,7 +512,7 @@ function formatItemLabel(key, value) {
   const label = key.charAt(0).toUpperCase() + key.slice(1);
 
   // If value is an object (nested), show folder icon and count
-  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+  if (isPlainObject(value)) {
     const itemCount = Object.keys(value).length;
     return `📁 ${label} (${itemCount} items)`;
   }
@@ -541,7 +535,7 @@ function verbalizeValue(value, indent = 0) {
   }
 
   // If it's an object, convert to list format
-  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+  if (isPlainObject(value)) {
     const entries = Object.entries(value);
     if (entries.length === 0) {
       return '(empty)';
@@ -556,7 +550,7 @@ function verbalizeValue(value, indent = 0) {
       if (typeof val === 'string') {
         // Leaf node - format as "- Key: value"
         lines.push(`${indentStr}- ${label}: ${val}`);
-      } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+      } else if (isPlainObject(val)) {
         // Nested object - format with sub-items
         lines.push(`${indentStr}- ${label}:`);
         const nested = verbalizeValue(val, indent + 1);
@@ -710,7 +704,7 @@ function indexFolder(key, value, path) {
       value: value,
       displayPath: path.map(capitalizeFirst).join(' → ')
     });
-  } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+  } else if (isPlainObject(value)) {
     // Object node - recurse into children
     Object.entries(value).forEach(([childKey, childValue]) => {
       indexFolder(childKey, childValue, [...path, childKey]);
@@ -832,7 +826,7 @@ function hideSearchResults() {
 async function copySearchResult(result) {
   try {
     await navigator.clipboard.writeText(result.value);
-    console.log('✓ Copied to clipboard:', result.value);
+    log(`[Clipboard] Copied search result: ${result.displayPath}`);
 
     // Visual feedback
     const searchInput = document.getElementById('clipboardSearch');
@@ -842,8 +836,8 @@ async function copySearchResult(result) {
       searchInput.placeholder = originalPlaceholder;
     }, 1500);
   } catch (error) {
+    logError(`[Clipboard] Failed to copy: ${error.message}`);
     showError('Failed to copy to clipboard');
-    console.error('Clipboard error:', error);
   }
 }
 
@@ -881,6 +875,10 @@ function capitalizeFirst(str) {
 
 // ============ DATA EXTRACTION ============
 
+// Rate limiting for extract button (prevent accidental spam)
+let lastExtractTime = 0;
+const EXTRACT_COOLDOWN_MS = 2000; // 2 seconds
+
 /**
  * Initialize job data extraction feature
  * Sets up the extract button to pull job posting data from the current page
@@ -900,10 +898,20 @@ function initializeExtraction() {
 /**
  * Handle extract button click
  * Coordinates the full extraction and logging workflow
+ * Includes rate limiting to prevent accidental spam to Apps Script
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  */
 function handleExtractClick(button, statusDiv) {
+  // Rate limiting check
+  const now = Date.now();
+  if (now - lastExtractTime < EXTRACT_COOLDOWN_MS) {
+    const remainingSeconds = Math.ceil((EXTRACT_COOLDOWN_MS - (now - lastExtractTime)) / 1000);
+    showStatus(statusDiv, 'info', `ℹ Please wait ${remainingSeconds}s before extracting again`);
+    return;
+  }
+  lastExtractTime = now;
+
   // Set button to loading state
   setButtonLoading(button, 'Extracting...');
   clearStatus(statusDiv);
@@ -1291,12 +1299,10 @@ function showError(message) {
 }
 
 /**
- * Display success message using alert
+ * Display success message
  * Uses consistent success format: "✓ message"
  * @param {string} message - Success message to display
  */
 function showSuccess(message) {
-  // For clipboard, we could use a less intrusive notification
-  // But for now, using console.log for success (popup closes anyway)
-  console.log(`✓ ${message}`);
+  log(`✓ ${message}`);
 }

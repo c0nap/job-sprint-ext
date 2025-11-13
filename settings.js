@@ -98,6 +98,9 @@ function setupEventListeners() {
   // Download config button
   document.getElementById('downloadConfig').addEventListener('click', downloadConfig);
 
+  // Clear all data button
+  document.getElementById('clearAllData').addEventListener('click', clearAllData);
+
   // Test connection button
   document.getElementById('testConnection').addEventListener('click', testConnection);
 
@@ -355,6 +358,42 @@ async function resetSettings() {
   } catch (error) {
     console.error('Error resetting settings:', error);
     showStatus('Error resetting settings: ' + error.message, 'error');
+  }
+}
+
+// Clear all extension data (privacy control)
+async function clearAllData() {
+  const confirmMessage =
+    'Are you sure you want to clear ALL extension data?\n\n' +
+    'This will permanently delete:\n' +
+    '• Clipboard macros (phone, email, etc.)\n' +
+    '• Autofill Q&A database\n' +
+    '• All settings\n\n' +
+    'This action CANNOT be undone!';
+
+  if (!confirm(confirmMessage)) {
+    return;
+  }
+
+  // Double confirmation for extra safety
+  if (!confirm('Last confirmation: Delete all data?')) {
+    return;
+  }
+
+  try {
+    // Clear both sync and local storage
+    await chrome.storage.sync.clear();
+    await chrome.storage.local.clear();
+
+    showStatus('All data cleared successfully', 'info');
+
+    // Reload the page to show empty state
+    setTimeout(() => {
+      window.location.reload();
+    }, 1500);
+  } catch (error) {
+    console.error('Error clearing data:', error);
+    showStatus('Error clearing data: ' + error.message, 'error');
   }
 }
 
