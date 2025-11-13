@@ -4,6 +4,21 @@
  * Features: Clipboard macros, job data extraction, autofill
  */
 
+// Listen for messages from content scripts and service worker
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'autofillLog') {
+    // Add autofill log to debug console
+    const { log } = message;
+    addConsoleLog(log.level, `[Tab ${log.tabId}] ${log.message}`, log.data);
+    sendResponse({ success: true });
+  } else if (message.action === 'autofillStateChange') {
+    // Update autofill status display
+    updateAutofillStatus(message.state, message.progress);
+    sendResponse({ success: true });
+  }
+  return false; // Synchronous
+});
+
 // Initialize all popup features when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   initializeDebugConsole();
@@ -1064,6 +1079,58 @@ function initializeAutofill() {
   autofillBtn.addEventListener('click', () => {
     handleAutofillClick(autofillBtn, statusDiv);
   });
+}
+
+/**
+ * Update autofill status based on state changes
+ * Called when autofill state changes are received from content script
+ * @param {string} state - Autofill state (running, paused, completed, etc.)
+ * @param {Object} progress - Progress information (current, total, processed, skipped)
+ */
+function updateAutofillStatus(state, progress) {
+  const statusDiv = document.getElementById('autofillStatus');
+  if (!statusDiv) return;
+
+  const { current, total, processed, skipped } = progress || {};
+
+  switch (state) {
+    case 'scanning':
+      showStatus(statusDiv, 'info', '🔍 Scanning page for form inputs...');
+      addConsoleLog('info', 'Autofill: Scanning page');
+      break;
+
+    case 'running':
+      const progressText = total ? ` (${current}/${total})` : '';
+      showStatus(statusDiv, 'info', `🤖 Processing inputs${progressText}...`);
+      addConsoleLog('info', `Autofill running: ${current}/${total} inputs`);
+      break;
+
+    case 'waiting_user':
+      showStatus(statusDiv, 'warn', '⏸ Waiting for user approval...');
+      break;
+
+    case 'paused':
+      const pausedText = total ? ` (Paused at ${current}/${total})` : '';
+      showStatus(statusDiv, 'warn', `⏸ Autofill paused${pausedText}`);
+      addConsoleLog('warn', `Autofill paused at input ${current}/${total}`);
+      break;
+
+    case 'completed':
+      const summary = processed !== undefined && skipped !== undefined
+        ? ` (Filled: ${processed}, Skipped: ${skipped})`
+        : '';
+      showStatus(statusDiv, 'success', `✅ Autofill completed!${summary}`);
+      addConsoleLog('success', `Autofill completed: ${processed} filled, ${skipped} skipped out of ${total} total`);
+      break;
+
+    case 'error':
+      showStatus(statusDiv, 'error', '❌ Autofill error occurred');
+      addConsoleLog('error', 'Autofill encountered an error');
+      break;
+
+    default:
+      break;
+  }
 }
 
 /**

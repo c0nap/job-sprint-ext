@@ -25,11 +25,17 @@ const DEFAULT_MACROS = {
   employment: {}
 };
 
+// Global state for Q&A management
+let qaDatabase = [];
+let currentEditingIndex = -1; // -1 means adding new, >= 0 means editing existing
+
 // Load settings when page loads
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
+  await loadQADatabase();
   setupEventListeners();
   setupFolderHandlers();
+  setupQAEventListeners();
 });
 
 // Load settings from Chrome storage
@@ -805,4 +811,233 @@ async function handleImportFile(event) {
 
   // Clear the file input so the same file can be selected again
   event.target.value = '';
+}
+
+// ============ Q&A DATABASE MANAGEMENT ============
+
+/**
+ * Load Q&A database from chrome.storage.local
+ */
+async function loadQADatabase() {
+  try {
+    const result = await chrome.storage.local.get(['qaDatabase']);
+    qaDatabase = result.qaDatabase || [];
+    renderQAList();
+    updateQACount();
+  } catch (error) {
+    console.error('Error loading Q&A database:', error);
+    qaDatabase = [];
+  }
+}
+
+/**
+ * Setup event listeners for Q&A database UI
+ */
+function setupQAEventListeners() {
+  // Add button
+  document.getElementById('addQAButton').addEventListener('click', () => openQAModal(-1));
+
+  // Search input
+  document.getElementById('qaSearchInput').addEventListener('input', (e) => {
+    renderQAList(e.target.value);
+  });
+
+  // Modal buttons
+  document.getElementById('qaModalCancel').addEventListener('click', closeQAModal);
+  document.getElementById('qaModalSave').addEventListener('click', saveQAEntry);
+
+  // Close modal on background click
+  document.getElementById('qaModal').addEventListener('click', (e) => {
+    if (e.target.id === 'qaModal') {
+      closeQAModal();
+    }
+  });
+}
+
+/**
+ * Render Q&A list with optional search filter
+ * @param {string} searchTerm - Optional search term to filter results
+ */
+function renderQAList(searchTerm = '') {
+  const qaList = document.getElementById('qaList');
+  const filteredQA = searchTerm
+    ? qaDatabase.filter(entry =>
+        entry.question.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        entry.answer.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : qaDatabase;
+
+  if (filteredQA.length === 0) {
+    qaList.innerHTML = `
+      <div style="text-align: center; padding: 40px; color: #999;">
+        ${searchTerm ? 'No matching Q&A pairs found' : 'No Q&A pairs yet. Click "Add New Q&A" to get started.'}
+      </div>
+    `;
+    return;
+  }
+
+  qaList.innerHTML = filteredQA.map((entry, index) => {
+    const actualIndex = qaDatabase.indexOf(entry);
+    const typeLabel = entry.type || 'choice';
+    const typeBadge = {
+      choice: '<span style="background: #3498db; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600;">CHOICE</span>',
+      text: '<span style="background: #27ae60; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600;">TEXT</span>',
+      exact: '<span style="background: #e67e22; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600;">EXACT</span>'
+    }[typeLabel];
+
+    return `
+      <div style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-bottom: 10px; background: #fafafa;">
+        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+          <div style="flex: 1;">
+            <div style="font-weight: 600; color: #333; margin-bottom: 4px; font-size: 14px;">
+              ${escapeHtml(entry.question)}
+            </div>
+            <div style="color: #666; font-size: 13px; margin-bottom: 6px;">
+              <strong>Answer:</strong> ${escapeHtml(entry.answer)}
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              ${typeBadge}
+              ${entry.timestamp ? `<span style="color: #999; font-size: 11px;">Added: ${new Date(entry.timestamp).toLocaleDateString()}</span>` : ''}
+            </div>
+          </div>
+          <div style="display: flex; gap: 6px; margin-left: 12px;">
+            <button onclick="editQAEntry(${actualIndex})" style="padding: 6px 12px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">Edit</button>
+            <button onclick="deleteQAEntry(${actualIndex})" style="padding: 6px 12px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">Delete</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/**
+ * Update Q&A count display
+ */
+function updateQACount() {
+  const count = qaDatabase.length;
+  document.getElementById('qaCountDisplay').textContent = `${count} Q&A pair${count !== 1 ? 's' : ''} in database`;
+}
+
+/**
+ * Open Q&A modal for adding or editing
+ * @param {number} index - Index of entry to edit, or -1 for new entry
+ */
+function openQAModal(index) {
+  currentEditingIndex = index;
+  const modal = document.getElementById('qaModal');
+  const title = document.getElementById('qaModalTitle');
+  const questionInput = document.getElementById('qaModalQuestion');
+  const answerInput = document.getElementById('qaModalAnswer');
+  const typeSelect = document.getElementById('qaModalType');
+
+  if (index >= 0) {
+    // Edit mode
+    const entry = qaDatabase[index];
+    title.textContent = 'Edit Q&A Pair';
+    questionInput.value = entry.question;
+    answerInput.value = entry.answer;
+    typeSelect.value = entry.type || 'choice';
+  } else {
+    // Add mode
+    title.textContent = 'Add Q&A Pair';
+    questionInput.value = '';
+    answerInput.value = '';
+    typeSelect.value = 'choice';
+  }
+
+  modal.style.display = 'flex';
+  questionInput.focus();
+}
+
+/**
+ * Close Q&A modal
+ */
+function closeQAModal() {
+  document.getElementById('qaModal').style.display = 'none';
+  currentEditingIndex = -1;
+}
+
+/**
+ * Save Q&A entry (add or update)
+ */
+async function saveQAEntry() {
+  const question = document.getElementById('qaModalQuestion').value.trim();
+  const answer = document.getElementById('qaModalAnswer').value.trim();
+  const type = document.getElementById('qaModalType').value;
+
+  if (!question || !answer) {
+    alert('Please fill in both question and answer fields.');
+    return;
+  }
+
+  const entry = {
+    question,
+    answer,
+    type,
+    timestamp: Date.now()
+  };
+
+  if (currentEditingIndex >= 0) {
+    // Update existing entry
+    qaDatabase[currentEditingIndex] = entry;
+  } else {
+    // Add new entry
+    qaDatabase.push(entry);
+  }
+
+  // Save to storage
+  try {
+    await chrome.storage.local.set({ qaDatabase });
+    renderQAList();
+    updateQACount();
+    closeQAModal();
+    showStatus('Q&A entry saved successfully!', 'success');
+  } catch (error) {
+    console.error('Error saving Q&A entry:', error);
+    showStatus('Error saving Q&A entry: ' + error.message, 'error');
+  }
+}
+
+/**
+ * Edit Q&A entry
+ * @param {number} index - Index of entry to edit
+ */
+window.editQAEntry = function(index) {
+  openQAModal(index);
+};
+
+/**
+ * Delete Q&A entry
+ * @param {number} index - Index of entry to delete
+ */
+window.deleteQAEntry = async function(index) {
+  if (!confirm('Are you sure you want to delete this Q&A pair?')) {
+    return;
+  }
+
+  qaDatabase.splice(index, 1);
+
+  try {
+    await chrome.storage.local.set({ qaDatabase });
+    renderQAList();
+    updateQACount();
+    showStatus('Q&A entry deleted successfully!', 'info');
+  } catch (error) {
+    console.error('Error deleting Q&A entry:', error);
+    showStatus('Error deleting Q&A entry: ' + error.message, 'error');
+  }
+};
+
+/**
+ * Escape HTML to prevent XSS
+ * @param {string} unsafe - Unsafe string
+ * @returns {string} Escaped string
+ */
+function escapeHtml(unsafe) {
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
