@@ -11,7 +11,7 @@ const DEFAULT_PARSER_CONFIG = {
       linkedin: /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/[\w-]+/gi,
       github: /(?:https?:\/\/)?(?:www\.)?github\.com\/[\w-]+/gi,
       website: /(?:https?:\/\/)?(?:www\.)?[\w\.-]+\.\w{2,}(?:\/[\w\.-]*)?/gi,
-      cityState: /([A-Z][a-zA-Z ]+),\s*([A-Z]{2}|[A-Z][a-z]+(\s+[A-Z][a-z]+)?)/g
+      cityState: /\b([A-Z][a-zA-Z]+(?: +[A-Z][a-zA-Z]+)?), *([A-Z]{2}|[A-Z][a-z]+(?: +[A-Z][a-z]+)*)(?: +\d{5})?|([A-Z][a-z]+) +([A-Z]{2})(?: +\d{5})?/g
     },
     labelPatterns: {
       phone: /(?:phone|tel|mobile|cell)[\s:]+(.+)/gi,
@@ -33,7 +33,7 @@ const DEFAULT_PARSER_CONFIG = {
     keywords: {
       gpa: ['gpa', 'grade point average', 'cumulative gpa'],
       coursework: ['coursework', 'courses', 'relevant courses'],
-      honors: ['honors', 'honor', 'magna cum laude', 'summa cum laude', 'cum laude', "dean's list"],
+      honors: ['summa cum laude', 'magna cum laude', 'cum laude', "dean's list", 'honors', 'honor'],
       concentration: ['concentration', 'specialization', 'focus', 'minor', 'emphasis']
     },
     degreePatterns: /(?:B\.?[AS]\.?|M\.?[AS]\.?|Ph\.?D\.?|Bachelor|Master|Associate|Doctor|MBA|B\.Sc\.|M\.Sc\.|B\.Eng\.|M\.Eng\.)[\w\s]*/gi
@@ -79,8 +79,52 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
     available: ''
   };
 
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  let lines = text.split('\n').map(l => l.trim()).filter(l => l);
   let usedText = new Set(); // Track what we've already extracted
+
+  // Helper function to normalize whitespace
+  const normalizeWhitespace = (str) => str.replace(/\s+/g, ' ').trim();
+
+  // Helper function to remove label prefix (e.g., "Name: John" -> "John")
+  const removeLabel = (str) => {
+    const match = str.match(/^(?:name|phone|tel|mobile|cell|email|e-mail|address|location|linkedin|github|portfolio|website|site)[\s:]+(.+)$/i);
+    return match ? match[1].trim() : str;
+  };
+
+  // PHASE 0: Pre-process - handle single-line or heavily delimited formats
+  // If we have very few lines (1-3) and they contain delimiters, try to split them first
+  if (lines.length <= 3) {
+    const combinedText = lines.join(' ');
+    const hasDelimiters = config.delimiters.some(delim =>
+      delim !== '\n' && delim !== '\t' && combinedText.includes(delim)
+    );
+
+    if (hasDelimiters) {
+      // Handle mixed delimiters by replacing them all with a common delimiter first
+      let processedText = combinedText;
+      for (const delim of ['|', '/', '–', '—']) {
+        processedText = processedText.replace(new RegExp('\\s*' + delim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*', 'g'), '|||');
+      }
+
+      // Now split by the common delimiter
+      const splitParts = processedText.split('|||').map(l => l.trim()).filter(l => l);
+      if (splitParts.length >= 2) {
+        lines = splitParts;
+      } else {
+        // If no prominent delimiters, try to split by the most common delimiter
+        for (const delim of ['|', '/', '–', '—', ',']) {
+          if (combinedText.includes(delim)) {
+            const splitCount = combinedText.split(delim).length - 1;
+            if (splitCount >= 2) {
+              // Re-create lines by splitting on this delimiter
+              lines = combinedText.split(delim).map(l => l.trim()).filter(l => l);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
 
   // PHASE 1: Extract contact info with pattern matching (high confidence)
 
@@ -123,8 +167,11 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
   }
 
   // Extract website (non-LinkedIn/GitHub URLs)
+  // Improved: look for full domains, not just partial matches
   const websitePattern = new RegExp(config.patterns.website.source, 'gi');
   let websiteMatch;
+  const websiteCandidates = [];
+
   while ((websiteMatch = websitePattern.exec(text)) !== null) {
     const url = websiteMatch[0];
 
@@ -133,9 +180,9 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
       continue;
     }
 
-    // Skip if it's part of an email address
-    const emailPattern = new RegExp('@' + url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    if (emailPattern.test(text)) {
+    // Skip if it's part of an email address (check for @ before the URL)
+    const textBeforeUrl = text.substring(Math.max(0, websiteMatch.index - 1), websiteMatch.index);
+    if (textBeforeUrl === '@') {
       continue;
     }
 
@@ -144,9 +191,23 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
       continue;
     }
 
-    result.website = url;
-    usedText.add(url);
-    break;
+    websiteCandidates.push(url);
+  }
+
+  // Choose the best website candidate (prefer ones with protocols or .com/.dev/.io, etc.)
+  for (const url of websiteCandidates) {
+    if (url.startsWith('http') || url.includes('.com') || url.includes('.dev') || url.includes('.io') || url.includes('.org')) {
+      // Make sure it's not someone's name with a period (e.g., "alex.thompson")
+      if (url.includes('.') && !url.includes(' ')) {
+        const parts = url.split('.');
+        // If it has a valid TLD and more than just "firstname.lastname", it's likely a website
+        if (parts.length >= 2 && parts[parts.length - 1].length >= 2 && parts[parts.length - 1].length <= 4) {
+          result.website = url;
+          usedText.add(url);
+          break;
+        }
+      }
+    }
   }
 
   // Try label-based extraction for any missing fields
@@ -155,7 +216,7 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
       pattern.lastIndex = 0;
       const match = pattern.exec(text);
       if (match && match[1]) {
-        const value = match[1].trim();
+        const value = normalizeWhitespace(match[1].trim());
         if (field === 'portfolio' && !result.website) {
           result.website = value;
           usedText.add(value);
@@ -171,11 +232,15 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
   const jobTitleKeywords = ['engineer', 'developer', 'designer', 'manager', 'analyst', 'scientist', 'architect', 'consultant', 'specialist', 'director', 'coordinator', 'associate', 'assistant'];
   const labelKeywords = ['phone', 'email', 'address', 'linkedin', 'github', 'portfolio', 'website', 'objective', 'summary', 'available'];
 
-  for (const line of lines) {
+  for (let line of lines) {
+    // Remove label prefix if present
+    line = removeLabel(line);
+    line = normalizeWhitespace(line);
+
     // Skip if we've already used this line's content
     let hasUsedContent = false;
     for (const used of usedText) {
-      if (line.includes(used)) {
+      if (line.includes(used) || used.includes(line)) {
         hasUsedContent = true;
         break;
       }
@@ -199,8 +264,11 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
     // Skip if line contains numbers (unlikely to be just a name)
     if (/\d/.test(line)) continue;
 
-    // Skip if line has URL-like patterns
+    // Skip if line has URL-like patterns (but allow names with spaces)
     if (/\w+\.\w{2,}/.test(line) && !line.includes(' ')) continue;
+
+    // Skip if line appears to be part of a URL or email
+    if (lowerLine.includes('.com') || lowerLine.includes('.org') || lowerLine.includes('.edu') || lowerLine.includes('@')) continue;
 
     // This looks like a name!
     result.name = line;
@@ -214,19 +282,31 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
   let cityStateMatch;
 
   while ((cityStateMatch = cityStatePattern.exec(text)) !== null) {
-    const potentialAddress = cityStateMatch[0];
+    // The pattern has two alternatives with different capture groups
+    // Groups 1-2: "City, State" format
+    // Groups 3-4: "City XX" format (2-letter state code)
+    let potentialAddress;
+    if (cityStateMatch[1] && cityStateMatch[2]) {
+      // "City, State" format
+      potentialAddress = cityStateMatch[0].trim();
+    } else if (cityStateMatch[3] && cityStateMatch[4]) {
+      // "City XX" format
+      potentialAddress = cityStateMatch[0].trim();
+    } else {
+      continue;
+    }
 
     // Check if this address has been used already (e.g., it's part of an already-extracted field)
     let alreadyUsed = false;
     for (const used of usedText) {
-      if (used.includes(potentialAddress)) {
+      if (used.includes(potentialAddress) || potentialAddress.includes(used)) {
         alreadyUsed = true;
         break;
       }
     }
 
     if (!alreadyUsed) {
-      result.address = potentialAddress.trim();
+      result.address = potentialAddress;
       usedText.add(result.address);
       break;
     }
