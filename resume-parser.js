@@ -7,10 +7,11 @@ const DEFAULT_PARSER_CONFIG = {
     delimiters: ['|', '\n', '\t', ',', '/', '–', '—', '-'],
     patterns: {
       email: /[\w\.-]+@[\w\.-]+\.\w+/gi,
-      phone: /\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
+      phone: /\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}|\d{3}[-.\s]?\d{4}/g,
       linkedin: /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/[\w-]+/gi,
       github: /(?:https?:\/\/)?(?:www\.)?github\.com\/[\w-]+/gi,
-      website: /(?:https?:\/\/)?(?:www\.)?[\w\.-]+\.\w{2,}(?:\/[\w\.-]*)?/gi
+      website: /(?:https?:\/\/)?(?:www\.)?[\w\.-]+\.\w{2,}(?:\/[\w\.-]*)?/gi,
+      cityState: /([A-Z][a-zA-Z ]+),\s*([A-Z]{2}|[A-Z][a-z]+(\s+[A-Z][a-z]+)?)/g
     },
     labelPatterns: {
       phone: /(?:phone|tel|mobile|cell)[\s:]+(.+)/gi,
@@ -79,84 +80,109 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
   };
 
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  let usedText = new Set(); // Track what we've already extracted
 
-  // Try label-based extraction first (e.g., "Phone: 555-1234")
+  // PHASE 1: Extract contact info with pattern matching (high confidence)
+
+  // Extract all emails
+  const emailPattern = new RegExp(config.patterns.email.source, 'gi');
+  let emailMatch;
+  while ((emailMatch = emailPattern.exec(text)) !== null) {
+    if (!result.email) {
+      result.email = emailMatch[0];
+      usedText.add(emailMatch[0]);
+    }
+  }
+
+  // Extract all phone numbers
+  const phonePattern = new RegExp(config.patterns.phone.source, 'g');
+  let phoneMatch;
+  while ((phoneMatch = phonePattern.exec(text)) !== null) {
+    if (!result.phone) {
+      result.phone = phoneMatch[0];
+      usedText.add(phoneMatch[0]);
+    }
+  }
+
+  // Extract LinkedIn (look for linkedin.com/in/)
+  const linkedinPattern = new RegExp(config.patterns.linkedin.source, 'gi');
+  let linkedinMatch;
+  while ((linkedinMatch = linkedinPattern.exec(text)) !== null) {
+    result.linkedin = linkedinMatch[0];
+    usedText.add(linkedinMatch[0]);
+    break;
+  }
+
+  // Extract GitHub (look for github.com/)
+  const githubPattern = new RegExp(config.patterns.github.source, 'gi');
+  let githubMatch;
+  while ((githubMatch = githubPattern.exec(text)) !== null) {
+    result.github = githubMatch[0];
+    usedText.add(githubMatch[0]);
+    break;
+  }
+
+  // Extract website (non-LinkedIn/GitHub URLs)
+  const websitePattern = new RegExp(config.patterns.website.source, 'gi');
+  let websiteMatch;
+  while ((websiteMatch = websitePattern.exec(text)) !== null) {
+    const url = websiteMatch[0];
+
+    // Skip if it's LinkedIn, GitHub
+    if (url.includes('linkedin.com') || url.includes('github.com')) {
+      continue;
+    }
+
+    // Skip if it's part of an email address
+    const emailPattern = new RegExp('@' + url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (emailPattern.test(text)) {
+      continue;
+    }
+
+    // Skip if already used
+    if (usedText.has(url)) {
+      continue;
+    }
+
+    result.website = url;
+    usedText.add(url);
+    break;
+  }
+
+  // Try label-based extraction for any missing fields
   if (config.labelPatterns) {
     for (const [field, pattern] of Object.entries(config.labelPatterns)) {
-      pattern.lastIndex = 0; // Reset regex
+      pattern.lastIndex = 0;
       const match = pattern.exec(text);
       if (match && match[1]) {
         const value = match[1].trim();
-        if (field === 'portfolio') {
+        if (field === 'portfolio' && !result.website) {
           result.website = value;
-        } else {
+          usedText.add(value);
+        } else if (!result[field]) {
           result[field] = value;
+          usedText.add(value);
         }
       }
     }
   }
 
-  // Extract email (if not found via label)
-  if (!result.email) {
-    const emailPattern = new RegExp(config.patterns.email.source, 'gi');
-    const emailMatch = emailPattern.exec(text);
-    if (emailMatch) {
-      result.email = emailMatch[0];
-    }
-  }
+  // PHASE 2: Extract name (process of elimination)
+  const jobTitleKeywords = ['engineer', 'developer', 'designer', 'manager', 'analyst', 'scientist', 'architect', 'consultant', 'specialist', 'director', 'coordinator', 'associate', 'assistant'];
+  const labelKeywords = ['phone', 'email', 'address', 'linkedin', 'github', 'portfolio', 'website', 'objective', 'summary', 'available'];
 
-  // Extract phone (if not found via label)
-  if (!result.phone) {
-    const phonePattern = new RegExp(config.patterns.phone.source, 'g');
-    const phoneMatch = phonePattern.exec(text);
-    if (phoneMatch) {
-      result.phone = phoneMatch[0];
-    }
-  }
-
-  // Extract LinkedIn
-  if (!result.linkedin) {
-    const linkedinPattern = new RegExp(config.patterns.linkedin.source, 'gi');
-    const linkedinMatch = linkedinPattern.exec(text);
-    if (linkedinMatch) {
-      result.linkedin = linkedinMatch[0];
-    }
-  }
-
-  // Extract GitHub
-  if (!result.github) {
-    const githubPattern = new RegExp(config.patterns.github.source, 'gi');
-    const githubMatch = githubPattern.exec(text);
-    if (githubMatch) {
-      result.github = githubMatch[0];
-    }
-  }
-
-  // Extract website (non-LinkedIn/GitHub URLs)
-  if (!result.website) {
-    const websitePattern = new RegExp(config.patterns.website.source, 'gi');
-    let match;
-    while ((match = websitePattern.exec(text)) !== null) {
-      const url = match[0];
-      // Skip if it's LinkedIn or GitHub
-      if (!url.includes('linkedin.com') && !url.includes('github.com') && !url.includes('@')) {
-        result.website = url;
+  for (const line of lines) {
+    // Skip if we've already used this line's content
+    let hasUsedContent = false;
+    for (const used of usedText) {
+      if (line.includes(used)) {
+        hasUsedContent = true;
         break;
       }
     }
-  }
+    if (hasUsedContent) continue;
 
-  // Extract name (usually first line, but skip job titles and labels)
-  const jobTitleKeywords = ['engineer', 'developer', 'designer', 'manager', 'analyst', 'scientist', 'architect', 'consultant'];
-  const labelKeywords = ['phone', 'email', 'address', 'linkedin', 'github'];
-
-  for (const line of lines) {
     const lowerLine = line.toLowerCase();
-
-    // Skip if line contains contact info
-    if (result.email && line.includes(result.email)) continue;
-    if (result.phone && line.includes(result.phone)) continue;
-    if (result.linkedin && line.includes(result.linkedin)) continue;
 
     // Skip if line has a label
     if (labelKeywords.some(keyword => lowerLine.startsWith(keyword))) continue;
@@ -167,35 +193,71 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
     // Skip if line is too long (probably not a name)
     if (line.length > 50) continue;
 
+    // Skip if line is too short (single character/initial)
+    if (line.length < 3) continue;
+
+    // Skip if line contains numbers (unlikely to be just a name)
+    if (/\d/.test(line)) continue;
+
+    // Skip if line has URL-like patterns
+    if (/\w+\.\w{2,}/.test(line) && !line.includes(' ')) continue;
+
     // This looks like a name!
     result.name = line;
+    usedText.add(line);
     break;
   }
 
-  // Extract address (line with city/state patterns)
-  for (const line of lines) {
-    if (line.match(/[A-Z][a-z]+,\s*[A-Z]{2}/) || line.match(/[A-Z][a-z]+,\s*[A-Z][a-z]+/)) {
-      // Remove phone and email from this line
-      let addr = line.replace(config.patterns.phone, '').replace(config.patterns.email, '');
-      // Clean up delimiters
-      config.delimiters.forEach(delim => {
-        addr = addr.split(delim).map(s => s.trim()).filter(s => s)[0] || addr;
-      });
-      result.address = addr.trim();
+  // PHASE 3: Extract address (city, state pattern)
+  // Look globally in the entire text for city, state patterns
+  const cityStatePattern = new RegExp(config.patterns.cityState.source, 'g');
+  let cityStateMatch;
+
+  while ((cityStateMatch = cityStatePattern.exec(text)) !== null) {
+    const potentialAddress = cityStateMatch[0];
+
+    // Check if this address has been used already (e.g., it's part of an already-extracted field)
+    let alreadyUsed = false;
+    for (const used of usedText) {
+      if (used.includes(potentialAddress)) {
+        alreadyUsed = true;
+        break;
+      }
+    }
+
+    if (!alreadyUsed) {
+      result.address = potentialAddress.trim();
+      usedText.add(result.address);
       break;
     }
   }
 
-  // Extract objective
+  // PHASE 4: Extract objective/summary
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].toLowerCase();
+    const line = lines[i];
+    const lowerLine = line.toLowerCase();
+
+    // Check if we've used this line
+    let hasUsedContent = false;
+    for (const used of usedText) {
+      if (line.includes(used)) {
+        hasUsedContent = true;
+        break;
+      }
+    }
+    if (hasUsedContent) continue;
+
     for (const keyword of config.keywords.objective) {
-      if (line.includes(keyword)) {
-        const colonIndex = lines[i].indexOf(':');
+      if (lowerLine.includes(keyword)) {
+        const colonIndex = line.indexOf(':');
         if (colonIndex > -1) {
-          result.objective = lines[i].substring(colonIndex + 1).trim();
+          result.objective = line.substring(colonIndex + 1).trim();
         } else if (i + 1 < lines.length) {
           result.objective = lines[i + 1];
+        } else {
+          // Take the text after the keyword
+          const keywordIdx = lowerLine.indexOf(keyword);
+          result.objective = line.substring(keywordIdx + keyword.length).trim();
         }
         break;
       }
@@ -203,9 +265,20 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
     if (result.objective) break;
   }
 
-  // Extract availability
+  // PHASE 5: Extract availability
   for (const line of lines) {
     const lowerLine = line.toLowerCase();
+
+    // Check if we've used this line
+    let hasUsedContent = false;
+    for (const used of usedText) {
+      if (line.includes(used)) {
+        hasUsedContent = true;
+        break;
+      }
+    }
+    if (hasUsedContent) continue;
+
     for (const keyword of config.keywords.available) {
       if (lowerLine.includes(keyword)) {
         const colonIndex = line.indexOf(':');
@@ -319,17 +392,34 @@ function parseEducation(text, config = DEFAULT_PARSER_CONFIG.education) {
       }
 
       // Extract institution before common delimiters
-      const parts = firstLine.split(/\s*[-–—|,]\s*/);
+      // Try to get institution + location if available (e.g., "UC Berkeley" or "MIT, Cambridge")
+      const parts = firstLine.split(/\s*[-–—|]\s*/);
       if (parts.length > 0) {
         let inst = parts[0].trim();
+
         // Remove degree if it's in there
         if (entry.degree) {
           inst = inst.replace(new RegExp(entry.degree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
         }
+
         // Remove year if it's in there
         if (entry.year) {
           inst = inst.replace(entry.year, '').trim();
         }
+
+        // Handle comma-separated institution and location (keep both)
+        // e.g., "UC Berkeley, CA" -> keep full string
+        // But remove trailing location if it's explicitly in format "University, City, State"
+        const commaParts = inst.split(',').map(s => s.trim());
+        if (commaParts.length > 2) {
+          // Multiple commas, likely has location at end - keep first parts
+          inst = commaParts.slice(0, -1).join(', ');
+        } else if (commaParts.length === 2) {
+          // Two parts - could be "University, State" or "UC Berkeley, CA"
+          // Keep both if second part is short (likely state abbreviation or city)
+          inst = commaParts.join(', ');
+        }
+
         entry.institution = inst;
       }
     }
