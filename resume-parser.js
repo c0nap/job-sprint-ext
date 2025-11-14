@@ -463,11 +463,21 @@ function parseEducation(text, config = DEFAULT_PARSER_CONFIG.education) {
     // Extract institution - first line typically
     if (lines.length > 0) {
       let firstLine = lines[0];
+      let useFirstLine = true;
 
-      // If first line is the degree, institution is second line
-      if (entry.degree && firstLine.toLowerCase().includes(entry.degree.toLowerCase().substring(0, 10))) {
-        if (lines.length > 1) {
-          firstLine = lines[1];
+      // If first line STARTS with the degree (degree is at beginning), institution is likely on second line
+      if (entry.degree && lines.length > 1) {
+        const degreeStart = entry.degree.toLowerCase().substring(0, Math.min(10, entry.degree.length));
+        const lineStart = firstLine.toLowerCase().substring(0, 30);
+        if (lineStart.startsWith(degreeStart)) {
+          // Degree is at the start, check if second line is not coursework/metadata
+          const secondLineLower = lines[1].toLowerCase();
+          if (!secondLineLower.startsWith('coursework') &&
+              !secondLineLower.startsWith('gpa') &&
+              !secondLineLower.startsWith('honors')) {
+            firstLine = lines[1];
+            useFirstLine = false;
+          }
         }
       }
 
@@ -477,8 +487,8 @@ function parseEducation(text, config = DEFAULT_PARSER_CONFIG.education) {
       if (parts.length > 0) {
         let inst = parts[0].trim();
 
-        // Remove degree if it's in there
-        if (entry.degree) {
+        // Remove degree if it's in there (only if we're using first line with everything on it)
+        if (useFirstLine && entry.degree) {
           inst = inst.replace(new RegExp(entry.degree.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
         }
 
@@ -486,6 +496,9 @@ function parseEducation(text, config = DEFAULT_PARSER_CONFIG.education) {
         if (entry.year) {
           inst = inst.replace(entry.year, '').trim();
         }
+
+        // Remove GPA info if it's in there
+        inst = inst.replace(/\(summa cum laude\)|\(magna cum laude\)|\(cum laude\)/gi, '').trim();
 
         // Handle comma-separated institution and location (keep both)
         // e.g., "UC Berkeley, CA" -> keep full string
@@ -578,18 +591,31 @@ function parseEmployment(text, config = DEFAULT_PARSER_CONFIG.employment) {
         entry.title = parts[0].trim().replace(entry.dates, '').trim();
       }
 
-      if (parts.length >= 2) {
-        // Second part likely contains company and location
-        const secondPart = parts[1].trim().replace(entry.dates, '').trim();
+      // Look for location in all parts (not just parts[1])
+      for (let i = 1; i < parts.length; i++) {
+        const part = parts[i].trim().replace(entry.dates, '').trim();
+        if (!part) continue;
 
-        // Look for location pattern (City, State or City, Country)
-        const locMatch = secondPart.match(/[A-Z][a-z]+,\s*[A-Z]{2}|[A-Z][a-z]+,\s*[A-Z][a-z]+/);
+        // Check if this part contains a location pattern
+        const locMatch = part.match(/\b[A-Z][a-z]+,\s*[A-Z]{2}\b|\b[A-Z][a-z]+,\s*[A-Z][a-z]+\b/);
         if (locMatch) {
           entry.location = locMatch[0];
-          entry.company = secondPart.replace(locMatch[0], '').trim().replace(/[-–—,]+$/, '').trim();
-        } else {
-          entry.company = secondPart;
+          // The company is likely in a previous part or this part before the location
+          if (!entry.company) {
+            const companyText = part.replace(locMatch[0], '').trim().replace(/[-–—,]+$/, '').trim();
+            if (companyText) {
+              entry.company = companyText;
+            } else if (i > 1 && parts[i - 1]) {
+              entry.company = parts[i - 1].trim();
+            }
+          }
+          break;
         }
+      }
+
+      // If no location found, use the second part as company
+      if (!entry.company && parts.length >= 2) {
+        entry.company = parts[1].trim().replace(entry.dates, '').trim();
       }
     }
 
