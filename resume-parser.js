@@ -95,14 +95,14 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
   // If we have very few lines (1-3) and they contain delimiters, try to split them first
   if (lines.length <= 3) {
     const combinedText = lines.join(' ');
-    const hasDelimiters = config.delimiters.some(delim =>
-      delim !== '\n' && delim !== '\t' && combinedText.includes(delim)
-    );
+    // Check for prominent delimiters (but not slashes, as they appear in URLs)
+    const prominentDelimiters = ['|', '–', '—'];
+    const hasProminentDelimiters = prominentDelimiters.some(delim => combinedText.includes(delim));
 
-    if (hasDelimiters) {
+    if (hasProminentDelimiters) {
       // Handle mixed delimiters by replacing them all with a common delimiter first
       let processedText = combinedText;
-      for (const delim of ['|', '/', '–', '—']) {
+      for (const delim of prominentDelimiters) {
         processedText = processedText.replace(new RegExp('\\s*' + delim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*', 'g'), '|||');
       }
 
@@ -110,20 +110,14 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
       const splitParts = processedText.split('|||').map(l => l.trim()).filter(l => l);
       if (splitParts.length >= 2) {
         lines = splitParts;
-      } else {
-        // If no prominent delimiters, try to split by the most common delimiter
-        for (const delim of ['|', '/', '–', '—', ',']) {
-          if (combinedText.includes(delim)) {
-            const splitCount = combinedText.split(delim).length - 1;
-            if (splitCount >= 2) {
-              // Re-create lines by splitting on this delimiter
-              lines = combinedText.split(delim).map(l => l.trim()).filter(l => l);
-              break;
-            }
-          }
-        }
       }
     }
+  }
+
+  const DEBUG = false; // Set to true for debugging
+  if (DEBUG) {
+    console.log('=== DEBUG: After PHASE 0 ===');
+    console.log('lines:', lines);
   }
 
   // PHASE 1: Extract contact info with pattern matching (high confidence)
@@ -233,15 +227,22 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
   const labelKeywords = ['phone', 'email', 'address', 'linkedin', 'github', 'portfolio', 'website', 'objective', 'summary', 'available'];
 
   for (let line of lines) {
+    const originalLine = line;
     // Remove label prefix if present
     line = removeLabel(line);
     line = normalizeWhitespace(line);
 
+    if (DEBUG) console.log('Checking line:', JSON.stringify(line));
+
     // Skip if we've already used this line's content
     let hasUsedContent = false;
     for (const used of usedText) {
-      if (line.includes(used) || used.includes(line)) {
+      // Check if the line contains any already-used text
+      // Don't check if used contains line, as that can cause false positives
+      // (e.g., "linkedin.com/in/johndoe" contains "john" but "John Smith" should not be skipped)
+      if (line.includes(used)) {
         hasUsedContent = true;
+        if (DEBUG) console.log('  Skipping: contains used content:', used);
         break;
       }
     }
@@ -299,7 +300,7 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
     // Check if this address has been used already (e.g., it's part of an already-extracted field)
     let alreadyUsed = false;
     for (const used of usedText) {
-      if (used.includes(potentialAddress) || potentialAddress.includes(used)) {
+      if (used.includes(potentialAddress)) {
         alreadyUsed = true;
         break;
       }
