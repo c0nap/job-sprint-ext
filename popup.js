@@ -1306,6 +1306,12 @@ function showManualEntryModal(button, statusDiv, jobData) {
   document.getElementById('manualCompany').value = jobData.company || '';
   document.getElementById('manualLocation').value = jobData.location || '';
   document.getElementById('manualUrl').value = jobData.url || '';
+  document.getElementById('manualRole').value = jobData.role || '';
+  document.getElementById('manualTailor').value = jobData.tailor || '';
+  document.getElementById('manualNotes').value = jobData.description || '';
+  document.getElementById('manualCompensation').value = jobData.compensation || '';
+  document.getElementById('manualPay').value = jobData.pay || '';
+  document.getElementById('manualBoard').value = jobData.source || '';
 
   // Store the full job data for later
   modal.dataset.jobData = JSON.stringify(jobData);
@@ -1343,13 +1349,19 @@ function handleManualEntrySubmit() {
     title: document.getElementById('manualJobTitle').value.trim(),
     company: document.getElementById('manualCompany').value.trim(),
     location: document.getElementById('manualLocation').value.trim(),
-    url: document.getElementById('manualUrl').value.trim()
+    url: document.getElementById('manualUrl').value.trim(),
+    role: document.getElementById('manualRole').value.trim(),
+    tailor: document.getElementById('manualTailor').value.trim(),
+    description: document.getElementById('manualNotes').value.trim(),
+    compensation: document.getElementById('manualCompensation').value.trim(),
+    pay: document.getElementById('manualPay').value.trim(),
+    source: document.getElementById('manualBoard').value.trim()
   };
 
   // Get original job data to preserve other fields
   const originalData = JSON.parse(modal.dataset.jobData || '{}');
 
-  // Merge manual data with original data
+  // Merge manual data with original data (manual data overrides original)
   const finalData = {
     ...originalData,
     ...manualData
