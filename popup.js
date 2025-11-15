@@ -14,6 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeAutofill();
   initializeSettings();
   initializeManualEntryModal();
+
+  // Restore UI state from last session
+  restoreUIState();
 });
 
 // ============ DEBUG CONSOLE ============
@@ -262,6 +265,9 @@ function openFolder(folder) {
   currentFolder = folder;
   navigationPath = [folder]; // Reset navigation to top level
 
+  // Save UI state
+  saveUIState();
+
   // Get folder data from storage
   chrome.runtime.sendMessage(
     { action: 'getClipboardFolder', folder },
@@ -370,6 +376,9 @@ function closeFolder() {
   navigationPath = [];
   currentData = null;
 
+  // Clear saved UI state
+  saveUIState();
+
   // Show folder view and hide sub-menu
   const folderView = document.getElementById('folderView');
   const subMenuView = document.getElementById('subMenuView');
@@ -379,6 +388,54 @@ function closeFolder() {
 
   // Show other feature sections
   showOtherSections();
+}
+
+/**
+ * Save current UI state to session storage
+ * Allows restoring the user's location in the UI when popup reopens
+ */
+function saveUIState() {
+  const state = {
+    currentFolder,
+    navigationPath,
+    timestamp: Date.now()
+  };
+  try {
+    sessionStorage.setItem('jobsprint_ui_state', JSON.stringify(state));
+  } catch (error) {
+    console.error('Failed to save UI state:', error);
+  }
+}
+
+/**
+ * Restore UI state from session storage
+ * Reopens the last viewed folder if user was browsing clipboard macros
+ */
+function restoreUIState() {
+  try {
+    const stateStr = sessionStorage.getItem('jobsprint_ui_state');
+    if (!stateStr) return;
+
+    const state = JSON.parse(stateStr);
+
+    // Only restore if state is recent (within 5 minutes)
+    const age = Date.now() - (state.timestamp || 0);
+    if (age > 5 * 60 * 1000) {
+      sessionStorage.removeItem('jobsprint_ui_state');
+      return;
+    }
+
+    // Restore folder view if user was in a folder
+    if (state.currentFolder) {
+      log(`[UI] Restoring state: ${state.currentFolder}`);
+      // Delay to ensure DOM is ready
+      setTimeout(() => {
+        openFolder(state.currentFolder);
+      }, 100);
+    }
+  } catch (error) {
+    console.error('Failed to restore UI state:', error);
+  }
 }
 
 /**
@@ -451,7 +508,7 @@ function renderSubMenuItems(items) {
       // Copy button copies verbalized content
       copyButton.addEventListener('click', (e) => {
         e.stopPropagation();
-        handleItemClick(key, value);
+        handleItemClick(key, value, copyButton);
       });
 
       itemContainer.appendChild(button);
@@ -467,7 +524,7 @@ function renderSubMenuItems(items) {
       // Click to copy
       button.addEventListener('click', (e) => {
         e.stopPropagation();
-        handleItemClick(key, value);
+        handleItemClick(key, value, button);
       });
 
       // Add button directly (no container, no copy button for items)
@@ -569,8 +626,9 @@ function verbalizeValue(value, indent = 0) {
  * Handle item click - copy the value to clipboard
  * @param {string} key - Item key
  * @param {string|Object} value - Item value to copy (string or nested object)
+ * @param {HTMLElement} buttonElement - Button that was clicked (for visual feedback)
  */
-async function handleItemClick(key, value) {
+async function handleItemClick(key, value, buttonElement) {
   // Verbalize the value (converts objects to readable text, keeps strings as-is)
   const textToCopy = verbalizeValue(value);
 
@@ -579,8 +637,8 @@ async function handleItemClick(key, value) {
     await navigator.clipboard.writeText(textToCopy);
     log(`[Clipboard] Copied: ${key}`);
 
-    // Show visual feedback
-    showCopySuccess(key);
+    // Show visual feedback on the button itself
+    showButtonCopyFeedback(buttonElement);
   } catch (error) {
     logError('[Clipboard] Failed to copy: ' + error.message);
     showError('Failed to copy to clipboard');
@@ -588,21 +646,32 @@ async function handleItemClick(key, value) {
 }
 
 /**
- * Show success message when item is copied
- * @param {string} itemName - Name of the copied item
+ * Show copy success feedback on the button itself
+ * Changes button color and text temporarily
+ * @param {HTMLElement} button - Button element to update
  */
-function showCopySuccess(itemName) {
-  const statusDiv = document.getElementById('subMenuStatus');
-  if (!statusDiv) return;
+function showButtonCopyFeedback(button) {
+  if (!button) return;
 
-  const label = itemName.charAt(0).toUpperCase() + itemName.slice(1);
-  statusDiv.textContent = `✓ Copied: ${label}`;
-  statusDiv.className = 'sub-menu-status success';
-  statusDiv.style.display = 'block';
+  // Save original state
+  const originalText = button.innerHTML;
+  const originalClass = button.className;
+  const originalDisabled = button.disabled;
 
-  // Auto-hide after 2 seconds
+  // Update button appearance
+  button.innerHTML = '✓ Copied!';
+  button.className = originalClass + ' copied';
+  button.disabled = true;
+  button.style.backgroundColor = '#28a745';
+  button.style.color = 'white';
+
+  // Restore after 2 seconds
   setTimeout(() => {
-    statusDiv.style.display = 'none';
+    button.innerHTML = originalText;
+    button.className = originalClass;
+    button.disabled = originalDisabled;
+    button.style.backgroundColor = '';
+    button.style.color = '';
   }, 2000);
 }
 
@@ -903,32 +972,44 @@ function initializeExtraction() {
  * @param {HTMLElement} statusDiv - Status message display element
  */
 function handleExtractClick(button, statusDiv) {
+  // Log the action
+  log('[Extract] Job data extraction initiated');
+
   // Rate limiting check
   const now = Date.now();
   if (now - lastExtractTime < EXTRACT_COOLDOWN_MS) {
     const remainingSeconds = Math.ceil((EXTRACT_COOLDOWN_MS - (now - lastExtractTime)) / 1000);
     showStatus(statusDiv, 'info', `ℹ Please wait ${remainingSeconds}s before extracting again`);
+    log(`[Extract] Rate limited - ${remainingSeconds}s remaining`);
     return;
   }
   lastExtractTime = now;
 
-  // Set button to loading state
+  // Immediate button feedback - show loading state right away
   setButtonLoading(button, 'Extracting...');
-  clearStatus(statusDiv);
+  // Show immediate status feedback
+  showStatus(statusDiv, 'info', 'ℹ Extracting job data from page...');
+  log('[Extract] Querying active tab...');
 
   // Step 1: Query active tab
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const activeTab = tabs[0];
     if (!activeTab) {
+      logError('[Extract] No active tab found');
       handleExtractError(button, statusDiv, 'No active tab found. Please make sure you have a tab open.');
       return;
     }
 
+    log(`[Extract] Active tab found: ${activeTab.url}`);
+
     // Check if tab URL is accessible
     if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+      logError(`[Extract] Invalid tab URL: ${activeTab.url}`);
       handleExtractError(button, statusDiv, 'Cannot extract from this page. Chrome extension pages and settings are not supported.');
       return;
     }
+
+    log('[Extract] Sending extraction request to content script...');
 
     // Step 2: Request extraction from content script
     chrome.tabs.sendMessage(
@@ -938,6 +1019,7 @@ function handleExtractClick(button, statusDiv) {
         if (chrome.runtime.lastError) {
           // Handle the common "Receiving end does not exist" error
           const errorMsg = chrome.runtime.lastError.message;
+          logError(`[Extract] Runtime error: ${errorMsg}`);
 
           if (errorMsg.includes('Receiving end does not exist')) {
             handleExtractError(
@@ -958,9 +1040,12 @@ function handleExtractClick(button, statusDiv) {
         }
 
         if (!response?.success) {
+          logError('[Extract] Content script returned failure');
           handleExtractError(button, statusDiv, 'Failed to extract job data from page');
           return;
         }
+
+        log(`[Extract] Data extracted: ${JSON.stringify(response.data)}`);
 
         // Step 3: Send extracted data to service worker for logging
         logJobData(button, statusDiv, response.data);
@@ -977,15 +1062,21 @@ function handleExtractClick(button, statusDiv) {
  * @param {Object} jobData - Extracted job data
  */
 function logJobData(button, statusDiv, jobData) {
+  log('[Extract] Checking if manual entry needed...');
+
   // Check if manual entry is enabled and if data is missing
   chrome.runtime.sendMessage({ action: 'getConfig' }, (configResponse) => {
     const isManualEntryEnabled = configResponse?.config?.ENABLE_MANUAL_ENTRY !== false;
     const hasMissingData = isMissingRequiredData(jobData);
 
+    log(`[Extract] Manual entry enabled: ${isManualEntryEnabled}, Missing data: ${hasMissingData}`);
+
     if (isManualEntryEnabled && hasMissingData) {
+      log('[Extract] Showing manual entry modal');
       // Show manual entry modal
       showManualEntryModal(button, statusDiv, jobData);
     } else {
+      log('[Extract] Proceeding with automatic submission');
       // Proceed with logging directly
       submitJobData(button, statusDiv, jobData);
     }
@@ -999,13 +1090,18 @@ function logJobData(button, statusDiv, jobData) {
  * @param {Object} jobData - Job data to submit
  */
 function submitJobData(button, statusDiv, jobData) {
+  log('[Extract] Submitting job data to service worker...');
+  showStatus(statusDiv, 'info', 'ℹ Logging to Google Sheets...');
+
   chrome.runtime.sendMessage(
     { action: 'logJobData', data: jobData },
     (logResponse) => {
       if (logResponse?.success) {
+        log('[Extract] Job data logged successfully');
         showStatus(statusDiv, 'success', '✓ Job data logged successfully!');
       } else {
         const errorMsg = logResponse?.error || 'Unknown error occurred';
+        logError(`[Extract] Failed to log: ${errorMsg}`);
         showStatus(statusDiv, 'error', `✗ Failed to log data: ${errorMsg}`);
       }
       resetExtractButton(button);
@@ -1140,8 +1236,17 @@ function initializeSettings() {
 
   settingsLink.addEventListener('click', (e) => {
     e.preventDefault();
-    // Open settings page in a new tab
-    chrome.tabs.create({ url: 'settings.html' });
+    // Open settings page in a new tab next to the current tab
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.create({
+          url: 'settings.html',
+          index: tabs[0].index + 1  // Open right next to active tab
+        });
+      } else {
+        chrome.tabs.create({ url: 'settings.html' });
+      }
+    });
   });
 }
 
