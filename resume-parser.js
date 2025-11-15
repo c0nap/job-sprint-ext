@@ -92,29 +92,57 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
   };
 
   // PHASE 0: Pre-process - handle single-line or heavily delimited formats
-  // If we have very few lines (1-3) and they contain delimiters, try to split them first
-  if (lines.length <= 3) {
+  // Only apply to truly single-line inputs (1 line, or 2 lines where both have delimiters)
+  if (lines.length === 1 || (lines.length === 2 && lines.every(l => l.split(/[|;–—]/).length > 1))) {
     const combinedText = lines.join(' ');
-    // Check for prominent delimiters (but not slashes, as they appear in URLs)
-    const prominentDelimiters = ['|', '–', '—'];
+    // Check for prominent delimiters (excluding commas, hyphens, and slashes to avoid breaking patterns)
+    const prominentDelimiters = config.delimiters.filter(d =>
+      d !== '\n' && d !== '\t' && d !== ',' && d !== '-' && d !== '/'
+    );
     const hasProminentDelimiters = prominentDelimiters.some(delim => combinedText.includes(delim));
 
-    if (hasProminentDelimiters) {
+    // Check for slash delimiters (but make sure they're not part of URLs)
+    // Only count slashes that have spaces around them
+    const slashMatches = combinedText.match(/\s\/\s/g);
+    const hasSlashDelimiters = slashMatches && slashMatches.length >= 2;
+
+    if (hasProminentDelimiters || hasSlashDelimiters) {
       // Handle mixed delimiters by replacing them all with a common delimiter first
       let processedText = combinedText;
+      const delimsToSplit = [];
+
+      // Find which delimiters are actually present (excluding slash which is handled separately)
       for (const delim of prominentDelimiters) {
-        processedText = processedText.replace(new RegExp('\\s*' + delim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*', 'g'), '|||');
+        if (combinedText.includes(delim)) {
+          delimsToSplit.push(delim);
+        }
       }
 
-      // Now split by the common delimiter
-      const splitParts = processedText.split('|||').map(l => l.trim()).filter(l => l);
-      if (splitParts.length >= 2) {
-        lines = splitParts;
+      // Only add slash if it has spaces around it
+      if (hasSlashDelimiters) {
+        delimsToSplit.push('/');
+      }
+
+      if (delimsToSplit.length > 0) {
+        for (const delim of delimsToSplit) {
+          // For slash, only replace when it has spaces around it
+          if (delim === '/') {
+            processedText = processedText.replace(/\s*\/\s*/g, '|||');
+          } else {
+            processedText = processedText.replace(new RegExp('\\s*' + delim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*', 'g'), '|||');
+          }
+        }
+
+        // Now split by the common delimiter
+        const splitParts = processedText.split('|||').map(l => l.trim()).filter(l => l);
+        if (splitParts.length >= 2) {
+          lines = splitParts;
+        }
       }
     }
   }
 
-  const DEBUG = false; // Set to true for debugging
+  const DEBUG = process.env.DEBUG_PARSER === 'true'; // Set to true for debugging
   if (DEBUG) {
     console.log('=== DEBUG: After PHASE 0 ===');
     console.log('lines:', lines);
@@ -222,79 +250,57 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
     }
   }
 
-  // PHASE 2: Extract name (process of elimination)
-  const jobTitleKeywords = ['engineer', 'developer', 'designer', 'manager', 'analyst', 'scientist', 'architect', 'consultant', 'specialist', 'director', 'coordinator', 'associate', 'assistant'];
-  const labelKeywords = ['phone', 'email', 'address', 'linkedin', 'github', 'portfolio', 'website', 'objective', 'summary', 'available'];
-
-  for (let line of lines) {
-    const originalLine = line;
-    // Remove label prefix if present
-    line = removeLabel(line);
-    line = normalizeWhitespace(line);
-
-    if (DEBUG) console.log('Checking line:', JSON.stringify(line));
-
-    // Skip if we've already used this line's content
-    let hasUsedContent = false;
-    for (const used of usedText) {
-      // Check if the line contains any already-used text
-      // Don't check if used contains line, as that can cause false positives
-      // (e.g., "linkedin.com/in/johndoe" contains "john" but "John Smith" should not be skipped)
-      if (line.includes(used)) {
-        hasUsedContent = true;
-        if (DEBUG) console.log('  Skipping: contains used content:', used);
-        break;
-      }
-    }
-    if (hasUsedContent) continue;
-
-    const lowerLine = line.toLowerCase();
-
-    // Skip if line has a label
-    if (labelKeywords.some(keyword => lowerLine.startsWith(keyword))) continue;
-
-    // Skip if line looks like a job title
-    if (jobTitleKeywords.some(keyword => lowerLine.includes(keyword))) continue;
-
-    // Skip if line is too long (probably not a name)
-    if (line.length > 50) continue;
-
-    // Skip if line is too short (single character/initial)
-    if (line.length < 3) continue;
-
-    // Skip if line contains numbers (unlikely to be just a name)
-    if (/\d/.test(line)) continue;
-
-    // Skip if line has URL-like patterns (but allow names with spaces)
-    if (/\w+\.\w{2,}/.test(line) && !line.includes(' ')) continue;
-
-    // Skip if line appears to be part of a URL or email
-    if (lowerLine.includes('.com') || lowerLine.includes('.org') || lowerLine.includes('.edu') || lowerLine.includes('@')) continue;
-
-    // This looks like a name!
-    result.name = line;
-    usedText.add(line);
-    break;
-  }
-
-  // PHASE 3: Extract address (city, state pattern)
-  // Look globally in the entire text for city, state patterns
+  // Extract address (city, state pattern) - do this before name extraction
   const cityStatePattern = new RegExp(config.patterns.cityState.source, 'g');
   let cityStateMatch;
+
+  // Valid US state abbreviations and common variations
+  const validStates = new Set([
+    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+    'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+    'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+    'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+    'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+    'DC', 'PR', 'VI', 'GU', 'AS', 'MP'
+  ]);
+
+  const validStateNames = new Set([
+    'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado',
+    'connecticut', 'delaware', 'florida', 'georgia', 'hawaii', 'idaho',
+    'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana',
+    'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota',
+    'mississippi', 'missouri', 'montana', 'nebraska', 'nevada',
+    'new hampshire', 'new jersey', 'new mexico', 'new york',
+    'north carolina', 'north dakota', 'ohio', 'oklahoma', 'oregon',
+    'pennsylvania', 'rhode island', 'south carolina', 'south dakota',
+    'tennessee', 'texas', 'utah', 'vermont', 'virginia', 'washington',
+    'west virginia', 'wisconsin', 'wyoming'
+  ]);
 
   while ((cityStateMatch = cityStatePattern.exec(text)) !== null) {
     // The pattern has two alternatives with different capture groups
     // Groups 1-2: "City, State" format
     // Groups 3-4: "City XX" format (2-letter state code)
     let potentialAddress;
+    let stateCode;
+
     if (cityStateMatch[1] && cityStateMatch[2]) {
       // "City, State" format
+      stateCode = cityStateMatch[2];
       potentialAddress = cityStateMatch[0].trim();
     } else if (cityStateMatch[3] && cityStateMatch[4]) {
       // "City XX" format
+      stateCode = cityStateMatch[4];
       potentialAddress = cityStateMatch[0].trim();
     } else {
       continue;
+    }
+
+    // Validate that the state code/name is actually a real state
+    const stateUpper = stateCode.toUpperCase();
+    const stateLower = stateCode.toLowerCase();
+    if (!validStates.has(stateUpper) && !validStateNames.has(stateLower)) {
+      continue; // Not a valid state, skip this match
     }
 
     // Check if this address has been used already (e.g., it's part of an already-extracted field)
@@ -313,7 +319,64 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
     }
   }
 
-  // PHASE 4: Extract objective/summary
+  // PHASE 2: Extract name (process of elimination)
+  const jobTitleKeywords = ['engineer', 'developer', 'designer', 'manager', 'analyst', 'scientist', 'architect', 'consultant', 'specialist', 'director', 'coordinator', 'associate', 'assistant'];
+  const labelKeywords = ['phone', 'email', 'address', 'linkedin', 'github', 'portfolio', 'website', 'objective', 'summary', 'available'];
+
+  if (DEBUG) {
+    console.log('=== DEBUG: Before PHASE 2 ===');
+    console.log('usedText:', Array.from(usedText));
+  }
+
+  for (let line of lines) {
+    const originalLine = line;
+    // Remove label prefix if present
+    line = removeLabel(line);
+    line = normalizeWhitespace(line);
+
+    if (DEBUG) console.log('Checking line:', JSON.stringify(line));
+
+    // Remove all used text from the line to see if a name remains
+    let cleanedLine = line;
+    for (const used of usedText) {
+      // Remove used text from the line
+      cleanedLine = cleanedLine.replace(used, '').trim();
+    }
+    // Also normalize whitespace after removal
+    cleanedLine = normalizeWhitespace(cleanedLine);
+
+    if (DEBUG) console.log('  Cleaned line:', JSON.stringify(cleanedLine));
+
+    // If nothing remains after removing used text, skip this line
+    if (!cleanedLine || cleanedLine.length < 3) continue;
+
+    const lowerLine = cleanedLine.toLowerCase();
+
+    // Skip if line has a label
+    if (labelKeywords.some(keyword => lowerLine.startsWith(keyword))) continue;
+
+    // Skip if line looks like a job title
+    if (jobTitleKeywords.some(keyword => lowerLine.includes(keyword))) continue;
+
+    // Skip if line is too long (probably not a name)
+    if (cleanedLine.length > 50) continue;
+
+    // Skip if line contains numbers (unlikely to be just a name)
+    if (/\d/.test(cleanedLine)) continue;
+
+    // Skip if line has URL-like patterns (but allow names with spaces)
+    if (/\w+\.\w{2,}/.test(cleanedLine) && !cleanedLine.includes(' ')) continue;
+
+    // Skip if line appears to be part of a URL or email
+    if (lowerLine.includes('.com') || lowerLine.includes('.org') || lowerLine.includes('.edu') || lowerLine.includes('@')) continue;
+
+    // This looks like a name!
+    result.name = cleanedLine;
+    usedText.add(cleanedLine);
+    break;
+  }
+
+  // PHASE 3: Extract objective/summary
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const lowerLine = line.toLowerCase();
@@ -346,7 +409,7 @@ function parseDemographics(text, config = DEFAULT_PARSER_CONFIG.demographics) {
     if (result.objective) break;
   }
 
-  // PHASE 5: Extract availability
+  // PHASE 4: Extract availability
   for (const line of lines) {
     const lowerLine = line.toLowerCase();
 
@@ -586,19 +649,19 @@ function parseEmployment(text, config = DEFAULT_PARSER_CONFIG.employment) {
       }
 
       // Split by common delimiters to find title, company, location
-      const parts = firstLine.split(/\s{2,}|[–—]/);
+      const parts = firstLine.split(/\s{2,}|[|–—]/).map(p => p.trim()).filter(p => p);
 
       if (parts.length >= 1) {
-        entry.title = parts[0].trim().replace(entry.dates, '').trim();
+        entry.title = parts[0].replace(entry.dates, '').trim();
       }
 
       // Look for location in all parts (not just parts[1])
       for (let i = 1; i < parts.length; i++) {
-        const part = parts[i].trim().replace(entry.dates, '').trim();
+        const part = parts[i].replace(entry.dates, '').trim();
         if (!part) continue;
 
-        // Check if this part contains a location pattern
-        const locMatch = part.match(/\b[A-Z][a-z]+,\s*[A-Z]{2}\b|\b[A-Z][a-z]+,\s*[A-Z][a-z]+\b/);
+        // Check if this part contains a location pattern (handles multi-word cities)
+        const locMatch = part.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*[A-Z]{2}\b|\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,\s*[A-Z][a-z]+\b/);
         if (locMatch) {
           entry.location = locMatch[0];
           // The company is likely in a previous part or this part before the location
@@ -607,16 +670,27 @@ function parseEmployment(text, config = DEFAULT_PARSER_CONFIG.employment) {
             if (companyText) {
               entry.company = companyText;
             } else if (i > 1 && parts[i - 1]) {
-              entry.company = parts[i - 1].trim();
+              entry.company = parts[i - 1];
             }
           }
           break;
         }
       }
 
-      // If no location found, use the second part as company
+      // If no location found, try to identify company from remaining parts
       if (!entry.company && parts.length >= 2) {
-        entry.company = parts[1].trim().replace(entry.dates, '').trim();
+        // Check if any part looks like a company (doesn't contain dates)
+        for (let i = 1; i < parts.length; i++) {
+          const part = parts[i].replace(entry.dates, '').trim();
+          if (part && !part.match(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d)/i)) {
+            entry.company = part;
+            break;
+          }
+        }
+        // Fallback to second part if still not found
+        if (!entry.company) {
+          entry.company = parts[1].replace(entry.dates, '').trim();
+        }
       }
     }
 
@@ -648,8 +722,19 @@ function parseEmployment(text, config = DEFAULT_PARSER_CONFIG.employment) {
 function parseProjects(text, config = DEFAULT_PARSER_CONFIG.projects) {
   const entries = [];
 
-  // Split into project entries
-  const blocks = text.split(/\n\s*\n/).filter(b => b.trim());
+  // Check if this is a bullet-point format (each line is a separate project)
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  const isBulletFormat = lines.length >= 2 &&
+    lines.every(line => /^[•·▪○\-\*]\s+/.test(line) || line.startsWith('- '));
+
+  let blocks;
+  if (isBulletFormat) {
+    // Each line is a separate project
+    blocks = lines.map(line => line.replace(/^[•·▪○\-\*]\s+/, ''));
+  } else {
+    // Split into project entries by blank lines
+    blocks = text.split(/\n\s*\n/).filter(b => b.trim());
+  }
 
   blocks.forEach((block, index) => {
     const lines = block.split('\n').map(l => l.trim()).filter(l => l);
@@ -673,23 +758,35 @@ function parseProjects(text, config = DEFAULT_PARSER_CONFIG.projects) {
     }
 
     // Look for technologies/tech stack
+    const techLineIndices = [];
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i];
       const lowerLine = line.toLowerCase();
 
-      if (lowerLine.includes('tech') || lowerLine.includes('stack') || lowerLine.includes('built with')) {
+      // Check if line contains technology keywords
+      if (lowerLine.includes('tech stack:') || lowerLine.includes('technologies:') ||
+          lowerLine.includes('stack:') || lowerLine.includes('built with:')) {
         const colonIndex = line.indexOf(':');
         if (colonIndex > -1) {
           entry.technologies = line.substring(colonIndex + 1).trim();
+          techLineIndices.push(i);
+          break;
         }
-        lines.splice(i, 1);
-        break;
+      } else if (lowerLine.startsWith('tech:') || lowerLine.startsWith('stack:') ||
+                 lowerLine.startsWith('technologies:')) {
+        const colonIndex = line.indexOf(':');
+        if (colonIndex > -1) {
+          entry.technologies = line.substring(colonIndex + 1).trim();
+          techLineIndices.push(i);
+          break;
+        }
       }
     }
 
-    // Remaining lines are description
-    if (lines.length > 1) {
-      entry.description = lines.slice(1).join('\n');
+    // Remove technology lines from description
+    const descriptionLines = lines.slice(1).filter((_, idx) => !techLineIndices.includes(idx + 1));
+    if (descriptionLines.length > 0) {
+      entry.description = descriptionLines.join('\n');
     }
 
     // Use title as key (sanitized) or index-based
@@ -765,11 +862,41 @@ function parseSkills(text, config = DEFAULT_PARSER_CONFIG.skills) {
       }
     }
   } else {
-    // Parse non-categorized format - try each delimiter
-    for (const delim of config.delimiters) {
-      const parts = text.split(delim).map(s => s.trim()).filter(s => s);
-      if (parts.length > skills.length) {
-        skills = parts;
+    // Parse non-categorized format
+    // First, try splitting each line by bullet delimiters, then combine
+    const bulletDelims = ['•', '·', '▪', '○'];
+    for (const line of lines) {
+      let lineParts = [line];
+
+      // Try each bullet delimiter
+      for (const delim of bulletDelims) {
+        if (line.includes(delim)) {
+          lineParts = line.split(delim).map(s => s.trim()).filter(s => s);
+          break;
+        }
+      }
+
+      // If no bullet delimiters worked, try other delimiters
+      if (lineParts.length === 1) {
+        for (const delim of [',', '|', '-']) {
+          if (line.includes(delim)) {
+            lineParts = line.split(delim).map(s => s.trim()).filter(s => s);
+            if (lineParts.length > 1) break;
+          }
+        }
+      }
+
+      skills.push(...lineParts);
+    }
+
+    // If we didn't get many skills, try splitting the entire text by delimiters
+    if (skills.length < 2) {
+      skills = [];
+      for (const delim of config.delimiters) {
+        const parts = text.split(delim).map(s => s.trim()).filter(s => s);
+        if (parts.length > skills.length) {
+          skills = parts;
+        }
       }
     }
   }
@@ -834,7 +961,7 @@ function parseReferences(text, config = DEFAULT_PARSER_CONFIG.references) {
   const blocks = text.split(/\n\s*\n/).filter(b => b.trim());
 
   blocks.forEach((block, index) => {
-    const lines = block.split('\n').map(l => l.trim()).filter(l => l);
+    let lines = block.split('\n').map(l => l.trim()).filter(l => l);
     const entry = {
       name: '',
       title: '',
@@ -854,34 +981,63 @@ function parseReferences(text, config = DEFAULT_PARSER_CONFIG.references) {
       entry.phone = phoneMatch[0];
     }
 
-    // First line is usually the name
-    if (lines.length > 0) {
-      entry.name = lines[0].replace(entry.email || '', '').replace(entry.phone || '', '').trim();
-    }
+    // Check if this is a compact single-line format with dashes (e.g., "Name - Title at Company - email - phone")
+    if (lines.length === 1 && lines[0].includes(' - ')) {
+      const parts = lines[0].split(' - ').map(p => p.trim());
+      // First part is likely the name
+      if (parts[0]) {
+        entry.name = parts[0].replace(entry.email || '', '').replace(entry.phone || '', '').trim();
+      }
+      // Look for title/company in remaining parts
+      for (let i = 1; i < parts.length; i++) {
+        const part = parts[i];
+        // Skip if it's email or phone
+        if (part === entry.email || part === entry.phone) continue;
 
-    // Second line might be title/company
-    if (lines.length > 1) {
-      const secondLine = lines[1].replace(entry.email || '', '').replace(entry.phone || '', '').trim();
+        // Check if it contains "at" which indicates "Title at Company"
+        if (part.includes(' at ')) {
+          const atParts = part.split(' at ');
+          entry.title = atParts[0].trim();
+          entry.company = atParts[1].trim();
+        } else if (!entry.title) {
+          // First non-contact part is likely title
+          entry.title = part;
+        } else if (!entry.company) {
+          // Second non-contact part is likely company
+          entry.company = part;
+        }
+      }
+    } else {
+      // Multi-line format
+      // First line is usually the name
+      if (lines.length > 0) {
+        entry.name = lines[0].replace(entry.email || '', '').replace(entry.phone || '', '').trim();
+      }
 
-      // Check if it contains company indicators
-      if (secondLine.includes(',') || secondLine.includes(' at ') || secondLine.includes(' - ')) {
-        const parts = secondLine.split(/,| at | - /);
-        if (parts.length >= 2) {
-          entry.title = parts[0].trim();
-          entry.company = parts[1].trim();
+      // Second line might be title/company
+      if (lines.length > 1) {
+        const secondLine = lines[1].replace(entry.email || '', '').replace(entry.phone || '', '').trim();
+
+        // Check if it contains company indicators
+        if (secondLine.includes(',') || secondLine.includes(' at ') || secondLine.includes(' - ')) {
+          const parts = secondLine.split(/,| at | - /);
+          if (parts.length >= 2) {
+            entry.title = parts[0].trim();
+            entry.company = parts[1].trim();
+          } else {
+            entry.title = secondLine;
+          }
         } else {
           entry.title = secondLine;
         }
-      } else {
-        entry.title = secondLine;
       }
-    }
 
-    // Third line might have additional info
-    if (lines.length > 2) {
-      const thirdLine = lines[2].replace(entry.email || '', '').replace(entry.phone || '', '').trim();
-      if (thirdLine && !entry.company) {
-        entry.company = thirdLine;
+      // Third line might have additional info
+      if (lines.length > 2) {
+        const thirdLine = lines[2].replace(entry.email || '', '').replace(entry.phone || '', '').trim();
+        if (thirdLine && !entry.company) {
+          entry.company = thirdLine;
+        }
       }
     }
 
