@@ -26,6 +26,23 @@ const DEFAULT_MACROS = {
   employment: {}
 };
 
+// Default clipboard macros (nested structure)
+const DEFAULT_MACROS = {
+  demographics: {
+    phone: '',
+    email: '',
+    address: '',
+    name: '',
+    linkedin: '',
+    website: ''
+  },
+  references: {},
+  education: {},
+  skills: {},
+  projects: {},
+  employment: {}
+};
+
 // Load settings when page loads
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
