@@ -9,7 +9,8 @@ let configCache = {
   APPS_SCRIPT_ENDPOINT: '',
   SPREADSHEET_ID: '',
   PROJECT_ID: '',
-  ENABLE_MANUAL_ENTRY: true
+  ENABLE_MANUAL_ENTRY: true,
+  TARGET_SHEET_NAME: 'Job Applications'
 };
 
 // Initialize storage when extension is installed
@@ -37,7 +38,8 @@ async function loadConfiguration() {
       'APPS_SCRIPT_ENDPOINT',
       'SPREADSHEET_ID',
       'PROJECT_ID',
-      'ENABLE_MANUAL_ENTRY'
+      'ENABLE_MANUAL_ENTRY',
+      'TARGET_SHEET_NAME'
     ]);
 
     // Check if we have values in storage
@@ -52,6 +54,7 @@ async function loadConfiguration() {
       configCache.PROJECT_ID = storageConfig.PROJECT_ID || '';
       configCache.ENABLE_MANUAL_ENTRY =
         storageConfig.ENABLE_MANUAL_ENTRY !== undefined ? storageConfig.ENABLE_MANUAL_ENTRY : true;
+      configCache.TARGET_SHEET_NAME = storageConfig.TARGET_SHEET_NAME || 'Job Applications';
       console.log('Configuration loaded from chrome.storage');
     } else {
       // Fallback to config.local.js
@@ -71,7 +74,8 @@ async function loadConfiguration() {
               APPS_SCRIPT_ENDPOINT: configCache.APPS_SCRIPT_ENDPOINT,
               SPREADSHEET_ID: configCache.SPREADSHEET_ID,
               PROJECT_ID: configCache.PROJECT_ID,
-              ENABLE_MANUAL_ENTRY: configCache.ENABLE_MANUAL_ENTRY
+              ENABLE_MANUAL_ENTRY: configCache.ENABLE_MANUAL_ENTRY,
+              TARGET_SHEET_NAME: configCache.TARGET_SHEET_NAME
             });
             console.log('Configuration auto-saved to chrome.storage from config.local.js');
           } catch (saveError) {
@@ -101,7 +105,8 @@ async function loadConfiguration() {
             APPS_SCRIPT_ENDPOINT: configCache.APPS_SCRIPT_ENDPOINT,
             SPREADSHEET_ID: configCache.SPREADSHEET_ID,
             PROJECT_ID: configCache.PROJECT_ID,
-            ENABLE_MANUAL_ENTRY: configCache.ENABLE_MANUAL_ENTRY
+            ENABLE_MANUAL_ENTRY: configCache.ENABLE_MANUAL_ENTRY,
+            TARGET_SHEET_NAME: configCache.TARGET_SHEET_NAME
           });
           console.log('Configuration auto-saved to chrome.storage from config.local.js (fallback)');
         } catch (saveError) {
@@ -506,6 +511,12 @@ function handleLogJobData(data, sendResponse) {
   // 1. Settings UI display and "Open Sheet" link
   // 2. User convenience (remembering configuration)
 
+  // Add target sheet name to the data
+  const dataWithSheetName = {
+    ...data,
+    targetSheetName: configCache.TARGET_SHEET_NAME || 'Job Applications'
+  };
+
   // Send data to endpoint with retry logic
   // Note: Apps Script Web Apps support CORS, so we don't need 'no-cors' mode
   fetchWithRetry(endpoint, {
@@ -513,7 +524,7 @@ function handleLogJobData(data, sendResponse) {
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(data), // Only job data fields, no secrets
+    body: JSON.stringify(dataWithSheetName), // Job data fields with sheet name
     signal: AbortSignal.timeout(15000) // 15 second timeout per attempt
   })
     .then((response) => {
