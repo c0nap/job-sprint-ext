@@ -300,11 +300,17 @@ function logJobToSheet(jobData, config, requestId) {
       sheet.setFrozenRows(1);
     }
 
-    // Infer Board from URL or source
-    var board = inferBoard(jobData.url, jobData.source);
+    // Infer Board from URL or source (use user-provided if available)
+    var board = jobData.source || inferBoard(jobData.url, jobData.source);
 
     // Format the Applied date as MM/DD/YYYY
     var appliedDate = formatAppliedDate(jobData.timestamp);
+
+    // Infer role from title (use user-provided if available)
+    var role = jobData.role || inferRole(jobData.title);
+
+    // Use tailor if provided, otherwise use role
+    var tailor = jobData.tailor || role;
 
     // Prepare the row data with new schema - use defaults for missing/empty fields
     var rowData = [
@@ -314,13 +320,13 @@ function logJobToSheet(jobData, config, requestId) {
       jobData.location || '',                    // Location
       appliedDate,                               // Applied (date only)
       '',                                        // Decision (empty)
-      inferRole(jobData.title),                  // Role (infer from title)
-      inferRole(jobData.title),                  // Tailor (same as Role for now)
+      role,                                      // Role (user-provided or inferred from title)
+      tailor,                                    // Tailor (user-provided or same as Role)
       jobData.description || '',                 // Notes (description if available)
-      '',                                        // Compensation (empty)
-      '',                                        // Pay (empty)
+      jobData.compensation || '',                // Compensation (user-provided or empty)
+      jobData.pay || '',                         // Pay (user-provided or empty)
       jobData.url || '',                         // Portal Link
-      board                                      // Board (inferred from URL/source)
+      board                                      // Board (user-provided or inferred from URL/source)
     ];
 
     console.log({

@@ -26,23 +26,6 @@ const DEFAULT_MACROS = {
   employment: {}
 };
 
-// Default clipboard macros (nested structure)
-const DEFAULT_MACROS = {
-  demographics: {
-    phone: '',
-    email: '',
-    address: '',
-    name: '',
-    linkedin: '',
-    website: ''
-  },
-  references: {},
-  education: {},
-  skills: {},
-  projects: {},
-  employment: {}
-};
-
 // Load settings when page loads
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
@@ -57,11 +40,35 @@ function setupCloseLink() {
   if (closeLink) {
     closeLink.addEventListener('click', (e) => {
       e.preventDefault();
-      // Close the current tab
-      chrome.tabs.getCurrent((tab) => {
-        if (tab) {
-          chrome.tabs.remove(tab.id);
-        }
+
+      // Get the original tab that opened settings
+      chrome.storage.local.get(['settingsOriginTabId'], (result) => {
+        const originTabId = result.settingsOriginTabId;
+
+        chrome.tabs.getCurrent((currentTab) => {
+          if (!currentTab) return;
+
+          // If we have an origin tab, switch to it first
+          if (originTabId) {
+            // Check if the origin tab still exists
+            chrome.tabs.get(originTabId, (originTab) => {
+              if (chrome.runtime.lastError) {
+                // Origin tab no longer exists, just close settings
+                chrome.tabs.remove(currentTab.id);
+                chrome.storage.local.remove('settingsOriginTabId');
+              } else {
+                // Switch to origin tab, then close settings
+                chrome.tabs.update(originTabId, { active: true }, () => {
+                  chrome.tabs.remove(currentTab.id);
+                  chrome.storage.local.remove('settingsOriginTabId');
+                });
+              }
+            });
+          } else {
+            // No origin tab stored, just close settings
+            chrome.tabs.remove(currentTab.id);
+          }
+        });
       });
     });
   }

@@ -247,7 +247,20 @@ function initializeClipboardMacros() {
   if (subMenuSettingsLink) {
     subMenuSettingsLink.addEventListener('click', (e) => {
       e.preventDefault();
-      chrome.tabs.create({ url: 'settings.html' });
+      // Open settings page in a new tab next to the current tab
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) {
+          // Store the original tab ID so settings can return to it
+          chrome.storage.local.set({ settingsOriginTabId: tabs[0].id }, () => {
+            chrome.tabs.create({
+              url: 'settings.html',
+              index: tabs[0].index + 1  // Open right next to active tab
+            });
+          });
+        } else {
+          chrome.tabs.create({ url: 'settings.html' });
+        }
+      });
     });
   }
 
@@ -391,7 +404,7 @@ function closeFolder() {
 }
 
 /**
- * Save current UI state to session storage
+ * Save current UI state to chrome.storage.local
  * Allows restoring the user's location in the UI when popup reopens
  */
 function saveUIState() {
@@ -400,28 +413,31 @@ function saveUIState() {
     navigationPath,
     timestamp: Date.now()
   };
-  try {
-    sessionStorage.setItem('jobsprint_ui_state', JSON.stringify(state));
-  } catch (error) {
-    console.error('Failed to save UI state:', error);
-  }
+  chrome.storage.local.set({ jobsprint_ui_state: state }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('Failed to save UI state:', chrome.runtime.lastError);
+    }
+  });
 }
 
 /**
- * Restore UI state from session storage
+ * Restore UI state from chrome.storage.local
  * Reopens the last viewed folder if user was browsing clipboard macros
  */
 function restoreUIState() {
-  try {
-    const stateStr = sessionStorage.getItem('jobsprint_ui_state');
-    if (!stateStr) return;
+  chrome.storage.local.get(['jobsprint_ui_state'], (result) => {
+    if (chrome.runtime.lastError) {
+      console.error('Failed to restore UI state:', chrome.runtime.lastError);
+      return;
+    }
 
-    const state = JSON.parse(stateStr);
+    const state = result.jobsprint_ui_state;
+    if (!state) return;
 
     // Only restore if state is recent (within 5 minutes)
     const age = Date.now() - (state.timestamp || 0);
     if (age > 5 * 60 * 1000) {
-      sessionStorage.removeItem('jobsprint_ui_state');
+      chrome.storage.local.remove('jobsprint_ui_state');
       return;
     }
 
@@ -433,9 +449,7 @@ function restoreUIState() {
         openFolder(state.currentFolder);
       }, 100);
     }
-  } catch (error) {
-    console.error('Failed to restore UI state:', error);
-  }
+  });
 }
 
 /**
@@ -1239,9 +1253,12 @@ function initializeSettings() {
     // Open settings page in a new tab next to the current tab
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
-        chrome.tabs.create({
-          url: 'settings.html',
-          index: tabs[0].index + 1  // Open right next to active tab
+        // Store the original tab ID so settings can return to it
+        chrome.storage.local.set({ settingsOriginTabId: tabs[0].id }, () => {
+          chrome.tabs.create({
+            url: 'settings.html',
+            index: tabs[0].index + 1  // Open right next to active tab
+          });
         });
       } else {
         chrome.tabs.create({ url: 'settings.html' });
@@ -1306,6 +1323,12 @@ function showManualEntryModal(button, statusDiv, jobData) {
   document.getElementById('manualCompany').value = jobData.company || '';
   document.getElementById('manualLocation').value = jobData.location || '';
   document.getElementById('manualUrl').value = jobData.url || '';
+  document.getElementById('manualRole').value = jobData.role || '';
+  document.getElementById('manualTailor').value = jobData.tailor || '';
+  document.getElementById('manualNotes').value = jobData.description || '';
+  document.getElementById('manualCompensation').value = jobData.compensation || '';
+  document.getElementById('manualPay').value = jobData.pay || '';
+  document.getElementById('manualBoard').value = jobData.source || '';
 
   // Store the full job data for later
   modal.dataset.jobData = JSON.stringify(jobData);
@@ -1343,13 +1366,19 @@ function handleManualEntrySubmit() {
     title: document.getElementById('manualJobTitle').value.trim(),
     company: document.getElementById('manualCompany').value.trim(),
     location: document.getElementById('manualLocation').value.trim(),
-    url: document.getElementById('manualUrl').value.trim()
+    url: document.getElementById('manualUrl').value.trim(),
+    role: document.getElementById('manualRole').value.trim(),
+    tailor: document.getElementById('manualTailor').value.trim(),
+    description: document.getElementById('manualNotes').value.trim(),
+    compensation: document.getElementById('manualCompensation').value.trim(),
+    pay: document.getElementById('manualPay').value.trim(),
+    source: document.getElementById('manualBoard').value.trim()
   };
 
   // Get original job data to preserve other fields
   const originalData = JSON.parse(modal.dataset.jobData || '{}');
 
-  // Merge manual data with original data
+  // Merge manual data with original data (manual data overrides original)
   const finalData = {
     ...originalData,
     ...manualData
