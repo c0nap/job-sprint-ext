@@ -28,7 +28,12 @@ const DEFAULT_MACROS = {
 
 // Load settings when page loads
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadSettings();
+  try {
+    await loadSettings();
+  } catch (error) {
+    console.error('Error during loadSettings:', error);
+  }
+  // Always set up event listeners, even if loading settings failed
   setupEventListeners();
   setupFolderHandlers();
   setupCloseLink();
@@ -125,38 +130,56 @@ async function loadSettings() {
 // Setup event listeners
 function setupEventListeners() {
   // Save all settings button
-  document.getElementById('saveSettings').addEventListener('click', saveSettings);
+  const saveSettingsBtn = document.getElementById('saveSettings');
+  if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', saveSettings);
 
   // Save clipboard macros button (specific to clipboard section)
-  document.getElementById('saveClipboardMacros').addEventListener('click', saveClipboardMacros);
+  const saveClipboardBtn = document.getElementById('saveClipboardMacros');
+  if (saveClipboardBtn) saveClipboardBtn.addEventListener('click', saveClipboardMacros);
 
   // Reset button
-  document.getElementById('resetSettings').addEventListener('click', resetSettings);
+  const resetBtn = document.getElementById('resetSettings');
+  if (resetBtn) resetBtn.addEventListener('click', resetSettings);
 
   // Upload config button
-  document.getElementById('uploadConfig').addEventListener('click', uploadConfig);
+  const uploadBtn = document.getElementById('uploadConfig');
+  if (uploadBtn) uploadBtn.addEventListener('click', uploadConfig);
 
   // File input change handler
-  document.getElementById('configFileInput').addEventListener('change', handleConfigFileUpload);
+  const configFileInput = document.getElementById('configFileInput');
+  if (configFileInput) configFileInput.addEventListener('change', handleConfigFileUpload);
 
   // Download config button
-  document.getElementById('downloadConfig').addEventListener('click', downloadConfig);
+  const downloadBtn = document.getElementById('downloadConfig');
+  if (downloadBtn) downloadBtn.addEventListener('click', downloadConfig);
 
   // Clear all data button
-  document.getElementById('clearAllData').addEventListener('click', clearAllData);
+  const clearBtn = document.getElementById('clearAllData');
+  if (clearBtn) clearBtn.addEventListener('click', clearAllData);
 
   // Test connection button
-  document.getElementById('testConnection').addEventListener('click', testConnection);
+  const testBtn = document.getElementById('testConnection');
+  if (testBtn) testBtn.addEventListener('click', testConnection);
 
   // Real-time connection status updates
-  document.getElementById('spreadsheetId').addEventListener('input', updateConnectionStatusFromInputs);
-  document.getElementById('appsScriptEndpoint').addEventListener('input', updateConnectionStatusFromInputs);
-  document.getElementById('projectId').addEventListener('input', updateConnectionStatusFromInputs);
+  const spreadsheetInput = document.getElementById('spreadsheetId');
+  if (spreadsheetInput) spreadsheetInput.addEventListener('input', updateConnectionStatusFromInputs);
+
+  const endpointInput = document.getElementById('appsScriptEndpoint');
+  if (endpointInput) endpointInput.addEventListener('input', updateConnectionStatusFromInputs);
+
+  const projectInput = document.getElementById('projectId');
+  if (projectInput) projectInput.addEventListener('input', updateConnectionStatusFromInputs);
 
   // Export/Import all settings buttons
-  document.getElementById('exportAllSettings').addEventListener('click', exportAllSettings);
-  document.getElementById('importAllSettings').addEventListener('click', importAllSettings);
-  document.getElementById('importFileInput').addEventListener('change', handleImportFile);
+  const exportBtn = document.getElementById('exportAllSettings');
+  if (exportBtn) exportBtn.addEventListener('click', exportAllSettings);
+
+  const importBtn = document.getElementById('importAllSettings');
+  if (importBtn) importBtn.addEventListener('click', importAllSettings);
+
+  const importFileInput = document.getElementById('importFileInput');
+  if (importFileInput) importFileInput.addEventListener('change', handleImportFile);
 }
 
 // Setup folder expand/collapse and JSON validation
