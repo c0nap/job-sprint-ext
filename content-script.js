@@ -1811,8 +1811,10 @@ function extractLargeTextBlock(element) {
       break;
     }
 
-    // Prefer larger blocks (with diminishing returns as we go up)
-    if (text.length > maxLength * 1.5) {
+    // Prefer larger blocks - use 1.05x threshold to catch sibling paragraphs
+    // This allows extraction of multi-element descriptions where paragraphs
+    // might be very different sizes (e.g., long intro + short addendum)
+    if (text.length > maxLength * 1.05) {
       targetElement = current;
       maxLength = text.length;
     }

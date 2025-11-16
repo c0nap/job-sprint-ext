@@ -1982,3 +1982,428 @@ describe('Misinterpretation Prevention Tests', () => {
     });
   });
 });
+
+// ============ REAL-WORLD SCENARIOS TESTS ============
+
+describe('Real-World Job Board Scenarios', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  describe('Multi-element job descriptions (LinkedIn/Indeed style)', () => {
+    test('should extract full description from multiple paragraphs', () => {
+      document.body.innerHTML = `
+        <main>
+          <div class="job-description">
+            <p>We are looking for a talented Software Engineer to join our growing team.</p>
+            <p>Responsibilities:</p>
+            <ul>
+              <li>Design and implement new features</li>
+              <li>Write clean, maintainable code</li>
+              <li>Collaborate with cross-functional teams</li>
+            </ul>
+            <p>Requirements:</p>
+            <ul>
+              <li>5+ years of experience with JavaScript</li>
+              <li>Experience with React and Node.js</li>
+              <li>Strong problem-solving skills</li>
+            </ul>
+          </div>
+        </main>
+      `;
+
+      // User hovers over the first paragraph
+      const firstP = document.querySelector('p');
+      const result = extractLargeTextBlock(firstP);
+
+      // Should extract the ENTIRE job description, not just the first paragraph
+      expect(result).toContain('talented Software Engineer');
+      expect(result).toContain('Responsibilities');
+      expect(result).toContain('Design and implement');
+      expect(result).toContain('Requirements');
+      expect(result).toContain('5+ years of experience');
+      expect(result).toContain('problem-solving skills');
+    });
+
+    test('should extract from middle paragraph and get full description', () => {
+      document.body.innerHTML = `
+        <main>
+          <article class="description">
+            <p>Join our team as a Senior Developer working on exciting projects.</p>
+            <p>What you'll do:</p>
+            <ul>
+              <li>Lead technical initiatives</li>
+              <li>Mentor junior developers</li>
+            </ul>
+            <p>What we're looking for:</p>
+            <ul>
+              <li>8+ years experience</li>
+              <li>Leadership skills</li>
+            </ul>
+          </article>
+        </main>
+      `;
+
+      // User hovers over a middle list item
+      const listItem = document.querySelector('li');
+      const result = extractLargeTextBlock(listItem);
+
+      // Should get the full description
+      expect(result).toContain('Senior Developer');
+      expect(result).toContain('What you');
+      expect(result).toContain('Lead technical initiatives');
+      expect(result).toContain('looking for');
+      expect(result).toContain('8+ years experience');
+    });
+
+    test('should handle nested divs with multiple sections', () => {
+      document.body.innerHTML = `
+        <main>
+          <div class="job-posting">
+            <div class="description">
+              <div class="section">
+                <h3>About the Role</h3>
+                <p>We're hiring a Product Manager to drive our product strategy.</p>
+              </div>
+              <div class="section">
+                <h3>Key Responsibilities</h3>
+                <p>Define product roadmap and prioritize features based on business impact.</p>
+                <p>Work closely with engineering and design teams to deliver solutions.</p>
+              </div>
+              <div class="section">
+                <h3>Qualifications</h3>
+                <p>MBA or equivalent experience in product management.</p>
+              </div>
+            </div>
+          </div>
+        </main>
+      `;
+
+      // User hovers over any paragraph
+      const anyP = document.querySelectorAll('p')[1]; // Second paragraph
+      const result = extractLargeTextBlock(anyP);
+
+      // Should extract all sections
+      expect(result).toContain('About the Role');
+      expect(result).toContain('Product Manager');
+      expect(result).toContain('Key Responsibilities');
+      expect(result).toContain('product roadmap');
+      expect(result).toContain('Qualifications');
+      expect(result).toContain('MBA or equivalent');
+    });
+
+    test('should extract from Greenhouse-style job board', () => {
+      document.body.innerHTML = `
+        <div id="app">
+          <main role="main">
+            <div class="content">
+              <div class="section-wrapper">
+                <p>About Acme Corp: We're a fast-growing startup revolutionizing the industry.</p>
+              </div>
+              <div class="section-wrapper">
+                <p>The Role: As a Data Scientist, you'll analyze large datasets and build ML models.</p>
+                <p>You'll work with cutting-edge technologies and collaborate with talented teams.</p>
+              </div>
+              <div class="section-wrapper">
+                <p>Required Skills: Python, SQL, machine learning frameworks.</p>
+              </div>
+            </div>
+          </main>
+        </div>
+      `;
+
+      const secondP = document.querySelectorAll('p')[1];
+      const result = extractLargeTextBlock(secondP);
+
+      expect(result).toContain('Acme Corp');
+      expect(result).toContain('Data Scientist');
+      expect(result).toContain('analyze large datasets');
+      expect(result).toContain('Required Skills');
+      expect(result).toContain('Python');
+    });
+
+    test('should handle mixed content with headings and lists', () => {
+      document.body.innerHTML = `
+        <main>
+          <article>
+            <h2>Position Overview</h2>
+            <p>We're seeking a DevOps Engineer to manage our cloud infrastructure.</p>
+
+            <h3>Day-to-Day Responsibilities</h3>
+            <ul>
+              <li>Manage AWS infrastructure</li>
+              <li>Implement CI/CD pipelines</li>
+              <li>Monitor system performance</li>
+            </ul>
+
+            <h3>Must-Have Skills</h3>
+            <ol>
+              <li>Experience with Kubernetes and Docker</li>
+              <li>Proficiency in Python or Go</li>
+              <li>Strong Linux/Unix background</li>
+            </ol>
+
+            <h3>Nice to Have</h3>
+            <p>Terraform, Ansible, monitoring tools like Datadog or New Relic.</p>
+          </article>
+        </main>
+      `;
+
+      const firstLi = document.querySelector('li');
+      const result = extractLargeTextBlock(firstLi);
+
+      expect(result).toContain('Position Overview');
+      expect(result).toContain('DevOps Engineer');
+      expect(result).toContain('Day-to-Day Responsibilities');
+      expect(result).toContain('Manage AWS infrastructure');
+      expect(result).toContain('Must-Have Skills');
+      expect(result).toContain('Kubernetes and Docker');
+      expect(result).toContain('Nice to Have');
+      expect(result).toContain('Terraform');
+    });
+
+    test('should reject individual short paragraph when not part of larger block', () => {
+      document.body.innerHTML = `
+        <div>
+          <p>Short text here.</p>
+        </div>
+      `;
+
+      const p = document.querySelector('p');
+      const result = extractLargeTextBlock(p);
+
+      // Should be null because it's too short and has no parent description container
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('Real job board edge cases', () => {
+    test('should extract when hovering over bullet point in middle of description', () => {
+      document.body.innerHTML = `
+        <main>
+          <div class="job-details">
+            <p>We're building the future of AI. Join us as a Machine Learning Engineer.</p>
+            <p><strong>What you'll build:</strong></p>
+            <ul>
+              <li>State-of-the-art ML models for natural language processing</li>
+              <li>Scalable training pipelines handling terabytes of data</li>
+              <li>Production ML systems serving millions of users</li>
+            </ul>
+            <p><strong>What you bring:</strong></p>
+            <ul>
+              <li>PhD in CS or 5+ years ML experience</li>
+              <li>Deep understanding of transformers and attention mechanisms</li>
+            </ul>
+          </div>
+        </main>
+      `;
+
+      // User hovers over the third bullet point
+      const bullets = document.querySelectorAll('li');
+      const thirdBullet = bullets[2];
+      const result = extractLargeTextBlock(thirdBullet);
+
+      expect(result).toContain('Machine Learning Engineer');
+      expect(result).toContain('State-of-the-art ML models');
+      expect(result).toContain('Production ML systems');
+      expect(result).toContain('What you bring');
+      expect(result).toContain('PhD in CS');
+    });
+
+    test('should handle Indeed-style with separate responsibility sections', () => {
+      document.body.innerHTML = `
+        <div id="jobDescriptionText" class="jobsearch-jobDescriptionText">
+          <div>
+            <p>Full Job Description</p>
+            <p>Acme Inc is looking for a talented UX Designer to join our product team.</p>
+          </div>
+          <div>
+            <p><b>Responsibilities</b></p>
+            <p>- Conduct user research and usability testing</p>
+            <p>- Create wireframes, prototypes, and high-fidelity designs</p>
+            <p>- Collaborate with product managers and engineers</p>
+          </div>
+          <div>
+            <p><b>Requirements</b></p>
+            <p>- 3+ years of UX design experience</p>
+            <p>- Portfolio demonstrating user-centered design</p>
+            <p>- Proficiency in Figma and Sketch</p>
+          </div>
+        </div>
+      `;
+
+      // Hover over a responsibility line
+      const responsibilityP = document.querySelectorAll('p')[3];
+      const result = extractLargeTextBlock(responsibilityP);
+
+      expect(result).toContain('UX Designer');
+      expect(result).toContain('Responsibilities');
+      expect(result).toContain('user research');
+      expect(result).toContain('Requirements');
+      expect(result).toContain('Portfolio');
+    });
+
+    test('should not extract from sidebar even when it has multiple paragraphs', () => {
+      document.body.innerHTML = `
+        <div class="container">
+          <div class="main-content">
+            <div class="description">
+              <p>Senior Backend Engineer position available.</p>
+              <p>Build scalable APIs and microservices.</p>
+            </div>
+          </div>
+          <div class="sidebar">
+            <h3>About this company</h3>
+            <p>Founded in 2015, we've grown to 500+ employees.</p>
+            <p>We're backed by top tier VCs and growing rapidly.</p>
+            <p>Join us to make an impact!</p>
+          </div>
+        </div>
+      `;
+
+      const sidebarP = document.querySelector('.sidebar p');
+      const result = extractLargeTextBlock(sidebarP);
+
+      // Sidebar should be rejected
+      expect(result).toBeNull();
+    });
+
+    test('should extract LinkedIn-style with qualifications and skills', () => {
+      document.body.innerHTML = `
+        <div class="jobs-description">
+          <div>
+            <span>About the job</span>
+          </div>
+          <div class="jobs-description__content">
+            <p>We are looking for a Frontend Engineer to build delightful user experiences.</p>
+
+            <strong>Qualifications</strong>
+            <ul>
+              <li>5+ years building modern web applications</li>
+              <li>Expert knowledge of React, TypeScript, and CSS</li>
+              <li>Experience with state management (Redux, MobX)</li>
+            </ul>
+
+            <strong>Preferred Qualifications</strong>
+            <ul>
+              <li>Experience with design systems</li>
+              <li>Performance optimization expertise</li>
+            </ul>
+          </div>
+        </div>
+      `;
+
+      const li = document.querySelector('li');
+      const result = extractLargeTextBlock(li);
+
+      expect(result).toContain('Frontend Engineer');
+      expect(result).toContain('Qualifications');
+      expect(result).toContain('5+ years');
+      expect(result).toContain('Preferred Qualifications');
+      expect(result).toContain('design systems');
+    });
+
+    test('should extract from bare paragraphs without semantic wrapper', () => {
+      // Real-world scenario: Job board with no <main> or .description wrapper
+      // Just bare <p> tags in a generic <div>
+      document.body.innerHTML = `
+        <div>
+          <h1>Software Engineer</h1>
+          <p>Join our team as a Software Engineer. You will work on cutting-edge technology.</p>
+          <p>Responsibilities include designing systems, writing code, and collaborating with teams.</p>
+          <p>We offer competitive salary, benefits, and remote work options.</p>
+        </div>
+      `;
+
+      // User hovers over second paragraph
+      const paragraphs = document.querySelectorAll('p');
+      const secondP = paragraphs[1];
+      const result = extractLargeTextBlock(secondP);
+
+      // Should extract all paragraphs, not just the hovered one
+      expect(result).toContain('Join our team');
+      expect(result).toContain('Responsibilities include');
+      expect(result).toContain('competitive salary');
+    });
+
+    test('should handle case where parent is only slightly larger than child', () => {
+      // Bug scenario: Parent is less than 1.5x the child size
+      // Current code uses 1.5x threshold which might fail here
+      document.body.innerHTML = `
+        <div>
+          <p>This is a long paragraph with substantial content that describes the job role in detail. It contains many words and explains various aspects of the position including responsibilities, requirements, and expectations for the ideal candidate.</p>
+          <p>This is a shorter follow-up paragraph with additional information.</p>
+        </div>
+      `;
+
+      // Hover on the long paragraph (approximately 210 chars)
+      // Parent has both paragraphs (approximately 280 chars)
+      // Ratio is only 1.33x which is LESS than 1.5x threshold!
+      const firstP = document.querySelector('p');
+      const result = extractLargeTextBlock(firstP);
+
+      // Should still get both paragraphs
+      expect(result).toContain('long paragraph with substantial content');
+      expect(result).toContain('shorter follow-up paragraph');
+    });
+
+    test('should extract sibling paragraphs when hovering on any one', () => {
+      // Minimal structure - paragraphs in a simple div
+      document.body.innerHTML = `
+        <div>
+          <p>Paragraph one of the job description with initial details.</p>
+          <p>Paragraph two with more details about the role.</p>
+          <p>Paragraph three with final information and benefits.</p>
+        </div>
+      `;
+
+      // Hover on middle paragraph
+      const paragraphs = document.querySelectorAll('p');
+      const middleP = paragraphs[1];
+      const result = extractLargeTextBlock(middleP);
+
+      // Should extract all three paragraphs
+      expect(result).toContain('Paragraph one');
+      expect(result).toContain('Paragraph two');
+      expect(result).toContain('Paragraph three');
+    });
+
+    test('should handle when hovered element is almost as large as parent', () => {
+      // Edge case: child is 85% of parent size
+      document.body.innerHTML = `
+        <div>
+          <p>This is a very long paragraph that takes up most of the parent container. It has extensive details about the job position, requirements, responsibilities, qualifications, and everything else you need to know about this role. The content is quite substantial and detailed and comprehensive.</p>
+          <p>Short addendum.</p>
+        </div>
+      `;
+
+      const longP = document.querySelector('p');
+      const result = extractLargeTextBlock(longP);
+
+      // Should include the short paragraph too
+      expect(result).toContain('very long paragraph');
+      expect(result).toContain('Short addendum');
+    });
+
+    test('should handle job description split across equal-sized paragraphs', () => {
+      // Common real-world case: 3 paragraphs of similar size
+      document.body.innerHTML = `
+        <div>
+          <p>We are seeking a talented developer to join our engineering team and build innovative products.</p>
+          <p>You will collaborate with designers, product managers, and other engineers daily.</p>
+          <p>Strong communication skills and experience with modern frameworks are required.</p>
+        </div>
+      `;
+
+      // Hover on first paragraph (approx 100 chars)
+      // Parent has all 3 (approx 300 chars)
+      // Ratio is 3x which exceeds 1.5x threshold, so should work
+      const firstP = document.querySelector('p');
+      const result = extractLargeTextBlock(firstP);
+
+      expect(result).toContain('talented developer');
+      expect(result).toContain('collaborate with designers');
+      expect(result).toContain('Strong communication');
+    });
+  });
+});
