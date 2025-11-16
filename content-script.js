@@ -1379,11 +1379,14 @@ function extractNearestChars(text, event, element, charsPerSide = 1) {
  */
 function extractPayAmount(element, text) {
   // Look for currency amounts: $XX, $XX.XX, XXk, XX/hour, etc.
+  // Order matters: more specific patterns first
   const patterns = [
-    /\$\s*(\d+(?:,\d{3})*(?:\.\d{2})?)\s*(?:\/\s*(?:hour|hr|h))?/i,
-    /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*(?:USD|dollars?)/i,
-    /(\d+)\s*k\b/i, // 75k
-    /(\d+(?:\.\d+)?)\s*\/\s*(?:hour|hr|h)\b/i
+    /\$\s*\d+\s*k\b/i, // $70k (must come before dollar amounts to catch k notation)
+    /\$\s*\d+(?:,\d{3})*(?:\.\d+)?\s*\/\s*(?:hour|hr|h)\b/i, // $75.00/hour
+    /\$\s*\d+(?:,\d{3})*(?:\.\d+)?/i, // $75.00 or $75,000
+    /\d+(?:,\d{3})*(?:\.\d+)?\s*(?:USD|dollars?)/i, // 75 USD
+    /\d+\s*k\b/i, // 75k
+    /\d+(?:\.\d+)?\s*\/\s*(?:hour|hr|h)\b/i // 75/hour
   ];
 
   for (const pattern of patterns) {
@@ -1405,14 +1408,15 @@ function extractPayAmount(element, text) {
  * @returns {string|null} Extracted compensation or null
  */
 function extractCompensationRange(element, text) {
-  // Look for salary ranges
-  const patterns = [
-    /\$\s*\d+(?:,\d{3})*(?:\.\d{2})?\s*[-–—]\s*\$?\s*\d+(?:,\d{3})*(?:\.\d{2})?\s*(?:\/\s*(?:hour|hr|year|yr|annually))?/i,
+  // Look for salary ranges (must contain a dash/range indicator)
+  // Order matters: more specific patterns first
+  const rangePatterns = [
+    /\$\s*\d+\s*k\s*[-–—]\s*\$?\s*\d+\s*k\s*(?:(?:\/|per)\s*(?:hour|hr|year|yr|annually))?/i, // $50k-$60k per year
     /\d+k\s*[-–—]\s*\d+k/i, // 100k-120k
-    /\$\s*\d+(?:,\d{3})*(?:\s*[-–—]\s*\$?\s*\d+(?:,\d{3})*)?(?:\s*(?:per|\/)\s*(?:hour|year))?/i
+    /\$\s*\d+(?:,\d{3})*(?:\.\d+)?\s*[-–—]\s*\$?\s*\d+(?:,\d{3})*(?:\.\d+)?\s*(?:(?:\/|per)\s*(?:hour|hr|year|yr|annually))?/i // $65-$75/hour
   ];
 
-  for (const pattern of patterns) {
+  for (const pattern of rangePatterns) {
     const match = text.match(pattern);
     if (match) {
       return match[0].trim();
@@ -1505,6 +1509,9 @@ function extractLocation(element, text) {
  * @returns {string|null} Extracted job title or null
  */
 function extractJobTitle(element) {
+  // Guard against null/undefined element
+  if (!element) return null;
+
   // Check for data attributes first (most reliable)
   const dataAttrs = ['data-job-title', 'data-title', 'data-position'];
   for (const attr of dataAttrs) {
@@ -1576,14 +1583,24 @@ function extractJobTitle(element) {
  * @returns {string|null} Extracted company name or null
  */
 function extractCompanyName(element) {
-  const text = cleanText(element.textContent);
+  // Guard against null/undefined element
+  if (!element) return null;
+
+  const text = cleanText(element.textContent || '');
+
+  // Return null if text is empty after cleaning
+  if (!text) return null;
 
   // Check for corporate suffixes (strong indicator of company name)
-  const corporateSuffixes = /\b(Inc\.?|LLC|Corp\.?|Corporation|Ltd\.?|Limited|Co\.?|Company|LP|LLP|PC|PLC|GmbH|SA|AG)\b/i;
+  // Must be at the end of the text to avoid false positives
+  // Also filter out generic words like "a Company" or "the Corporation"
+  const corporateSuffixes = /\b(Inc\.?|LLC|Corp\.?|Corporation|Ltd\.?|Limited|Co\.?|Company|LP|LLP|PC|PLC|GmbH|SA|AG)\.?$/i;
   if (corporateSuffixes.test(text)) {
     const wordCount = text.split(/\s+/).length;
     // Company names with suffixes are usually 2-6 words
-    if (wordCount >= 1 && wordCount <= 6) {
+    // Reject if it starts with articles or common sentence starters
+    const startsWithArticle = /^(this|that|these|those|the|a|an)\s+/i.test(text);
+    if (wordCount >= 1 && wordCount <= 6 && !startsWithArticle) {
       return text;
     }
   }
@@ -1600,11 +1617,11 @@ function extractCompanyName(element) {
 
   // Check if element has company-related class or id
   const companyClasses = ['company', 'employer', 'organization', 'org-name', 'org', 'business'];
-  const elementClasses = element.className.toLowerCase();
-  const elementId = element.id.toLowerCase();
+  const elementClasses = (element.className || '').toLowerCase();
+  const elementId = (element.id || '').toLowerCase();
 
   for (const cls of companyClasses) {
-    if (elementClasses.includes(cls) || elementId.includes(cls)) {
+    if ((elementClasses && elementClasses.includes(cls)) || (elementId && elementId.includes(cls))) {
       const wordCount = text.split(/\s+/).length;
       if (wordCount >= 1 && wordCount <= 5) {
         return text;
@@ -1642,6 +1659,9 @@ function extractCompanyName(element) {
  * @returns {string|null} Extracted text block or null
  */
 function extractLargeTextBlock(element) {
+  // Guard against null/undefined element
+  if (!element) return null;
+
   // Check if element is in a navigation, footer, or sidebar (skip these)
   const excludedTags = ['NAV', 'FOOTER', 'ASIDE', 'HEADER'];
   const excludedRoles = ['navigation', 'banner', 'contentinfo', 'complementary'];

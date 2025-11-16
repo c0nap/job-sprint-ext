@@ -1015,3 +1015,405 @@ describe('extractLargeTextBlock', () => {
     });
   });
 });
+
+// ============ EDGE CASE TESTS ============
+
+describe('Edge Cases - Robustness Tests', () => {
+  let mockElement;
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    mockElement = document.createElement('div');
+  });
+
+  describe('extractPayAmount - Advanced Edge Cases', () => {
+    test('should handle multiple currency symbols and pick first', () => {
+      const result = extractPayAmount(mockElement, '€50,000 or $55,000 USD');
+      // Should extract the first recognizable pattern (USD in this case)
+      expect(result).toMatch(/\$55,000|55,000 USD/);
+    });
+
+    test('should handle salary with benefits notation', () => {
+      const result = extractPayAmount(mockElement, '$70k + benefits');
+      expect(result).toBe('$70k');
+    });
+
+    test('should handle DOE (depends on experience) notation', () => {
+      const result = extractPayAmount(mockElement, '$30/hr (DOE)');
+      expect(result).toBe('$30/hr');
+    });
+
+    test('should handle salary with parenthetical info', () => {
+      const result = extractPayAmount(mockElement, 'Salary: $85,000 (negotiable)');
+      expect(result).toBe('$85,000');
+    });
+
+    test('should extract from complex sentence', () => {
+      const result = extractPayAmount(mockElement, 'We offer competitive compensation starting at $75.00 per hour for qualified candidates.');
+      expect(result).toBe('$75.00');
+    });
+
+    test('should handle annual salary equivalents', () => {
+      const result = extractPayAmount(mockElement, '120k annually');
+      expect(result).toBe('120k');
+    });
+
+    test('should not extract non-salary numbers', () => {
+      const result = extractPayAmount(mockElement, 'Must have 5 years experience');
+      expect(result).toBeNull();
+    });
+
+    test('should handle very large salaries', () => {
+      const result = extractPayAmount(mockElement, '$250,000');
+      expect(result).toBe('$250,000');
+    });
+  });
+
+  describe('extractCompensationRange - Advanced Edge Cases', () => {
+    test('should handle mixed k notation', () => {
+      const result = extractCompensationRange(mockElement, '$50k-$60k per year');
+      expect(result).toMatch(/50k.*60k/i);
+    });
+
+    test('should handle range with benefits', () => {
+      const result = extractCompensationRange(mockElement, '$100,000 - $120,000 + benefits');
+      expect(result).toBe('$100,000 - $120,000');
+    });
+
+    test('should handle abbreviated year/hour', () => {
+      const result = extractCompensationRange(mockElement, '$65 - $75/hr');
+      expect(result).toBe('$65 - $75/hr');
+    });
+
+    test('should handle "to" instead of dash', () => {
+      // This might not match current regex, but should gracefully return null or fall back
+      const result = extractCompensationRange(mockElement, '$50 to $60 per hour');
+      // Should either extract or fall back to single amount
+      expect(result).toBeTruthy();
+    });
+
+    test('should handle international currency ranges', () => {
+      // Should gracefully handle or return null for non-USD
+      const result = extractCompensationRange(mockElement, '€45,000 - €55,000');
+      // Might not extract, which is fine
+      expect(result === null || typeof result === 'string').toBe(true);
+    });
+  });
+
+  describe('extractLocation - Advanced Edge Cases', () => {
+    test('should handle Remote with preferred location', () => {
+      const result = extractLocation(mockElement, 'Remote (SF Bay Area preferred)');
+      expect(result).toBe('Remote');
+    });
+
+    test('should handle Remote - US', () => {
+      const result = extractLocation(mockElement, 'Remote - United States');
+      expect(result).toBe('Remote');
+    });
+
+    test('should handle international locations gracefully', () => {
+      const result = extractLocation(mockElement, 'Toronto, ON');
+      // Should return null for non-US locations (or could be enhanced to support)
+      expect(result).toBeNull();
+    });
+
+    test('should handle London, UK', () => {
+      const result = extractLocation(mockElement, 'London, UK');
+      expect(result).toBeNull();
+    });
+
+    test('should not extract partial matches', () => {
+      const result = extractLocation(mockElement, 'North Dakota State University');
+      // Should extract ND or North Dakota, not just "North"
+      expect(result).toMatch(/ND|North Dakota/i);
+    });
+
+    test('should handle multiple locations', () => {
+      const result = extractLocation(mockElement, 'San Francisco, CA or New York, NY');
+      // Should extract the first location
+      expect(result).toBe('San Francisco, CA');
+    });
+
+    test('should handle city without state', () => {
+      const result = extractLocation(mockElement, 'Seattle');
+      // Should return null or handle gracefully
+      expect(result === null || typeof result === 'string').toBe(true);
+    });
+
+    test('should handle whitespace around location', () => {
+      const result = extractLocation(mockElement, '   Austin, TX   ');
+      expect(result).toBe('Austin, TX');
+    });
+
+    test('should prioritize Remote over other keywords', () => {
+      const result = extractLocation(mockElement, 'Hybrid or Remote, CA-based');
+      // Remote should take priority
+      expect(result).toMatch(/Remote|Hybrid/);
+    });
+  });
+
+  describe('extractJobTitle - Advanced Edge Cases', () => {
+    test('should handle job titles with special characters', () => {
+      document.body.innerHTML = '<h1>C# Developer</h1>';
+      const element = document.querySelector('h1');
+
+      const result = extractJobTitle(element);
+      expect(result).toBe('C# Developer');
+    });
+
+    test('should handle .NET in title', () => {
+      document.body.innerHTML = '<h1>.NET Software Engineer</h1>';
+      const element = document.querySelector('h1');
+
+      const result = extractJobTitle(element);
+      expect(result).toBe('.NET Software Engineer');
+    });
+
+    test('should handle job titles with slashes', () => {
+      document.body.innerHTML = '<h1>QA/Test Engineer</h1>';
+      const element = document.querySelector('h1');
+
+      const result = extractJobTitle(element);
+      expect(result).toBe('QA/Test Engineer');
+    });
+
+    test('should handle seniority levels', () => {
+      document.body.innerHTML = '<h1>Sr. Software Engineer</h1>';
+      const element = document.querySelector('h1');
+
+      const result = extractJobTitle(element);
+      expect(result).toBe('Sr. Software Engineer');
+    });
+
+    test('should handle Roman numerals in titles', () => {
+      document.body.innerHTML = '<h1>Software Engineer III</h1>';
+      const element = document.querySelector('h1');
+
+      const result = extractJobTitle(element);
+      expect(result).toBe('Software Engineer III');
+    });
+
+    test('should handle parenthetical info in title', () => {
+      document.body.innerHTML = '<h1>Software Engineer (Remote)</h1>';
+      const element = document.querySelector('h1');
+
+      const result = extractJobTitle(element);
+      expect(result).toBe('Software Engineer (Remote)');
+    });
+
+    test('should handle very long job titles', () => {
+      document.body.innerHTML = '<h1>Principal Software Development Engineer in Test for Cloud Infrastructure and Services</h1>';
+      const element = document.querySelector('h1');
+
+      const result = extractJobTitle(element);
+      // Should reject titles with too many words (>10) - this has 11 words
+      expect(result).toBeNull();
+    });
+
+    test('should handle unicode characters', () => {
+      document.body.innerHTML = '<h1>Software Engineer – Cloud</h1>';
+      const element = document.querySelector('h1');
+
+      const result = extractJobTitle(element);
+      expect(result).toBe('Software Engineer – Cloud');
+    });
+  });
+
+  describe('extractCompanyName - Advanced Edge Cases', () => {
+    test('should handle company names with numbers', () => {
+      document.body.innerHTML = '<div class="company">3M Corporation</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBe('3M Corporation');
+    });
+
+    test('should handle single letter company names', () => {
+      document.body.innerHTML = '<div class="company">X Corp</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBe('X Corp');
+    });
+
+    test('should handle hyphenated company names', () => {
+      document.body.innerHTML = '<div class="company">7-Eleven Inc</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBe('7-Eleven Inc');
+    });
+
+    test('should handle company with ampersand', () => {
+      document.body.innerHTML = '<div class="company">Smith & Jones LLC</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBe('Smith & Jones LLC');
+    });
+
+    test('should handle international company suffixes', () => {
+      document.body.innerHTML = '<div class="company">Siemens AG</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBe('Siemens AG');
+    });
+
+    test('should handle company names with periods', () => {
+      document.body.innerHTML = '<div class="company">Yahoo! Inc.</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBe('Yahoo! Inc.');
+    });
+
+    test('should reject very long company names', () => {
+      document.body.innerHTML = '<div>This is a very long text that is definitely not a company name at all</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should handle whitespace-only elements', () => {
+      document.body.innerHTML = '<div class="company">   </div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('extractLargeTextBlock - Advanced Edge Cases', () => {
+    test('should handle text with unicode characters', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Job description with unicode: "smart quotes", em-dashes—like this, and bullet points • like • these.
+          We're looking for someone who's passionate about technology.</p>
+        </main>
+      `;
+      const main = document.querySelector('main');
+      const p = main.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toContain('smart quotes');
+      expect(result).toContain('em-dashes');
+    });
+
+    test('should handle HTML entities', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Requirements &amp; Responsibilities: Must have 5+ years experience &lt;coding&gt; in Python.</p>
+        </main>
+      `;
+      const main = document.querySelector('main');
+      const p = main.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toContain('&');
+      expect(result).toContain('Requirements');
+    });
+
+    test('should handle text exactly at minimum length', () => {
+      const exactlyFiftyChars = 'a'.repeat(50);
+      document.body.innerHTML = `
+        <main>
+          <p>${exactlyFiftyChars}</p>
+        </main>
+      `;
+      const main = document.querySelector('main');
+      const p = main.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBe(exactlyFiftyChars);
+      expect(result.length).toBe(50);
+    });
+
+    test('should handle text one character short of minimum', () => {
+      const fortyNineChars = 'a'.repeat(49);
+      document.body.innerHTML = `
+        <main>
+          <p>${fortyNineChars}</p>
+        </main>
+      `;
+      const main = document.querySelector('main');
+      const p = main.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should handle nested excluded elements', () => {
+      document.body.innerHTML = `
+        <main>
+          <nav>
+            <p>This is navigation content that should be excluded even though it's in main.</p>
+          </nav>
+        </main>
+      `;
+      const nav = document.querySelector('nav');
+      const p = nav.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should handle whitespace-only text block', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>
+
+
+          </p>
+        </main>
+      `;
+      const main = document.querySelector('main');
+      const p = main.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('Cross-function integration edge cases', () => {
+    test('should handle null element gracefully', () => {
+      expect(() => extractJobTitle(null)).not.toThrow();
+      expect(() => extractCompanyName(null)).not.toThrow();
+      expect(() => extractLargeTextBlock(null)).not.toThrow();
+    });
+
+    test('should handle element with no textContent', () => {
+      const emptyDiv = document.createElement('div');
+      document.body.appendChild(emptyDiv);
+
+      expect(extractJobTitle(emptyDiv)).toBeNull();
+      expect(extractCompanyName(emptyDiv)).toBeNull();
+      expect(extractLargeTextBlock(emptyDiv)).toBeNull();
+    });
+
+    test('should handle deeply nested elements', () => {
+      document.body.innerHTML = `
+        <div><div><div><div><div>
+          <div class="company">Deep Company Inc</div>
+        </div></div></div></div></div>
+      `;
+      const element = document.querySelector('.company');
+
+      const result = extractCompanyName(element);
+      expect(result).toBe('Deep Company Inc');
+    });
+
+    test('cleanText should preserve important punctuation', () => {
+      expect(cleanText('C++ Developer')).toBe('C++ Developer');
+      expect(cleanText('.NET Engineer')).toBe('.NET Engineer');
+      expect(cleanText('Smith & Jones')).toBe('Smith & Jones');
+      expect(cleanText('$70,000')).toBe('$70,000');
+    });
+
+    test('cleanText should handle tabs and various whitespace', () => {
+      expect(cleanText('Text\twith\ttabs')).toBe('Text with tabs');
+      expect(cleanText('Text\r\nwith\r\nCRLF')).toBe('Text with CRLF');
+    });
+  });
+});

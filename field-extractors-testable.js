@@ -25,11 +25,14 @@ function cleanText(text) {
  */
 function extractPayAmount(element, text) {
   // Look for currency amounts: $XX, $XX.XX, XXk, XX/hour, etc.
+  // Order matters: more specific patterns first
   const patterns = [
-    /\$\s*\d+(?:,\d{3})*(?:\.\d+)?\s*(?:\/\s*(?:hour|hr|h))?/i,
-    /\d+(?:,\d{3})*(?:\.\d+)?\s*(?:USD|dollars?)/i,
+    /\$\s*\d+\s*k\b/i, // $70k (must come before dollar amounts to catch k notation)
+    /\$\s*\d+(?:,\d{3})*(?:\.\d+)?\s*\/\s*(?:hour|hr|h)\b/i, // $75.00/hour
+    /\$\s*\d+(?:,\d{3})*(?:\.\d+)?/i, // $75.00 or $75,000
+    /\d+(?:,\d{3})*(?:\.\d+)?\s*(?:USD|dollars?)/i, // 75 USD
     /\d+\s*k\b/i, // 75k
-    /\d+(?:\.\d+)?\s*\/\s*(?:hour|hr|h)\b/i
+    /\d+(?:\.\d+)?\s*\/\s*(?:hour|hr|h)\b/i // 75/hour
   ];
 
   for (const pattern of patterns) {
@@ -52,9 +55,11 @@ function extractPayAmount(element, text) {
  */
 function extractCompensationRange(element, text) {
   // Look for salary ranges (must contain a dash/range indicator)
+  // Order matters: more specific patterns first
   const rangePatterns = [
-    /\$\s*\d+(?:,\d{3})*(?:\.\d+)?\s*[-–—]\s*\$?\s*\d+(?:,\d{3})*(?:\.\d+)?\s*(?:(?:\/|per)\s*(?:hour|hr|year|yr|annually))?/i,
-    /\d+k\s*[-–—]\s*\d+k/i // 100k-120k
+    /\$\s*\d+\s*k\s*[-–—]\s*\$?\s*\d+\s*k\s*(?:(?:\/|per)\s*(?:hour|hr|year|yr|annually))?/i, // $50k-$60k per year
+    /\d+k\s*[-–—]\s*\d+k/i, // 100k-120k
+    /\$\s*\d+(?:,\d{3})*(?:\.\d+)?\s*[-–—]\s*\$?\s*\d+(?:,\d{3})*(?:\.\d+)?\s*(?:(?:\/|per)\s*(?:hour|hr|year|yr|annually))?/i // $65-$75/hour
   ];
 
   for (const pattern of rangePatterns) {
@@ -150,6 +155,9 @@ function extractLocation(element, text) {
  * @returns {string|null} Extracted job title or null
  */
 function extractJobTitle(element) {
+  // Guard against null/undefined element
+  if (!element) return null;
+
   // Check for data attributes first (most reliable)
   const dataAttrs = ['data-job-title', 'data-title', 'data-position'];
   for (const attr of dataAttrs) {
@@ -221,7 +229,13 @@ function extractJobTitle(element) {
  * @returns {string|null} Extracted company name or null
  */
 function extractCompanyName(element) {
-  const text = cleanText(element.textContent);
+  // Guard against null/undefined element
+  if (!element) return null;
+
+  const text = cleanText(element.textContent || '');
+
+  // Return null if text is empty after cleaning
+  if (!text) return null;
 
   // Check for corporate suffixes (strong indicator of company name)
   // Must be at the end of the text to avoid false positives
@@ -291,6 +305,9 @@ function extractCompanyName(element) {
  * @returns {string|null} Extracted text block or null
  */
 function extractLargeTextBlock(element) {
+  // Guard against null/undefined element
+  if (!element) return null;
+
   // Check if element is in a navigation, footer, or sidebar (skip these)
   const excludedTags = ['NAV', 'FOOTER', 'ASIDE', 'HEADER'];
   const excludedRoles = ['navigation', 'banner', 'contentinfo', 'complementary'];
