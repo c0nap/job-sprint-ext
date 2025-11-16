@@ -63,8 +63,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     type: 'popup',
     width: 420,
     height: 600,
-    focused: true,
-    alwaysOnTop: true  // Keep window on top of other windows
+    focused: true
   });
 
   popupWindowId = window.id;
