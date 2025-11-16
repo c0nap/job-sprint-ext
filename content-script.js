@@ -35,6 +35,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       return false; // Synchronous response
 
+    case 'startMouseTracking':
+      // Start interactive mouse tracking for field auto-fill
+      startMouseTracking(message.fieldId);
+      sendResponse({ success: true });
+      return false; // Synchronous response
+
+    case 'stopMouseTracking':
+      // Stop interactive mouse tracking
+      stopMouseTracking();
+      sendResponse({ success: true });
+      return false; // Synchronous response
+
     default:
       // Unknown action - return error
       sendResponse({ success: false, error: `Unknown action: ${message.action}` });
@@ -537,5 +549,270 @@ function removeApprovalUI() {
   allInputs.forEach(input => {
     input.style.outline = '';
     input.style.outlineOffset = '';
+  });
+}
+
+// ============ INTERACTIVE MOUSE TRACKING ============
+
+// Mouse tracking state
+let mouseTrackingActive = false;
+let currentTrackedFieldId = null;
+let lastHighlightedElement = null;
+let mouseTrackingOverlay = null;
+
+/**
+ * Start interactive mouse tracking for field auto-fill
+ * When user hovers over text elements, their content is extracted and sent to the extension
+ * @param {string} fieldId - ID of the field being filled
+ */
+function startMouseTracking(fieldId) {
+  console.log('Starting mouse tracking for field:', fieldId);
+
+  // Stop any existing tracking
+  stopMouseTracking();
+
+  mouseTrackingActive = true;
+  currentTrackedFieldId = fieldId;
+
+  // Create visual overlay to indicate tracking mode
+  createTrackingOverlay();
+
+  // Add event listeners
+  document.addEventListener('mousemove', handleMouseMove, true);
+  document.addEventListener('click', handleMouseClick, true);
+  document.addEventListener('keydown', handleEscapeKey, true);
+
+  // Change cursor to indicate tracking mode
+  document.body.style.cursor = 'crosshair';
+}
+
+/**
+ * Stop interactive mouse tracking
+ */
+function stopMouseTracking() {
+  if (!mouseTrackingActive) return;
+
+  console.log('Stopping mouse tracking');
+
+  mouseTrackingActive = false;
+  currentTrackedFieldId = null;
+
+  // Remove event listeners
+  document.removeEventListener('mousemove', handleMouseMove, true);
+  document.removeEventListener('click', handleMouseClick, true);
+  document.removeEventListener('keydown', handleEscapeKey, true);
+
+  // Remove visual feedback
+  removeHighlight();
+  removeTrackingOverlay();
+
+  // Restore cursor
+  document.body.style.cursor = '';
+}
+
+/**
+ * Handle mouse move events during tracking
+ * @param {MouseEvent} event - Mouse event
+ */
+function handleMouseMove(event) {
+  if (!mouseTrackingActive) return;
+
+  // Get element under cursor
+  const element = document.elementFromPoint(event.clientX, event.clientY);
+
+  if (!element || element === mouseTrackingOverlay) return;
+
+  // Extract text from element
+  const text = extractTextFromElement(element);
+
+  if (text && text.trim()) {
+    // Highlight the element
+    highlightElement(element);
+
+    // Send text to extension popup
+    sendTextToPopup(text.trim());
+  } else {
+    removeHighlight();
+  }
+}
+
+/**
+ * Handle mouse click during tracking - confirm selection and stop tracking
+ * @param {MouseEvent} event - Mouse event
+ */
+function handleMouseClick(event) {
+  if (!mouseTrackingActive) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  // Get element under cursor
+  const element = document.elementFromPoint(event.clientX, event.clientY);
+
+  if (element && element !== mouseTrackingOverlay) {
+    const text = extractTextFromElement(element);
+
+    if (text && text.trim()) {
+      // Send final text to popup and stop tracking
+      sendTextToPopup(text.trim(), true);
+    }
+  }
+
+  stopMouseTracking();
+}
+
+/**
+ * Handle escape key to cancel tracking
+ * @param {KeyboardEvent} event - Keyboard event
+ */
+function handleEscapeKey(event) {
+  if (event.key === 'Escape' && mouseTrackingActive) {
+    event.preventDefault();
+    stopMouseTracking();
+  }
+}
+
+/**
+ * Extract text content from an element
+ * Handles various element types and nested structures
+ * @param {HTMLElement} element - Element to extract text from
+ * @returns {string} Extracted text
+ */
+function extractTextFromElement(element) {
+  if (!element) return '';
+
+  // For input elements, get the value
+  if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+    return element.value;
+  }
+
+  // For other elements, prefer direct text nodes over nested content
+  // This helps avoid getting too much text from container elements
+  let text = '';
+
+  // Try to get text from the element itself (not children)
+  for (const node of element.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent;
+    }
+  }
+
+  // If no direct text, get all text content
+  if (!text.trim() && element.textContent) {
+    text = element.textContent;
+  }
+
+  return cleanText(text);
+}
+
+/**
+ * Highlight an element with visual feedback
+ * @param {HTMLElement} element - Element to highlight
+ */
+function highlightElement(element) {
+  if (lastHighlightedElement === element) return;
+
+  // Remove previous highlight
+  removeHighlight();
+
+  // Add highlight to new element
+  element.style.outline = '3px solid #FF6B6B';
+  element.style.outlineOffset = '2px';
+  element.style.backgroundColor = 'rgba(255, 107, 107, 0.1)';
+
+  lastHighlightedElement = element;
+}
+
+/**
+ * Remove highlight from currently highlighted element
+ */
+function removeHighlight() {
+  if (lastHighlightedElement) {
+    lastHighlightedElement.style.outline = '';
+    lastHighlightedElement.style.outlineOffset = '';
+    lastHighlightedElement.style.backgroundColor = '';
+    lastHighlightedElement = null;
+  }
+}
+
+/**
+ * Create visual overlay to indicate tracking mode is active
+ */
+function createTrackingOverlay() {
+  removeTrackingOverlay();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'jobsprint-tracking-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: rgba(255, 107, 107, 0.95);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 999998;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    animation: slideInFromRight 0.3s ease-out;
+  `;
+
+  overlay.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="font-size: 18px;">🎯</span>
+      <span>Hover over text to auto-fill</span>
+    </div>
+    <div style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
+      Click to select • Press ESC to cancel
+    </div>
+  `;
+
+  // Add animation
+  if (!document.getElementById('jobsprint-tracking-styles')) {
+    const style = document.createElement('style');
+    style.id = 'jobsprint-tracking-styles';
+    style.textContent = `
+      @keyframes slideInFromRight {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  document.body.appendChild(overlay);
+  mouseTrackingOverlay = overlay;
+}
+
+/**
+ * Remove tracking overlay
+ */
+function removeTrackingOverlay() {
+  if (mouseTrackingOverlay) {
+    mouseTrackingOverlay.remove();
+    mouseTrackingOverlay = null;
+  }
+}
+
+/**
+ * Send extracted text to popup window
+ * @param {string} text - Text to send
+ * @param {boolean} confirm - Whether this is a confirmed selection (clicked)
+ */
+function sendTextToPopup(text, confirm = false) {
+  chrome.runtime.sendMessage({
+    action: 'mouseHoverText',
+    fieldId: currentTrackedFieldId,
+    text: text,
+    confirmed: confirm
   });
 }
