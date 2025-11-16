@@ -1058,30 +1058,7 @@ function extractCompensationRange(element, text) {
  * @returns {string|null} Extracted location or null
  */
 function extractLocation(element, text) {
-  // US state abbreviations (all caps, 2 letters)
-  const statePattern = /\b([A-Z]{2})\b/;
-  const stateMatch = text.match(statePattern);
-
-  // Common state abbreviations
-  const validStates = [
-    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
-    'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
-    'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
-    'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
-    'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
-  ];
-
-  if (stateMatch && validStates.includes(stateMatch[1])) {
-    // Try to get city name before state
-    const cityStatePattern = /([A-Za-z\s]+),\s*([A-Z]{2})\b/;
-    const cityStateMatch = text.match(cityStatePattern);
-    if (cityStateMatch) {
-      return cityStateMatch[0].trim(); // Return "City, STATE"
-    }
-    return stateMatch[1]; // Return just state
-  }
-
-  // Check for "Remote"
+  // Check for "Remote" first (very common and distinctive)
   if (/\bremote\b/i.test(text)) {
     return 'Remote';
   }
@@ -1091,9 +1068,60 @@ function extractLocation(element, text) {
     return 'Hybrid';
   }
 
-  // TODO: Add support for international locations, zip codes
-  // This would require more complex geocoding or location databases
+  // Common state abbreviations (defensive - validates actual states)
+  const validStates = [
+    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+    'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+    'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+    'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+    'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
+  ];
 
+  // Try to match "City, STATE" format first (most complete)
+  const cityStatePattern = /([A-Za-z][A-Za-z\s\.'-]+),\s*([A-Z]{2})\b/;
+  const cityStateMatch = text.match(cityStatePattern);
+  if (cityStateMatch && validStates.includes(cityStateMatch[2])) {
+    return cityStateMatch[0].trim(); // Return "City, STATE"
+  }
+
+  // Try to match just state abbreviation
+  const statePattern = /\b([A-Z]{2})\b/;
+  const stateMatch = text.match(statePattern);
+  if (stateMatch && validStates.includes(stateMatch[1])) {
+    return stateMatch[1]; // Return just "STATE"
+  }
+
+  // Try to match "City, State Name" (full state name)
+  const fullStateNames = {
+    'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR',
+    'California': 'CA', 'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE',
+    'Florida': 'FL', 'Georgia': 'GA', 'Hawaii': 'HI', 'Idaho': 'ID',
+    'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
+    'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+    'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS',
+    'Missouri': 'MO', 'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV',
+    'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY',
+    'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH', 'Oklahoma': 'OK',
+    'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+    'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT',
+    'Vermont': 'VT', 'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV',
+    'Wisconsin': 'WI', 'Wyoming': 'WY'
+  };
+
+  for (const [stateName, abbrev] of Object.entries(fullStateNames)) {
+    if (text.includes(stateName)) {
+      // Try to extract city if present
+      const cityFullStatePattern = new RegExp(`([A-Za-z][A-Za-z\\s\\.'-]+),\\s*${stateName}`, 'i');
+      const cityFullStateMatch = text.match(cityFullStatePattern);
+      if (cityFullStateMatch) {
+        return `${cityFullStateMatch[1].trim()}, ${abbrev}`;
+      }
+      return abbrev; // Just return state abbreviation
+    }
+  }
+
+  // Defensive fallback: if nothing matched, return null
+  // The system will fall back to word extraction around mouse cursor
   return null;
 }
 
@@ -1104,40 +1132,66 @@ function extractLocation(element, text) {
  * @returns {string|null} Extracted job title or null
  */
 function extractJobTitle(element) {
+  // Check for data attributes first (most reliable)
+  const dataAttrs = ['data-job-title', 'data-title', 'data-position'];
+  for (const attr of dataAttrs) {
+    const value = element.getAttribute(attr);
+    if (value && value.trim()) {
+      return cleanText(value);
+    }
+  }
+
   // Check if element itself is a header
   if (['H1', 'H2', 'H3'].includes(element.tagName)) {
-    return cleanText(element.textContent);
+    const text = cleanText(element.textContent);
+    const wordCount = text.split(/\s+/).length;
+    // Headers should be reasonable length for a title
+    if (wordCount >= 2 && wordCount <= 10) {
+      return text;
+    }
   }
+
+  // Check semantic HTML structure (e.g., article > h1, main > h1)
+  const semanticParent = element.closest('article, main, [role="main"]');
+  if (semanticParent) {
+    const headerInParent = semanticParent.querySelector('h1, h2, .job-title, [data-job-title]');
+    if (headerInParent && headerInParent.textContent) {
+      const text = cleanText(headerInParent.textContent);
+      const wordCount = text.split(/\s+/).length;
+      if (wordCount >= 2 && wordCount <= 10) {
+        return text;
+      }
+    }
+  }
+
+  // Check if element is in top 25% of page (titles usually at top)
+  const viewportHeight = window.innerHeight;
+  const rect = element.getBoundingClientRect();
+  const isNearTop = rect.top < viewportHeight * 0.25;
 
   // Check if element has bold/strong styling
   const style = window.getComputedStyle(element);
   const isBold = style.fontWeight === 'bold' || parseInt(style.fontWeight) >= 600;
   const isLarge = parseInt(style.fontSize) >= 18;
 
-  if (isBold && isLarge) {
+  if (isBold && isLarge && isNearTop) {
     const text = cleanText(element.textContent);
-    // Job titles are usually 2-6 words
     const wordCount = text.split(/\s+/).length;
-    if (wordCount >= 2 && wordCount <= 6) {
+    // Job titles are usually 2-8 words
+    if (wordCount >= 2 && wordCount <= 8) {
       return text;
     }
   }
 
-  // Look for nearby header
-  const nearbyHeader = element.closest('header, [role="heading"], .job-title, .title');
+  // Look for nearby header with common class names
+  const nearbyHeader = element.closest('header, [role="heading"], .job-title, .title, .position, .job-header');
   if (nearbyHeader) {
     const headerText = cleanText(nearbyHeader.textContent);
     const wordCount = headerText.split(/\s+/).length;
-    if (wordCount >= 2 && wordCount <= 6) {
+    if (wordCount >= 2 && wordCount <= 8) {
       return headerText;
     }
   }
-
-  // TODO: Could use more sophisticated heuristics like:
-  // - Position on page (top 25%)
-  // - Semantic HTML (article > h1)
-  // - Data attributes (data-job-title, etc.)
-  // - Machine learning to identify title patterns
 
   return null;
 }
@@ -1149,23 +1203,47 @@ function extractJobTitle(element) {
  * @returns {string|null} Extracted company name or null
  */
 function extractCompanyName(element) {
+  const text = cleanText(element.textContent);
+
+  // Check for corporate suffixes (strong indicator of company name)
+  const corporateSuffixes = /\b(Inc\.?|LLC|Corp\.?|Corporation|Ltd\.?|Limited|Co\.?|Company|LP|LLP|PC|PLC|GmbH|SA|AG)\b/i;
+  if (corporateSuffixes.test(text)) {
+    const wordCount = text.split(/\s+/).length;
+    // Company names with suffixes are usually 2-6 words
+    if (wordCount >= 1 && wordCount <= 6) {
+      return text;
+    }
+  }
+
+  // Check for all-caps company names (common in headers)
+  const words = text.split(/\s+/);
+  const allCapsWords = words.filter(w => w === w.toUpperCase() && w.length > 1 && /[A-Z]/.test(w));
+  if (allCapsWords.length >= 1 && allCapsWords.length <= 4) {
+    // If most/all words are caps, likely a company name
+    if (allCapsWords.length / words.length > 0.5) {
+      return allCapsWords.join(' ');
+    }
+  }
+
   // Check if element has company-related class or id
-  const companyClasses = ['company', 'employer', 'organization', 'org-name'];
+  const companyClasses = ['company', 'employer', 'organization', 'org-name', 'org', 'business'];
   const elementClasses = element.className.toLowerCase();
   const elementId = element.id.toLowerCase();
 
   for (const cls of companyClasses) {
     if (elementClasses.includes(cls) || elementId.includes(cls)) {
-      return cleanText(element.textContent);
+      const wordCount = text.split(/\s+/).length;
+      if (wordCount >= 1 && wordCount <= 5) {
+        return text;
+      }
     }
   }
 
   // Check if element is a link (companies often link to their pages)
   if (element.tagName === 'A') {
-    const text = cleanText(element.textContent);
     const wordCount = text.split(/\s+/).length;
-    // Company names are usually 1-4 words
-    if (wordCount >= 1 && wordCount <= 4) {
+    // Company names are usually 1-5 words
+    if (wordCount >= 1 && wordCount <= 5) {
       return text;
     }
   }
@@ -1175,18 +1253,11 @@ function extractCompanyName(element) {
   const isBold = style.fontWeight === 'bold' || parseInt(style.fontWeight) >= 600;
 
   if (isBold) {
-    const text = cleanText(element.textContent);
     const wordCount = text.split(/\s+/).length;
-    if (wordCount >= 1 && wordCount <= 4) {
+    if (wordCount >= 1 && wordCount <= 5) {
       return text;
     }
   }
-
-  // TODO: More sophisticated company detection:
-  // - Use of Inc., LLC, Corp. suffixes
-  // - All-caps company names
-  // - Integration with company database/API
-  // - Pattern matching common company name structures
 
   return null;
 }
@@ -1198,20 +1269,69 @@ function extractCompanyName(element) {
  * @returns {string|null} Extracted text block or null
  */
 function extractLargeTextBlock(element) {
-  // Start with the element itself
-  let targetElement = element;
-  let maxLength = cleanText(element.textContent).length;
+  // Check if element is in a navigation, footer, or sidebar (skip these)
+  const excludedTags = ['NAV', 'FOOTER', 'ASIDE', 'HEADER'];
+  const excludedRoles = ['navigation', 'banner', 'contentinfo', 'complementary'];
+  const excludedClasses = ['nav', 'navigation', 'footer', 'sidebar', 'side-bar', 'menu', 'header-'];
+
+  let current = element;
+  while (current) {
+    // Check tag name
+    if (excludedTags.includes(current.tagName)) {
+      return null; // Don't extract from these areas
+    }
+
+    // Check ARIA role
+    const role = current.getAttribute('role');
+    if (role && excludedRoles.includes(role)) {
+      return null;
+    }
+
+    // Check class names
+    const className = current.className.toLowerCase();
+    if (excludedClasses.some(cls => className.includes(cls))) {
+      return null;
+    }
+
+    current = current.parentElement;
+  }
+
+  // Look for semantic main content areas first
+  const mainContent = element.closest('main, article, [role="main"], .job-description, .description, .content, .main-content');
+  if (mainContent) {
+    const text = cleanText(mainContent.textContent);
+    // Prefer main content if it's a reasonable size
+    if (text.length >= 100 && text.length <= 5000) {
+      return text;
+    }
+  }
+
+  // Look for paragraph containers
+  const paragraphParent = element.closest('div.description, div.job-description, section, .text-content');
+  if (paragraphParent) {
+    const text = cleanText(paragraphParent.textContent);
+    if (text.length >= 50 && text.length <= 5000) {
+      return text;
+    }
+  }
 
   // Walk up the DOM tree to find the largest reasonable text block
-  let current = element.parentElement;
+  let targetElement = element;
+  let maxLength = cleanText(element.textContent).length;
+  current = element.parentElement;
   let depth = 0;
-  const MAX_DEPTH = 5; // Don't go too far up
+  const MAX_DEPTH = 5;
 
   while (current && depth < MAX_DEPTH) {
     const text = cleanText(current.textContent);
 
     // Don't select the entire page
     if (text.length > 5000) {
+      break;
+    }
+
+    // Skip elements that are likely containers
+    if (current.tagName === 'BODY' || current.tagName === 'HTML') {
       break;
     }
 
@@ -1228,15 +1348,9 @@ function extractLargeTextBlock(element) {
   const finalText = cleanText(targetElement.textContent);
 
   // Only return if it's a substantial block
-  if (finalText.length >= 50) {
+  if (finalText.length >= 50 && finalText.length <= 5000) {
     return finalText;
   }
-
-  // TODO: Could improve by:
-  // - Detecting paragraph boundaries and combining related paragraphs
-  // - Filtering out navigation, footer, and sidebar content
-  // - Identifying main content area using semantic HTML or ML
-  // - Preserving formatting (bullets, line breaks) for better readability
 
   return null;
 }
