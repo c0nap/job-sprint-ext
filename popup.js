@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeAutofill();
   initializeSettings();
   initializeManualEntryModal();
+  initializeMouseTracking();
 
   // Restore UI state from last session
   restoreUIState();
@@ -1374,6 +1375,56 @@ function initializeManualEntryModal() {
     e.preventDefault();
     handleManualEntrySubmit();
   });
+
+  // Add mouse tracking to manual entry fields
+  setupFieldMouseTracking();
+}
+
+/**
+ * Setup mouse tracking for manual entry form fields
+ * When a field is focused, mouse tracking is activated on the source page
+ */
+function setupFieldMouseTracking() {
+  // Fields that support mouse tracking
+  const trackableFields = [
+    'manualJobTitle',
+    'manualCompany',
+    'manualLocation',
+    'manualNotes',
+    'manualCompensation',
+    'manualPay'
+  ];
+
+  trackableFields.forEach(fieldId => {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+
+    // Start tracking on focus
+    field.addEventListener('focus', () => {
+      log(`[Field] Focused: ${fieldId}`);
+      startMouseTrackingForField(fieldId);
+
+      // Add visual indicator that tracking is active
+      field.style.borderColor = '#FF6B6B';
+      field.style.borderWidth = '2px';
+    });
+
+    // Stop tracking on blur
+    field.addEventListener('blur', () => {
+      log(`[Field] Blurred: ${fieldId}`);
+
+      // Small delay to allow click to register
+      setTimeout(() => {
+        if (currentlyFocusedField === fieldId) {
+          stopMouseTracking();
+        }
+      }, 100);
+
+      // Remove visual indicator
+      field.style.borderColor = '';
+      field.style.borderWidth = '';
+    });
+  });
 }
 
 /**
@@ -1420,6 +1471,9 @@ function hideManualEntryModal() {
   if (!modal) return;
 
   modal.style.display = 'none';
+
+  // Stop any active mouse tracking
+  stopMouseTracking();
 
   // Clear form
   document.getElementById('manualEntryForm').reset();
@@ -1511,4 +1565,129 @@ function showError(message) {
  */
 function showSuccess(message) {
   log(`✓ ${message}`);
+}
+
+// ============ INTERACTIVE MOUSE TRACKING ============
+
+// Track currently focused field for mouse tracking
+let currentlyFocusedField = null;
+
+/**
+ * Initialize mouse tracking message listener
+ * Listens for text extracted from page elements during mouse tracking
+ */
+function initializeMouseTracking() {
+  // Listen for messages from content script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'mouseHoverText') {
+      handleMouseHoverText(message.fieldId, message.text, message.confirmed);
+      sendResponse({ success: true });
+    }
+  });
+
+  log('[MouseTracking] Listener initialized');
+}
+
+/**
+ * Handle text received from mouse hover on page
+ * @param {string} fieldId - ID of the field to fill
+ * @param {string} text - Text extracted from hovered element
+ * @param {boolean} confirmed - Whether user clicked to confirm
+ */
+function handleMouseHoverText(fieldId, text, confirmed) {
+  const field = document.getElementById(fieldId);
+
+  if (!field) {
+    logError(`[MouseTracking] Field not found: ${fieldId}`);
+    return;
+  }
+
+  // Update field value
+  field.value = text;
+
+  // Show visual feedback
+  if (confirmed) {
+    log(`[MouseTracking] Auto-filled ${fieldId}: ${text.substring(0, 50)}...`);
+
+    // Flash field to indicate successful fill
+    flashFieldSuccess(field);
+
+    // Clear focus to allow selecting next field
+    currentlyFocusedField = null;
+  } else {
+    // Just preview, don't log
+    // Add preview styling
+    field.style.backgroundColor = '#fff9e6';
+  }
+}
+
+/**
+ * Flash field with success color
+ * @param {HTMLElement} field - Field to flash
+ */
+function flashFieldSuccess(field) {
+  const originalBg = field.style.backgroundColor;
+
+  field.style.backgroundColor = '#d4edda';
+  field.style.transition = 'background-color 0.3s';
+
+  setTimeout(() => {
+    field.style.backgroundColor = originalBg;
+  }, 1000);
+}
+
+/**
+ * Start mouse tracking for a specific field
+ * @param {string} fieldId - ID of the field to track for
+ */
+async function startMouseTrackingForField(fieldId) {
+  log(`[MouseTracking] Starting tracking for field: ${fieldId}`);
+
+  currentlyFocusedField = fieldId;
+
+  // Get source tab
+  const sourceTab = await getSourceTab();
+  if (!sourceTab) {
+    logError('[MouseTracking] No source tab found');
+    return;
+  }
+
+  // Send message to content script to start tracking
+  chrome.tabs.sendMessage(
+    sourceTab.id,
+    { action: 'startMouseTracking', fieldId: fieldId },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        logError(`[MouseTracking] Error: ${chrome.runtime.lastError.message}`);
+      } else {
+        log('[MouseTracking] Tracking started on page');
+      }
+    }
+  );
+}
+
+/**
+ * Stop mouse tracking
+ */
+async function stopMouseTracking() {
+  if (!currentlyFocusedField) return;
+
+  log('[MouseTracking] Stopping tracking');
+
+  // Get source tab
+  const sourceTab = await getSourceTab();
+  if (!sourceTab) return;
+
+  // Send message to content script to stop tracking
+  chrome.tabs.sendMessage(
+    sourceTab.id,
+    { action: 'stopMouseTracking' },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        logError(`[MouseTracking] Error: ${chrome.runtime.lastError.message}`);
+      }
+    }
+  );
+
+  currentlyFocusedField = null;
 }
