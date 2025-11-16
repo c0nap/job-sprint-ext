@@ -791,13 +791,54 @@ let overlayPosition = {
   left: null     // pixels from left (alternative to right)
 };
 
+// Mouse tracking settings (loaded from chrome.storage)
+let mouseTrackingSettings = {
+  sentenceModifier: 'shift',
+  charModifier: 'ctrl',
+  wordModifier: 'none',
+  overlayMoveModifier: 'alt',
+  overlayMoveStep: 20
+};
+
+/**
+ * Load mouse tracking settings from chrome.storage
+ * @returns {Promise<void>}
+ */
+async function loadMouseTrackingSettings() {
+  try {
+    const result = await chrome.storage.sync.get([
+      'SENTENCE_MODIFIER',
+      'CHAR_MODIFIER',
+      'WORD_MODIFIER',
+      'OVERLAY_MOVE_MODIFIER',
+      'OVERLAY_MOVE_STEP'
+    ]);
+
+    mouseTrackingSettings = {
+      sentenceModifier: result.SENTENCE_MODIFIER || 'shift',
+      charModifier: result.CHAR_MODIFIER || 'ctrl',
+      wordModifier: result.WORD_MODIFIER || 'none',
+      overlayMoveModifier: result.OVERLAY_MOVE_MODIFIER || 'alt',
+      overlayMoveStep: result.OVERLAY_MOVE_STEP || 20
+    };
+
+    console.log('[MouseTracking] Settings loaded:', mouseTrackingSettings);
+  } catch (error) {
+    console.error('[MouseTracking] Error loading settings:', error);
+    // Use defaults on error
+  }
+}
+
 /**
  * Start interactive mouse tracking for field auto-fill
  * When user hovers over text elements, their content is extracted and sent to the extension
  * @param {string} fieldId - ID of the field being filled
  */
-function startMouseTracking(fieldId) {
+async function startMouseTracking(fieldId) {
   console.log('Starting mouse tracking for field:', fieldId);
+
+  // Load settings before starting
+  await loadMouseTrackingSettings();
 
   // Stop any existing tracking
   stopMouseTracking();
@@ -918,15 +959,17 @@ function handleEscapeKey(event) {
     return;
   }
 
-  // Handle Alt+Arrow keys for overlay repositioning
-  if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+  // Handle overlay repositioning with configured modifier + Arrow keys
+  if (checkModifierKey(event, mouseTrackingSettings.overlayMoveModifier) &&
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
     event.preventDefault();
     handleOverlayReposition(event);
     return;
   }
 
-  // Handle arrow keys for granularity control (without Alt)
-  if (!event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+  // Handle arrow keys for granularity control (without overlay move modifier)
+  if (!checkModifierKey(event, mouseTrackingSettings.overlayMoveModifier) &&
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
     event.preventDefault();
     handleGranularityChange(event);
   }
@@ -969,7 +1012,7 @@ function handleGranularityChange(event) {
  * @param {KeyboardEvent} event - Keyboard event
  */
 function handleOverlayReposition(event) {
-  const MOVE_STEP = 20; // pixels to move per keypress
+  const MOVE_STEP = mouseTrackingSettings.overlayMoveStep; // pixels to move per keypress (from settings)
 
   // Get current viewport dimensions
   const viewportWidth = window.innerWidth;
@@ -1028,17 +1071,53 @@ function handleOverlayReposition(event) {
 }
 
 /**
- * Get extraction mode based on modifier keys
+ * Get extraction mode based on modifier keys and user settings
  * @param {MouseEvent|KeyboardEvent} event - Event with modifier key info
  * @returns {string} Extraction mode: 'words', 'sentence', or 'chars'
  */
 function getExtractionMode(event) {
-  if (event.ctrlKey || event.metaKey) {
-    return 'chars'; // Ctrl/Cmd: extract characters
-  } else if (event.shiftKey) {
-    return 'sentence'; // Shift: extract sentences
+  // Check each configured modifier and return corresponding mode
+  // Priority: Check if any specific modifier is pressed
+
+  // Check for sentence modifier
+  if (checkModifierKey(event, mouseTrackingSettings.sentenceModifier)) {
+    return 'sentence';
   }
-  return 'words'; // No modifier: extract words (default)
+
+  // Check for char modifier
+  if (checkModifierKey(event, mouseTrackingSettings.charModifier)) {
+    return 'chars';
+  }
+
+  // Check for word modifier (or default if 'none')
+  if (checkModifierKey(event, mouseTrackingSettings.wordModifier)) {
+    return 'words';
+  }
+
+  // Default: use word mode with field-aware extraction
+  return 'words';
+}
+
+/**
+ * Check if a specific modifier key is pressed
+ * @param {MouseEvent|KeyboardEvent} event - Event to check
+ * @param {string} modifier - Modifier name: 'shift', 'ctrl', 'alt', or 'none'
+ * @returns {boolean} True if the modifier is active
+ */
+function checkModifierKey(event, modifier) {
+  switch (modifier) {
+    case 'shift':
+      return event.shiftKey;
+    case 'ctrl':
+      return event.ctrlKey || event.metaKey; // Support both Ctrl and Cmd
+    case 'alt':
+      return event.altKey;
+    case 'none':
+      // 'none' means this mode is active when NO modifiers are pressed
+      return !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+    default:
+      return false;
+  }
 }
 
 /**
