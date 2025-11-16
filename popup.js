@@ -245,22 +245,21 @@ function initializeClipboardMacros() {
   // Set up sub-menu settings link
   const subMenuSettingsLink = document.getElementById('subMenuSettingsLink');
   if (subMenuSettingsLink) {
-    subMenuSettingsLink.addEventListener('click', (e) => {
+    subMenuSettingsLink.addEventListener('click', async (e) => {
       e.preventDefault();
-      // Open settings page in a new tab next to the current tab
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) {
-          // Store the original tab ID so settings can return to it
-          chrome.storage.local.set({ settingsOriginTabId: tabs[0].id }, () => {
-            chrome.tabs.create({
-              url: 'settings.html',
-              index: tabs[0].index + 1  // Open right next to active tab
-            });
+      // Open settings page in a new tab next to the source tab
+      const sourceTab = await getSourceTab();
+      if (sourceTab) {
+        // Store the original tab ID so settings can return to it
+        chrome.storage.local.set({ settingsOriginTabId: sourceTab.id }, () => {
+          chrome.tabs.create({
+            url: 'settings.html',
+            index: sourceTab.index + 1  // Open right next to source tab
           });
-        } else {
-          chrome.tabs.create({ url: 'settings.html' });
-        }
-      });
+        });
+      } else {
+        chrome.tabs.create({ url: 'settings.html' });
+      }
     });
   }
 
@@ -1009,6 +1008,33 @@ function capitalizeFirst(str) {
 
 // ============ DATA EXTRACTION ============
 
+/**
+ * Get the source tab that the popup was opened from
+ * When popup is detached, we need to track the original tab explicitly
+ * @returns {Promise<chrome.tabs.Tab|null>} The source tab or null
+ */
+async function getSourceTab() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['popupSourceTabId'], async (result) => {
+      const tabId = result.popupSourceTabId;
+      if (!tabId) {
+        log('[Tab] No source tab ID found in storage');
+        resolve(null);
+        return;
+      }
+
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        log(`[Tab] Source tab found: ${tab.url}`);
+        resolve(tab);
+      } catch (error) {
+        logError(`[Tab] Source tab ${tabId} no longer exists: ${error.message}`);
+        resolve(null);
+      }
+    });
+  });
+}
+
 // Rate limiting for extract button (prevent accidental spam)
 let lastExtractTime = 0;
 const EXTRACT_COOLDOWN_MS = 2000; // 2 seconds
@@ -1036,7 +1062,7 @@ function initializeExtraction() {
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  */
-function handleExtractClick(button, statusDiv) {
+async function handleExtractClick(button, statusDiv) {
   // Log the action
   log('[Extract] Job data extraction initiated');
 
@@ -1054,69 +1080,67 @@ function handleExtractClick(button, statusDiv) {
   setButtonLoading(button, 'Extracting...');
   // Show immediate status feedback
   showStatus(statusDiv, 'info', 'ℹ Extracting job data from page...');
-  log('[Extract] Querying active tab...');
+  log('[Extract] Getting source tab...');
 
-  // Step 1: Query active tab
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const activeTab = tabs[0];
-    if (!activeTab) {
-      logError('[Extract] No active tab found');
-      handleExtractError(button, statusDiv, 'No active tab found. Please make sure you have a tab open.');
-      return;
-    }
+  // Step 1: Get the source tab (the tab that was active when popup was opened)
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    logError('[Extract] No source tab found');
+    handleExtractError(button, statusDiv, 'No active tab found. Please reopen the popup from the job page.');
+    return;
+  }
 
-    log(`[Extract] Active tab found: ${activeTab.url}`);
+  log(`[Extract] Source tab found: ${activeTab.url}`);
 
-    // Check if tab URL is accessible
-    if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
-      logError(`[Extract] Invalid tab URL: ${activeTab.url}`);
-      handleExtractError(button, statusDiv, 'Cannot extract from this page. Chrome extension pages and settings are not supported.');
-      return;
-    }
+  // Check if tab URL is accessible
+  if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+    logError(`[Extract] Invalid tab URL: ${activeTab.url}`);
+    handleExtractError(button, statusDiv, 'Cannot extract from this page. Chrome extension pages and settings are not supported.');
+    return;
+  }
 
-    log('[Extract] Sending extraction request to content script...');
+  log('[Extract] Sending extraction request to content script...');
 
-    // Step 2: Request extraction from content script
-    chrome.tabs.sendMessage(
-      activeTab.id,
-      { action: 'extractJobData' },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          // Handle the common "Receiving end does not exist" error
-          const errorMsg = chrome.runtime.lastError.message;
-          logError(`[Extract] Runtime error: ${errorMsg}`);
+  // Step 2: Request extraction from content script
+  chrome.tabs.sendMessage(
+    activeTab.id,
+    { action: 'extractJobData' },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        // Handle the common "Receiving end does not exist" error
+        const errorMsg = chrome.runtime.lastError.message;
+        logError(`[Extract] Runtime error: ${errorMsg}`);
 
-          if (errorMsg.includes('Receiving end does not exist')) {
-            handleExtractError(
-              button,
-              statusDiv,
-              'Please reload the page and try again. The extension needs to reinitialize.'
-            );
-          } else if (errorMsg.includes('Cannot access')) {
-            handleExtractError(
-              button,
-              statusDiv,
-              'Cannot access this page. Please make sure you are on a job posting page.'
-            );
-          } else {
-            handleExtractError(button, statusDiv, `Error: ${errorMsg}`);
-          }
-          return;
+        if (errorMsg.includes('Receiving end does not exist')) {
+          handleExtractError(
+            button,
+            statusDiv,
+            'Please reload the page and try again. The extension needs to reinitialize.'
+          );
+        } else if (errorMsg.includes('Cannot access')) {
+          handleExtractError(
+            button,
+            statusDiv,
+            'Cannot access this page. Please make sure you are on a job posting page.'
+          );
+        } else {
+          handleExtractError(button, statusDiv, `Error: ${errorMsg}`);
         }
-
-        if (!response?.success) {
-          logError('[Extract] Content script returned failure');
-          handleExtractError(button, statusDiv, 'Failed to extract job data from page');
-          return;
-        }
-
-        log(`[Extract] Data extracted: ${JSON.stringify(response.data)}`);
-
-        // Step 3: Send extracted data to service worker for logging
-        logJobData(button, statusDiv, response.data);
+        return;
       }
-    );
-  });
+
+      if (!response?.success) {
+        logError('[Extract] Content script returned failure');
+        handleExtractError(button, statusDiv, 'Failed to extract job data from page');
+        return;
+      }
+
+      log(`[Extract] Data extracted: ${JSON.stringify(response.data)}`);
+
+      // Step 3: Send extracted data to service worker for logging
+      logJobData(button, statusDiv, response.data);
+    }
+  );
 }
 
 /**
@@ -1233,40 +1257,38 @@ function initializeAutofill() {
  * @param {HTMLButtonElement} button - Autofill button element
  * @param {HTMLElement} statusDiv - Status message display element
  */
-function handleAutofillClick(button, statusDiv) {
+async function handleAutofillClick(button, statusDiv) {
   // Set button to loading state
   setButtonLoading(button, 'Starting...');
   showStatus(statusDiv, 'info', 'ℹ Autofill process started. Check the page for prompts.');
 
-  // Query active tab and send autofill command
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const activeTab = tabs[0];
-    if (!activeTab) {
-      handleAutofillError(button, statusDiv, 'No active tab found');
-      return;
-    }
+  // Get the source tab (the tab that was active when popup was opened)
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    handleAutofillError(button, statusDiv, 'No active tab found. Please reopen the popup from the job page.');
+    return;
+  }
 
-    // Send autofill command to content script
-    chrome.tabs.sendMessage(
-      activeTab.id,
-      { action: 'startAutofill' },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          handleAutofillError(button, statusDiv, `Could not access page: ${chrome.runtime.lastError.message}`);
-          return;
-        }
-
-        if (response?.success) {
-          showStatus(statusDiv, 'success', '✓ Autofill started! Answer prompts on the page.');
-        } else {
-          handleAutofillError(button, statusDiv, 'Failed to start autofill process');
-        }
-
-        // Reset button after short delay
-        setTimeout(() => resetAutofillButton(button), 2000);
+  // Send autofill command to content script
+  chrome.tabs.sendMessage(
+    activeTab.id,
+    { action: 'startAutofill' },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        handleAutofillError(button, statusDiv, `Could not access page: ${chrome.runtime.lastError.message}`);
+        return;
       }
-    );
-  });
+
+      if (response?.success) {
+        showStatus(statusDiv, 'success', '✓ Autofill started! Answer prompts on the page.');
+      } else {
+        handleAutofillError(button, statusDiv, 'Failed to start autofill process');
+      }
+
+      // Reset button after short delay
+      setTimeout(() => resetAutofillButton(button), 2000);
+    }
+  );
 }
 
 /**
@@ -1299,22 +1321,21 @@ function initializeSettings() {
   const settingsLink = document.getElementById('settingsLink');
   if (!settingsLink) return;
 
-  settingsLink.addEventListener('click', (e) => {
+  settingsLink.addEventListener('click', async (e) => {
     e.preventDefault();
-    // Open settings page in a new tab next to the current tab
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        // Store the original tab ID so settings can return to it
-        chrome.storage.local.set({ settingsOriginTabId: tabs[0].id }, () => {
-          chrome.tabs.create({
-            url: 'settings.html',
-            index: tabs[0].index + 1  // Open right next to active tab
-          });
+    // Open settings page in a new tab next to the source tab
+    const sourceTab = await getSourceTab();
+    if (sourceTab) {
+      // Store the original tab ID so settings can return to it
+      chrome.storage.local.set({ settingsOriginTabId: sourceTab.id }, () => {
+        chrome.tabs.create({
+          url: 'settings.html',
+          index: sourceTab.index + 1  // Open right next to source tab
         });
-      } else {
-        chrome.tabs.create({ url: 'settings.html' });
-      }
-    });
+      });
+    } else {
+      chrome.tabs.create({ url: 'settings.html' });
+    }
   });
 }
 

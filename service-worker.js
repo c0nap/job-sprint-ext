@@ -30,7 +30,7 @@ chrome.runtime.onStartup.addListener(() => {
 let popupWindowId = null;
 
 // Handle extension icon click - open detached popup window
-chrome.action.onClicked.addListener(async () => {
+chrome.action.onClicked.addListener(async (tab) => {
   console.log('Extension icon clicked');
 
   // Check if popup window is already open
@@ -47,13 +47,24 @@ chrome.action.onClicked.addListener(async () => {
     }
   }
 
+  // Get the active tab to associate with the popup
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const activeTab = tabs[0];
+
+  if (activeTab) {
+    // Store the source tab ID so popup can interact with it
+    await chrome.storage.local.set({ popupSourceTabId: activeTab.id });
+    console.log('Stored source tab ID:', activeTab.id);
+  }
+
   // Create a new detached popup window
   const window = await chrome.windows.create({
     url: 'popup.html',
     type: 'popup',
     width: 420,
     height: 600,
-    focused: true
+    focused: true,
+    alwaysOnTop: true  // Keep window on top of other windows
   });
 
   popupWindowId = window.id;
