@@ -93,7 +93,8 @@ function pasteTextToActiveField(text) {
 
 /**
  * Extract job posting data from the current page
- * @returns {Object} Extracted job data with title, company, location, url, timestamp, and source
+ * Uses intelligent field-aware extractors (same logic as interactive mouse tracking)
+ * @returns {Object} Extracted job data with title, company, location, compensation, pay, description, url, timestamp, and source
  */
 function extractJobData() {
   try {
@@ -101,37 +102,53 @@ function extractJobData() {
       title: '',
       company: '',
       location: '',
+      compensation: '',
+      pay: '',
+      description: '',
       url: window.location.href,
       timestamp: new Date().toISOString(),
       source: extractSource(window.location.href)
     };
 
-    // CSS selectors for job boards (LinkedIn, Indeed, Glassdoor, Greenhouse, Lever, Workday)
-    const titleSelectors = [
-      'h1', '[data-job-title]', '.job-title', '.jobTitle',
-      '.topcard__title', '.top-card-layout__title',
-      '.jobsearch-JobInfoHeader-title',
-      '[data-test="job-title"]', '.app-title', '.posting-headline h2',
-      '[data-automation-id="jobPostingHeader"]'
-    ];
+    // Use intelligent extractors (same as mouse tracking feature)
+    data.title = searchPageForJobTitle() || '';
+    data.company = searchPageForCompany() || '';
+    data.location = searchPageForLocation() || '';
+    data.compensation = searchPageForCompensation() || '';
+    data.pay = searchPageForPay() || '';
+    data.description = searchPageForDescription() || '';
 
-    const companySelectors = [
-      '[data-company-name]', '.company-name', '.companyName', '.employer',
-      '.topcard__org-name-link', '.top-card-layout__entity-info a',
-      '[data-company-name="true"]', '[data-test="employer-name"]',
-      '.posting-categories .posting-category'
-    ];
+    // Fallback to CSS selector-based extraction if intelligent extractors fail
+    if (!data.title) {
+      const titleSelectors = [
+        'h1', '[data-job-title]', '.job-title', '.jobTitle',
+        '.topcard__title', '.top-card-layout__title',
+        '.jobsearch-JobInfoHeader-title',
+        '[data-test="job-title"]', '.app-title', '.posting-headline h2',
+        '[data-automation-id="jobPostingHeader"]'
+      ];
+      data.title = extractField(titleSelectors);
+    }
 
-    const locationSelectors = [
-      '[data-location]', '.location', '.job-location', '.jobLocation',
-      '.topcard__flavor--bullet', '.top-card-layout__second-subline',
-      '[data-testid="job-location"]', '.jobsearch-JobInfoHeader-subtitle > div',
-      '[data-test="location"]', '.posting-categories .location'
-    ];
+    if (!data.company) {
+      const companySelectors = [
+        '[data-company-name]', '.company-name', '.companyName', '.employer',
+        '.topcard__org-name-link', '.top-card-layout__entity-info a',
+        '[data-company-name="true"]', '[data-test="employer-name"]',
+        '.posting-categories .posting-category'
+      ];
+      data.company = extractField(companySelectors);
+    }
 
-    data.title = extractField(titleSelectors);
-    data.company = extractField(companySelectors);
-    data.location = extractField(locationSelectors);
+    if (!data.location) {
+      const locationSelectors = [
+        '[data-location]', '.location', '.job-location', '.jobLocation',
+        '.topcard__flavor--bullet', '.top-card-layout__second-subline',
+        '[data-testid="job-location"]', '.jobsearch-JobInfoHeader-subtitle > div',
+        '[data-test="location"]', '.posting-categories .location'
+      ];
+      data.location = extractField(locationSelectors);
+    }
 
     if (!data.title && !data.company) {
       console.warn('JobSprint: Could not extract meaningful job data from this page');
@@ -145,6 +162,9 @@ function extractJobData() {
       title: '',
       company: '',
       location: '',
+      compensation: '',
+      pay: '',
+      description: '',
       url: window.location.href,
       timestamp: new Date().toISOString(),
       error: error.message
@@ -198,6 +218,204 @@ function extractSource(url) {
   } catch {
     return 'Unknown';
   }
+}
+
+// ============ PAGE-WIDE INTELLIGENT EXTRACTORS ============
+// These wrappers use the same intelligent extraction logic as mouse tracking,
+// but search the entire page instead of a specific element
+
+/**
+ * Search entire page for job title using intelligent extraction
+ * @returns {string|null} Extracted job title or null
+ */
+function searchPageForJobTitle() {
+  // Priority 1: Check for data attributes on any element
+  const dataAttrElements = document.querySelectorAll('[data-job-title], [data-title], [data-position]');
+  for (const element of dataAttrElements) {
+    const result = extractJobTitle(element);
+    if (result) return result;
+  }
+
+  // Priority 2: Check headers in semantic containers
+  const semanticContainers = document.querySelectorAll('article, main, [role="main"]');
+  for (const container of semanticContainers) {
+    const headers = container.querySelectorAll('h1, h2, h3');
+    for (const header of headers) {
+      const result = extractJobTitle(header);
+      if (result) return result;
+    }
+  }
+
+  // Priority 3: Check all h1-h3 headers on page (most likely to be job title)
+  const headers = document.querySelectorAll('h1, h2, h3');
+  for (const header of headers) {
+    const result = extractJobTitle(header);
+    if (result) return result;
+  }
+
+  // Priority 4: Check common job title class names
+  const titleClassElements = document.querySelectorAll('.job-title, .jobTitle, .title, .position, .job-header');
+  for (const element of titleClassElements) {
+    const result = extractJobTitle(element);
+    if (result) return result;
+  }
+
+  return null;
+}
+
+/**
+ * Search entire page for company name using intelligent extraction
+ * @returns {string|null} Extracted company name or null
+ */
+function searchPageForCompany() {
+  // Priority 1: Check common company class names first
+  const companyClassElements = document.querySelectorAll(
+    '[data-company-name], .company, .companyName, .employer, .organization, .org-name, .org, .business'
+  );
+  for (const element of companyClassElements) {
+    const result = extractCompanyName(element);
+    if (result) return result;
+  }
+
+  // Priority 2: Check links (companies often link to their pages)
+  const links = document.querySelectorAll('a');
+  for (const link of links) {
+    const result = extractCompanyName(link);
+    if (result) return result;
+  }
+
+  // Priority 3: Check all bold text elements in top 30% of page
+  const viewportHeight = window.innerHeight;
+  const allElements = document.querySelectorAll('*');
+  for (const element of allElements) {
+    const rect = element.getBoundingClientRect();
+    if (rect.top < viewportHeight * 0.3) {
+      const style = window.getComputedStyle(element);
+      const isBold = style.fontWeight === 'bold' || parseInt(style.fontWeight) >= 600;
+      if (isBold) {
+        const result = extractCompanyName(element);
+        if (result) return result;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Search entire page for location using intelligent extraction
+ * @returns {string|null} Extracted location or null
+ */
+function searchPageForLocation() {
+  const pageText = document.body.textContent || '';
+
+  // Priority 1: Check common location class names
+  const locationClassElements = document.querySelectorAll(
+    '[data-location], .location, .job-location, .jobLocation'
+  );
+  for (const element of locationClassElements) {
+    const text = cleanText(element.textContent);
+    const result = extractLocation(element, text);
+    if (result) return result;
+  }
+
+  // Priority 2: Search semantic containers (main, article)
+  const semanticContainers = document.querySelectorAll('article, main, [role="main"]');
+  for (const container of semanticContainers) {
+    const text = cleanText(container.textContent);
+    const result = extractLocation(container, text);
+    if (result) return result;
+  }
+
+  // Priority 3: Search entire page text as last resort
+  const result = extractLocation(document.body, pageText);
+  if (result) return result;
+
+  return null;
+}
+
+/**
+ * Search entire page for compensation range using intelligent extraction
+ * @returns {string|null} Extracted compensation or null
+ */
+function searchPageForCompensation() {
+  const pageText = document.body.textContent || '';
+
+  // Priority 1: Check common salary/compensation class names
+  const salaryClassElements = document.querySelectorAll(
+    '[data-salary], [data-compensation], .salary, .compensation, .pay-range, .wage'
+  );
+  for (const element of salaryClassElements) {
+    const text = cleanText(element.textContent);
+    const result = extractCompensationRange(element, text);
+    if (result) return result;
+  }
+
+  // Priority 2: Search semantic containers
+  const semanticContainers = document.querySelectorAll('article, main, [role="main"]');
+  for (const container of semanticContainers) {
+    const text = cleanText(container.textContent);
+    const result = extractCompensationRange(container, text);
+    if (result) return result;
+  }
+
+  // Priority 3: Search entire page text
+  const result = extractCompensationRange(document.body, pageText);
+  if (result) return result;
+
+  return null;
+}
+
+/**
+ * Search entire page for single pay amount using intelligent extraction
+ * @returns {string|null} Extracted pay amount or null
+ */
+function searchPageForPay() {
+  const pageText = document.body.textContent || '';
+
+  // Priority 1: Check common pay class names
+  const payClassElements = document.querySelectorAll(
+    '[data-salary], [data-pay], .salary, .pay, .wage, .hourly-rate'
+  );
+  for (const element of payClassElements) {
+    const text = cleanText(element.textContent);
+    const result = extractPayAmount(element, text);
+    if (result) return result;
+  }
+
+  // Priority 2: Search semantic containers
+  const semanticContainers = document.querySelectorAll('article, main, [role="main"]');
+  for (const container of semanticContainers) {
+    const text = cleanText(container.textContent);
+    const result = extractPayAmount(container, text);
+    if (result) return result;
+  }
+
+  return null;
+}
+
+/**
+ * Search entire page for job description using intelligent extraction
+ * @returns {string|null} Extracted job description or null
+ */
+function searchPageForDescription() {
+  // Priority 1: Check common description class names
+  const descriptionClassElements = document.querySelectorAll(
+    '.job-description, .description, .job-details, .posting-description, [data-description]'
+  );
+  for (const element of descriptionClassElements) {
+    const result = extractLargeTextBlock(element);
+    if (result) return result;
+  }
+
+  // Priority 2: Check semantic containers
+  const semanticContainers = document.querySelectorAll('article, main, [role="main"]');
+  for (const container of semanticContainers) {
+    const result = extractLargeTextBlock(container);
+    if (result) return result;
+  }
+
+  return null;
 }
 
 // ============ AUTOFILL FEATURE ============
