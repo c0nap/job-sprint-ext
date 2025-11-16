@@ -14,6 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeAutofill();
   initializeSettings();
   initializeManualEntryModal();
+
+  // Restore UI state from last session
+  restoreUIState();
 });
 
 // ============ DEBUG CONSOLE ============
@@ -242,9 +245,21 @@ function initializeClipboardMacros() {
   // Set up sub-menu settings link
   const subMenuSettingsLink = document.getElementById('subMenuSettingsLink');
   if (subMenuSettingsLink) {
-    subMenuSettingsLink.addEventListener('click', (e) => {
+    subMenuSettingsLink.addEventListener('click', async (e) => {
       e.preventDefault();
-      chrome.tabs.create({ url: 'settings.html' });
+      // Open settings page in a new tab next to the source tab
+      const sourceTab = await getSourceTab();
+      if (sourceTab) {
+        // Store the original tab ID so settings can return to it
+        chrome.storage.local.set({ settingsOriginTabId: sourceTab.id }, () => {
+          chrome.tabs.create({
+            url: 'settings.html',
+            index: sourceTab.index + 1  // Open right next to source tab
+          });
+        });
+      } else {
+        chrome.tabs.create({ url: 'settings.html' });
+      }
     });
   }
 
@@ -261,6 +276,9 @@ function openFolder(folder) {
 
   currentFolder = folder;
   navigationPath = [folder]; // Reset navigation to top level
+
+  // Save UI state
+  saveUIState();
 
   // Get folder data from storage
   chrome.runtime.sendMessage(
@@ -312,6 +330,9 @@ function openNestedFolder(key, value) {
   navigationPath.push(key);
   currentData = value;
 
+  // Save UI state to persist navigation
+  saveUIState();
+
   // Update title and render new level
   updateSubMenuTitle();
   renderSubMenuItems(currentData);
@@ -343,6 +364,9 @@ function closeFolder() {
     log(`[Clipboard] Going back one level`);
     navigationPath.pop();
 
+    // Save UI state after going back
+    saveUIState();
+
     // Navigate back to parent
     // We need to traverse from root to get the parent data
     chrome.runtime.sendMessage(
@@ -370,6 +394,9 @@ function closeFolder() {
   navigationPath = [];
   currentData = null;
 
+  // Clear saved UI state
+  saveUIState();
+
   // Show folder view and hide sub-menu
   const folderView = document.getElementById('folderView');
   const subMenuView = document.getElementById('subMenuView');
@@ -379,6 +406,100 @@ function closeFolder() {
 
   // Show other feature sections
   showOtherSections();
+}
+
+/**
+ * Save current UI state to chrome.storage.local
+ * Allows restoring the user's location in the UI when popup reopens
+ */
+function saveUIState() {
+  const state = {
+    currentFolder,
+    navigationPath,
+    timestamp: Date.now()
+  };
+  chrome.storage.local.set({ jobsprint_ui_state: state }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('Failed to save UI state:', chrome.runtime.lastError);
+    }
+  });
+}
+
+/**
+ * Restore UI state from chrome.storage.local
+ * Reopens the last viewed folder if user was browsing clipboard macros
+ */
+function restoreUIState() {
+  chrome.storage.local.get(['jobsprint_ui_state'], (result) => {
+    if (chrome.runtime.lastError) {
+      console.error('Failed to restore UI state:', chrome.runtime.lastError);
+      return;
+    }
+
+    const state = result.jobsprint_ui_state;
+    if (!state) return;
+
+    // Only restore if state is recent (within 5 minutes)
+    const age = Date.now() - (state.timestamp || 0);
+    if (age > 5 * 60 * 1000) {
+      chrome.storage.local.remove('jobsprint_ui_state');
+      return;
+    }
+
+    // Restore folder view if user was in a folder
+    if (state.currentFolder) {
+      log(`[UI] Restoring state: ${state.currentFolder}, path: ${JSON.stringify(state.navigationPath)}`);
+
+      // Delay to ensure DOM is ready
+      setTimeout(() => {
+        // Get folder data and restore full navigation path
+        chrome.runtime.sendMessage(
+          { action: 'getClipboardFolder', folder: state.currentFolder },
+          (response) => {
+            if (!response || !response.success) {
+              log('[UI] Failed to restore folder data');
+              return;
+            }
+
+            // Set the current folder and navigation state
+            currentFolder = state.currentFolder;
+            navigationPath = state.navigationPath || [state.currentFolder];
+
+            // Traverse to the saved nested location
+            let data = response.items || {};
+            for (let i = 1; i < navigationPath.length; i++) {
+              if (data[navigationPath[i]] && typeof data[navigationPath[i]] === 'object') {
+                data = data[navigationPath[i]];
+              } else {
+                // Path no longer valid, reset to top level
+                navigationPath = [state.currentFolder];
+                data = response.items || {};
+                break;
+              }
+            }
+
+            currentData = data;
+
+            // Update the UI
+            const folderView = document.getElementById('folderView');
+            const subMenuView = document.getElementById('subMenuView');
+
+            if (folderView) folderView.style.display = 'none';
+            if (subMenuView) subMenuView.style.display = 'block';
+
+            // Hide other feature sections
+            hideOtherSections();
+
+            // Update title and render items
+            updateSubMenuTitle();
+            renderSubMenuItems(currentData);
+
+            log(`[UI] State restored successfully to: ${navigationPath.join(' → ')}`);
+          }
+        );
+      }, 100);
+    }
+  });
 }
 
 /**
@@ -451,7 +572,7 @@ function renderSubMenuItems(items) {
       // Copy button copies verbalized content
       copyButton.addEventListener('click', (e) => {
         e.stopPropagation();
-        handleItemClick(key, value);
+        handleItemClick(key, value, copyButton);
       });
 
       itemContainer.appendChild(button);
@@ -467,7 +588,7 @@ function renderSubMenuItems(items) {
       // Click to copy
       button.addEventListener('click', (e) => {
         e.stopPropagation();
-        handleItemClick(key, value);
+        handleItemClick(key, value, button);
       });
 
       // Add button directly (no container, no copy button for items)
@@ -569,8 +690,9 @@ function verbalizeValue(value, indent = 0) {
  * Handle item click - copy the value to clipboard
  * @param {string} key - Item key
  * @param {string|Object} value - Item value to copy (string or nested object)
+ * @param {HTMLElement} buttonElement - Button that was clicked (for visual feedback)
  */
-async function handleItemClick(key, value) {
+async function handleItemClick(key, value, buttonElement) {
   // Verbalize the value (converts objects to readable text, keeps strings as-is)
   const textToCopy = verbalizeValue(value);
 
@@ -579,8 +701,8 @@ async function handleItemClick(key, value) {
     await navigator.clipboard.writeText(textToCopy);
     log(`[Clipboard] Copied: ${key}`);
 
-    // Show visual feedback
-    showCopySuccess(key);
+    // Show visual feedback on the button itself
+    showButtonCopyFeedback(buttonElement);
   } catch (error) {
     logError('[Clipboard] Failed to copy: ' + error.message);
     showError('Failed to copy to clipboard');
@@ -588,21 +710,32 @@ async function handleItemClick(key, value) {
 }
 
 /**
- * Show success message when item is copied
- * @param {string} itemName - Name of the copied item
+ * Show copy success feedback on the button itself
+ * Changes button color and text temporarily
+ * @param {HTMLElement} button - Button element to update
  */
-function showCopySuccess(itemName) {
-  const statusDiv = document.getElementById('subMenuStatus');
-  if (!statusDiv) return;
+function showButtonCopyFeedback(button) {
+  if (!button) return;
 
-  const label = itemName.charAt(0).toUpperCase() + itemName.slice(1);
-  statusDiv.textContent = `✓ Copied: ${label}`;
-  statusDiv.className = 'sub-menu-status success';
-  statusDiv.style.display = 'block';
+  // Save original state
+  const originalText = button.innerHTML;
+  const originalClass = button.className;
+  const originalDisabled = button.disabled;
 
-  // Auto-hide after 2 seconds
+  // Update button appearance
+  button.innerHTML = '✓ Copied!';
+  button.className = originalClass + ' copied';
+  button.disabled = true;
+  button.style.backgroundColor = '#28a745';
+  button.style.color = 'white';
+
+  // Restore after 2 seconds
   setTimeout(() => {
-    statusDiv.style.display = 'none';
+    button.innerHTML = originalText;
+    button.className = originalClass;
+    button.disabled = originalDisabled;
+    button.style.backgroundColor = '';
+    button.style.color = '';
   }, 2000);
 }
 
@@ -875,6 +1008,33 @@ function capitalizeFirst(str) {
 
 // ============ DATA EXTRACTION ============
 
+/**
+ * Get the source tab that the popup was opened from
+ * When popup is detached, we need to track the original tab explicitly
+ * @returns {Promise<chrome.tabs.Tab|null>} The source tab or null
+ */
+async function getSourceTab() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['popupSourceTabId'], async (result) => {
+      const tabId = result.popupSourceTabId;
+      if (!tabId) {
+        log('[Tab] No source tab ID found in storage');
+        resolve(null);
+        return;
+      }
+
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        log(`[Tab] Source tab found: ${tab.url}`);
+        resolve(tab);
+      } catch (error) {
+        logError(`[Tab] Source tab ${tabId} no longer exists: ${error.message}`);
+        resolve(null);
+      }
+    });
+  });
+}
+
 // Rate limiting for extract button (prevent accidental spam)
 let lastExtractTime = 0;
 const EXTRACT_COOLDOWN_MS = 2000; // 2 seconds
@@ -902,71 +1062,85 @@ function initializeExtraction() {
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  */
-function handleExtractClick(button, statusDiv) {
+async function handleExtractClick(button, statusDiv) {
+  // Log the action
+  log('[Extract] Job data extraction initiated');
+
   // Rate limiting check
   const now = Date.now();
   if (now - lastExtractTime < EXTRACT_COOLDOWN_MS) {
     const remainingSeconds = Math.ceil((EXTRACT_COOLDOWN_MS - (now - lastExtractTime)) / 1000);
     showStatus(statusDiv, 'info', `ℹ Please wait ${remainingSeconds}s before extracting again`);
+    log(`[Extract] Rate limited - ${remainingSeconds}s remaining`);
     return;
   }
   lastExtractTime = now;
 
-  // Set button to loading state
+  // Immediate button feedback - show loading state right away
   setButtonLoading(button, 'Extracting...');
-  clearStatus(statusDiv);
+  // Show immediate status feedback
+  showStatus(statusDiv, 'info', 'ℹ Extracting job data from page...');
+  log('[Extract] Getting source tab...');
 
-  // Step 1: Query active tab
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const activeTab = tabs[0];
-    if (!activeTab) {
-      handleExtractError(button, statusDiv, 'No active tab found. Please make sure you have a tab open.');
-      return;
-    }
+  // Step 1: Get the source tab (the tab that was active when popup was opened)
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    logError('[Extract] No source tab found');
+    handleExtractError(button, statusDiv, 'No active tab found. Please reopen the popup from the job page.');
+    return;
+  }
 
-    // Check if tab URL is accessible
-    if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
-      handleExtractError(button, statusDiv, 'Cannot extract from this page. Chrome extension pages and settings are not supported.');
-      return;
-    }
+  log(`[Extract] Source tab found: ${activeTab.url}`);
 
-    // Step 2: Request extraction from content script
-    chrome.tabs.sendMessage(
-      activeTab.id,
-      { action: 'extractJobData' },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          // Handle the common "Receiving end does not exist" error
-          const errorMsg = chrome.runtime.lastError.message;
+  // Check if tab URL is accessible
+  if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+    logError(`[Extract] Invalid tab URL: ${activeTab.url}`);
+    handleExtractError(button, statusDiv, 'Cannot extract from this page. Chrome extension pages and settings are not supported.');
+    return;
+  }
 
-          if (errorMsg.includes('Receiving end does not exist')) {
-            handleExtractError(
-              button,
-              statusDiv,
-              'Please reload the page and try again. The extension needs to reinitialize.'
-            );
-          } else if (errorMsg.includes('Cannot access')) {
-            handleExtractError(
-              button,
-              statusDiv,
-              'Cannot access this page. Please make sure you are on a job posting page.'
-            );
-          } else {
-            handleExtractError(button, statusDiv, `Error: ${errorMsg}`);
-          }
-          return;
+  log('[Extract] Sending extraction request to content script...');
+
+  // Step 2: Request extraction from content script
+  chrome.tabs.sendMessage(
+    activeTab.id,
+    { action: 'extractJobData' },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        // Handle the common "Receiving end does not exist" error
+        const errorMsg = chrome.runtime.lastError.message;
+        logError(`[Extract] Runtime error: ${errorMsg}`);
+
+        if (errorMsg.includes('Receiving end does not exist')) {
+          handleExtractError(
+            button,
+            statusDiv,
+            'Please reload the page and try again. The extension needs to reinitialize.'
+          );
+        } else if (errorMsg.includes('Cannot access')) {
+          handleExtractError(
+            button,
+            statusDiv,
+            'Cannot access this page. Please make sure you are on a job posting page.'
+          );
+        } else {
+          handleExtractError(button, statusDiv, `Error: ${errorMsg}`);
         }
-
-        if (!response?.success) {
-          handleExtractError(button, statusDiv, 'Failed to extract job data from page');
-          return;
-        }
-
-        // Step 3: Send extracted data to service worker for logging
-        logJobData(button, statusDiv, response.data);
+        return;
       }
-    );
-  });
+
+      if (!response?.success) {
+        logError('[Extract] Content script returned failure');
+        handleExtractError(button, statusDiv, 'Failed to extract job data from page');
+        return;
+      }
+
+      log(`[Extract] Data extracted: ${JSON.stringify(response.data)}`);
+
+      // Step 3: Send extracted data to service worker for logging
+      logJobData(button, statusDiv, response.data);
+    }
+  );
 }
 
 /**
@@ -977,15 +1151,21 @@ function handleExtractClick(button, statusDiv) {
  * @param {Object} jobData - Extracted job data
  */
 function logJobData(button, statusDiv, jobData) {
+  log('[Extract] Checking if manual entry needed...');
+
   // Check if manual entry is enabled and if data is missing
   chrome.runtime.sendMessage({ action: 'getConfig' }, (configResponse) => {
     const isManualEntryEnabled = configResponse?.config?.ENABLE_MANUAL_ENTRY !== false;
     const hasMissingData = isMissingRequiredData(jobData);
 
+    log(`[Extract] Manual entry enabled: ${isManualEntryEnabled}, Missing data: ${hasMissingData}`);
+
     if (isManualEntryEnabled && hasMissingData) {
+      log('[Extract] Showing manual entry modal');
       // Show manual entry modal
       showManualEntryModal(button, statusDiv, jobData);
     } else {
+      log('[Extract] Proceeding with automatic submission');
       // Proceed with logging directly
       submitJobData(button, statusDiv, jobData);
     }
@@ -999,13 +1179,18 @@ function logJobData(button, statusDiv, jobData) {
  * @param {Object} jobData - Job data to submit
  */
 function submitJobData(button, statusDiv, jobData) {
+  log('[Extract] Submitting job data to service worker...');
+  showStatus(statusDiv, 'info', 'ℹ Logging to Google Sheets...');
+
   chrome.runtime.sendMessage(
     { action: 'logJobData', data: jobData },
     (logResponse) => {
       if (logResponse?.success) {
+        log('[Extract] Job data logged successfully');
         showStatus(statusDiv, 'success', '✓ Job data logged successfully!');
       } else {
         const errorMsg = logResponse?.error || 'Unknown error occurred';
+        logError(`[Extract] Failed to log: ${errorMsg}`);
         showStatus(statusDiv, 'error', `✗ Failed to log data: ${errorMsg}`);
       }
       resetExtractButton(button);
@@ -1072,40 +1257,38 @@ function initializeAutofill() {
  * @param {HTMLButtonElement} button - Autofill button element
  * @param {HTMLElement} statusDiv - Status message display element
  */
-function handleAutofillClick(button, statusDiv) {
+async function handleAutofillClick(button, statusDiv) {
   // Set button to loading state
   setButtonLoading(button, 'Starting...');
   showStatus(statusDiv, 'info', 'ℹ Autofill process started. Check the page for prompts.');
 
-  // Query active tab and send autofill command
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const activeTab = tabs[0];
-    if (!activeTab) {
-      handleAutofillError(button, statusDiv, 'No active tab found');
-      return;
-    }
+  // Get the source tab (the tab that was active when popup was opened)
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    handleAutofillError(button, statusDiv, 'No active tab found. Please reopen the popup from the job page.');
+    return;
+  }
 
-    // Send autofill command to content script
-    chrome.tabs.sendMessage(
-      activeTab.id,
-      { action: 'startAutofill' },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          handleAutofillError(button, statusDiv, `Could not access page: ${chrome.runtime.lastError.message}`);
-          return;
-        }
-
-        if (response?.success) {
-          showStatus(statusDiv, 'success', '✓ Autofill started! Answer prompts on the page.');
-        } else {
-          handleAutofillError(button, statusDiv, 'Failed to start autofill process');
-        }
-
-        // Reset button after short delay
-        setTimeout(() => resetAutofillButton(button), 2000);
+  // Send autofill command to content script
+  chrome.tabs.sendMessage(
+    activeTab.id,
+    { action: 'startAutofill' },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        handleAutofillError(button, statusDiv, `Could not access page: ${chrome.runtime.lastError.message}`);
+        return;
       }
-    );
-  });
+
+      if (response?.success) {
+        showStatus(statusDiv, 'success', '✓ Autofill started! Answer prompts on the page.');
+      } else {
+        handleAutofillError(button, statusDiv, 'Failed to start autofill process');
+      }
+
+      // Reset button after short delay
+      setTimeout(() => resetAutofillButton(button), 2000);
+    }
+  );
 }
 
 /**
@@ -1138,10 +1321,21 @@ function initializeSettings() {
   const settingsLink = document.getElementById('settingsLink');
   if (!settingsLink) return;
 
-  settingsLink.addEventListener('click', (e) => {
+  settingsLink.addEventListener('click', async (e) => {
     e.preventDefault();
-    // Open settings page in a new tab
-    chrome.tabs.create({ url: 'settings.html' });
+    // Open settings page in a new tab next to the source tab
+    const sourceTab = await getSourceTab();
+    if (sourceTab) {
+      // Store the original tab ID so settings can return to it
+      chrome.storage.local.set({ settingsOriginTabId: sourceTab.id }, () => {
+        chrome.tabs.create({
+          url: 'settings.html',
+          index: sourceTab.index + 1  // Open right next to source tab
+        });
+      });
+    } else {
+      chrome.tabs.create({ url: 'settings.html' });
+    }
   });
 }
 
@@ -1201,6 +1395,12 @@ function showManualEntryModal(button, statusDiv, jobData) {
   document.getElementById('manualCompany').value = jobData.company || '';
   document.getElementById('manualLocation').value = jobData.location || '';
   document.getElementById('manualUrl').value = jobData.url || '';
+  document.getElementById('manualRole').value = jobData.role || '';
+  document.getElementById('manualTailor').value = jobData.tailor || '';
+  document.getElementById('manualNotes').value = jobData.description || '';
+  document.getElementById('manualCompensation').value = jobData.compensation || '';
+  document.getElementById('manualPay').value = jobData.pay || '';
+  document.getElementById('manualBoard').value = jobData.source || '';
 
   // Store the full job data for later
   modal.dataset.jobData = JSON.stringify(jobData);
@@ -1238,13 +1438,19 @@ function handleManualEntrySubmit() {
     title: document.getElementById('manualJobTitle').value.trim(),
     company: document.getElementById('manualCompany').value.trim(),
     location: document.getElementById('manualLocation').value.trim(),
-    url: document.getElementById('manualUrl').value.trim()
+    url: document.getElementById('manualUrl').value.trim(),
+    role: document.getElementById('manualRole').value.trim(),
+    tailor: document.getElementById('manualTailor').value.trim(),
+    description: document.getElementById('manualNotes').value.trim(),
+    compensation: document.getElementById('manualCompensation').value.trim(),
+    pay: document.getElementById('manualPay').value.trim(),
+    source: document.getElementById('manualBoard').value.trim()
   };
 
   // Get original job data to preserve other fields
   const originalData = JSON.parse(modal.dataset.jobData || '{}');
 
-  // Merge manual data with original data
+  // Merge manual data with original data (manual data overrides original)
   const finalData = {
     ...originalData,
     ...manualData
