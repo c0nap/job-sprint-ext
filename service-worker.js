@@ -26,6 +26,48 @@ chrome.runtime.onStartup.addListener(() => {
   loadConfiguration();
 });
 
+// Track the popup window ID to avoid creating multiple windows
+let popupWindowId = null;
+
+// Handle extension icon click - open detached popup window
+chrome.action.onClicked.addListener(async () => {
+  console.log('Extension icon clicked');
+
+  // Check if popup window is already open
+  if (popupWindowId !== null) {
+    try {
+      // Try to focus the existing window
+      await chrome.windows.update(popupWindowId, { focused: true });
+      console.log('Focused existing popup window');
+      return;
+    } catch (error) {
+      // Window was closed, reset the ID
+      console.log('Previous popup window was closed');
+      popupWindowId = null;
+    }
+  }
+
+  // Create a new detached popup window
+  const window = await chrome.windows.create({
+    url: 'popup.html',
+    type: 'popup',
+    width: 420,
+    height: 600,
+    focused: true
+  });
+
+  popupWindowId = window.id;
+  console.log('Created new popup window:', popupWindowId);
+});
+
+// Listen for window close events to reset the window ID
+chrome.windows.onRemoved.addListener((windowId) => {
+  if (windowId === popupWindowId) {
+    console.log('Popup window closed');
+    popupWindowId = null;
+  }
+});
+
 /**
  * Load configuration from chrome.storage (priority) or config.local.js (fallback)
  * Caches the configuration for quick access
