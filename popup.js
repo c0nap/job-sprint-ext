@@ -331,6 +331,9 @@ function openNestedFolder(key, value) {
   navigationPath.push(key);
   currentData = value;
 
+  // Save UI state to persist navigation
+  saveUIState();
+
   // Update title and render new level
   updateSubMenuTitle();
   renderSubMenuItems(currentData);
@@ -361,6 +364,9 @@ function closeFolder() {
   if (navigationPath.length > 1) {
     log(`[Clipboard] Going back one level`);
     navigationPath.pop();
+
+    // Save UI state after going back
+    saveUIState();
 
     // Navigate back to parent
     // We need to traverse from root to get the parent data
@@ -443,10 +449,55 @@ function restoreUIState() {
 
     // Restore folder view if user was in a folder
     if (state.currentFolder) {
-      log(`[UI] Restoring state: ${state.currentFolder}`);
+      log(`[UI] Restoring state: ${state.currentFolder}, path: ${JSON.stringify(state.navigationPath)}`);
+
       // Delay to ensure DOM is ready
       setTimeout(() => {
-        openFolder(state.currentFolder);
+        // Get folder data and restore full navigation path
+        chrome.runtime.sendMessage(
+          { action: 'getClipboardFolder', folder: state.currentFolder },
+          (response) => {
+            if (!response || !response.success) {
+              log('[UI] Failed to restore folder data');
+              return;
+            }
+
+            // Set the current folder and navigation state
+            currentFolder = state.currentFolder;
+            navigationPath = state.navigationPath || [state.currentFolder];
+
+            // Traverse to the saved nested location
+            let data = response.items || {};
+            for (let i = 1; i < navigationPath.length; i++) {
+              if (data[navigationPath[i]] && typeof data[navigationPath[i]] === 'object') {
+                data = data[navigationPath[i]];
+              } else {
+                // Path no longer valid, reset to top level
+                navigationPath = [state.currentFolder];
+                data = response.items || {};
+                break;
+              }
+            }
+
+            currentData = data;
+
+            // Update the UI
+            const folderView = document.getElementById('folderView');
+            const subMenuView = document.getElementById('subMenuView');
+
+            if (folderView) folderView.style.display = 'none';
+            if (subMenuView) subMenuView.style.display = 'block';
+
+            // Hide other feature sections
+            hideOtherSections();
+
+            // Update title and render items
+            updateSubMenuTitle();
+            renderSubMenuItems(currentData);
+
+            log(`[UI] State restored successfully to: ${navigationPath.join(' → ')}`);
+          }
+        );
       }, 100);
     }
   });
