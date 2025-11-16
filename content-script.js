@@ -559,6 +559,7 @@ let mouseTrackingActive = false;
 let currentTrackedFieldId = null;
 let lastHighlightedElement = null;
 let mouseTrackingOverlay = null;
+let currentModifierMode = 'full'; // 'full', 'sentence', 'words'
 
 /**
  * Start interactive mouse tracking for field auto-fill
@@ -617,13 +618,20 @@ function stopMouseTracking() {
 function handleMouseMove(event) {
   if (!mouseTrackingActive) return;
 
+  // Detect modifier keys to control extraction scope
+  const mode = getExtractionMode(event);
+  if (mode !== currentModifierMode) {
+    currentModifierMode = mode;
+    updateOverlayMode(mode);
+  }
+
   // Get element under cursor
   const element = document.elementFromPoint(event.clientX, event.clientY);
 
   if (!element || element === mouseTrackingOverlay) return;
 
-  // Extract text from element
-  const text = extractTextFromElement(element);
+  // Extract text from element with appropriate scope
+  const text = extractTextFromElement(element, event, mode);
 
   if (text && text.trim()) {
     // Highlight the element
@@ -646,11 +654,14 @@ function handleMouseClick(event) {
   event.preventDefault();
   event.stopPropagation();
 
+  // Get current extraction mode
+  const mode = getExtractionMode(event);
+
   // Get element under cursor
   const element = document.elementFromPoint(event.clientX, event.clientY);
 
   if (element && element !== mouseTrackingOverlay) {
-    const text = extractTextFromElement(element);
+    const text = extractTextFromElement(element, event, mode);
 
     if (text && text.trim()) {
       // Send final text to popup and stop tracking
@@ -673,12 +684,28 @@ function handleEscapeKey(event) {
 }
 
 /**
- * Extract text content from an element
+ * Get extraction mode based on modifier keys
+ * @param {MouseEvent|KeyboardEvent} event - Event with modifier key info
+ * @returns {string} Extraction mode: 'full', 'sentence', or 'words'
+ */
+function getExtractionMode(event) {
+  if (event.ctrlKey || event.metaKey) {
+    return 'words'; // Ctrl/Cmd: extract just a few words
+  } else if (event.shiftKey) {
+    return 'sentence'; // Shift: extract current sentence
+  }
+  return 'full'; // No modifier: extract full element text
+}
+
+/**
+ * Extract text content from an element with scope control
  * Handles various element types and nested structures
  * @param {HTMLElement} element - Element to extract text from
+ * @param {MouseEvent} event - Mouse event for cursor position
+ * @param {string} mode - Extraction mode: 'full', 'sentence', or 'words'
  * @returns {string} Extracted text
  */
-function extractTextFromElement(element) {
+function extractTextFromElement(element, event, mode = 'full') {
   if (!element) return '';
 
   // For input elements, get the value
@@ -686,23 +713,154 @@ function extractTextFromElement(element) {
     return element.value;
   }
 
-  // For other elements, prefer direct text nodes over nested content
-  // This helps avoid getting too much text from container elements
-  let text = '';
+  // Get the full text content
+  let fullText = '';
 
   // Try to get text from the element itself (not children)
   for (const node of element.childNodes) {
     if (node.nodeType === Node.TEXT_NODE) {
-      text += node.textContent;
+      fullText += node.textContent;
     }
   }
 
   // If no direct text, get all text content
-  if (!text.trim() && element.textContent) {
-    text = element.textContent;
+  if (!fullText.trim() && element.textContent) {
+    fullText = element.textContent;
   }
 
-  return cleanText(text);
+  fullText = cleanText(fullText);
+
+  // Apply scope based on mode
+  if (mode === 'sentence') {
+    return extractNearestSentence(fullText, event, element);
+  } else if (mode === 'words') {
+    return extractNearestWords(fullText, event, element);
+  }
+
+  return fullText;
+}
+
+/**
+ * Extract the sentence nearest to the cursor position
+ * @param {string} text - Full text content
+ * @param {MouseEvent} event - Mouse event for cursor position
+ * @param {HTMLElement} element - Element containing the text
+ * @returns {string} Nearest sentence
+ */
+function extractNearestSentence(text, event, element) {
+  if (!text) return '';
+
+  // Try to find the word under cursor using Range API
+  const range = document.caretRangeFromPoint(event.clientX, event.clientY);
+  if (!range) {
+    // Fallback: return first sentence
+    return getFirstSentence(text);
+  }
+
+  // Get approximate position in text
+  const textNode = range.startContainer;
+  if (textNode.nodeType !== Node.TEXT_NODE) {
+    return getFirstSentence(text);
+  }
+
+  const offset = range.startOffset;
+  const nodeText = textNode.textContent || '';
+
+  // Find which sentence contains this offset
+  // Split by sentence endings (.!?) followed by space or end
+  const sentences = text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [text];
+
+  // Find cumulative position in the full text
+  let cumulativeLength = 0;
+  const fullTextContent = element.textContent || '';
+  const targetPosition = fullTextContent.indexOf(nodeText) + offset;
+
+  // Find which sentence contains the target position
+  for (const sentence of sentences) {
+    cumulativeLength += sentence.length;
+    if (cumulativeLength >= targetPosition) {
+      return sentence.trim();
+    }
+  }
+
+  // Fallback: return first sentence
+  return sentences[0]?.trim() || text;
+}
+
+/**
+ * Extract a few words nearest to the cursor position
+ * @param {string} text - Full text content
+ * @param {MouseEvent} event - Mouse event for cursor position
+ * @param {HTMLElement} element - Element containing the text
+ * @returns {string} Nearest words (3-5 words)
+ */
+function extractNearestWords(text, event, element) {
+  if (!text) return '';
+
+  const WORD_COUNT = 5; // Extract 5 words around cursor
+
+  // Try to find the word under cursor using Range API
+  const range = document.caretRangeFromPoint(event.clientX, event.clientY);
+  if (!range) {
+    // Fallback: return first few words
+    return getFirstWords(text, WORD_COUNT);
+  }
+
+  // Get approximate position in text
+  const textNode = range.startContainer;
+  if (textNode.nodeType !== Node.TEXT_NODE) {
+    return getFirstWords(text, WORD_COUNT);
+  }
+
+  const offset = range.startOffset;
+  const nodeText = textNode.textContent || '';
+
+  // Split text into words
+  const words = text.split(/\s+/);
+
+  // Find cumulative position in the full text
+  const fullTextContent = element.textContent || '';
+  const targetPosition = fullTextContent.indexOf(nodeText) + offset;
+
+  // Find which word the cursor is near
+  let cumulativeLength = 0;
+  let targetWordIndex = 0;
+
+  for (let i = 0; i < words.length; i++) {
+    cumulativeLength += words[i].length + 1; // +1 for space
+    if (cumulativeLength >= targetPosition) {
+      targetWordIndex = i;
+      break;
+    }
+  }
+
+  // Extract words around the target (2 before, target, 2 after)
+  const startIndex = Math.max(0, targetWordIndex - 2);
+  const endIndex = Math.min(words.length, targetWordIndex + 3);
+  const selectedWords = words.slice(startIndex, endIndex);
+
+  return selectedWords.join(' ');
+}
+
+/**
+ * Get first sentence from text
+ * @param {string} text - Text to extract from
+ * @returns {string} First sentence
+ */
+function getFirstSentence(text) {
+  const match = text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+/);
+  return match ? match[0].trim() : text.trim();
+}
+
+/**
+ * Get first N words from text
+ * @param {string} text - Text to extract from
+ * @param {number} count - Number of words
+ * @returns {string} First N words
+ */
+function getFirstWords(text, count) {
+  const words = text.split(/\s+/);
+  return words.slice(0, count).join(' ');
 }
 
 /**
@@ -763,7 +921,10 @@ function createTrackingOverlay() {
   overlay.innerHTML = `
     <div style="display: flex; align-items: center; gap: 8px;">
       <span style="font-size: 18px;">🎯</span>
-      <span>Hover over text to auto-fill</span>
+      <span id="jobsprint-tracking-title">Hover over text to auto-fill</span>
+    </div>
+    <div id="jobsprint-tracking-mode" style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
+      Full text • Hold Shift for sentence • Ctrl for words
     </div>
     <div style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
       Click to select • Press ESC to cancel
@@ -785,12 +946,58 @@ function createTrackingOverlay() {
           opacity: 1;
         }
       }
+      @keyframes pulseGlow {
+        0%, 100% {
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        50% {
+          box-shadow: 0 4px 20px rgba(255, 107, 107, 0.6);
+        }
+      }
     `;
     document.head.appendChild(style);
   }
 
   document.body.appendChild(overlay);
   mouseTrackingOverlay = overlay;
+}
+
+/**
+ * Update overlay to show current extraction mode
+ * @param {string} mode - Current mode: 'full', 'sentence', or 'words'
+ */
+function updateOverlayMode(mode) {
+  if (!mouseTrackingOverlay) return;
+
+  const modeElement = mouseTrackingOverlay.querySelector('#jobsprint-tracking-mode');
+  if (!modeElement) return;
+
+  let modeText = '';
+  let bgColor = 'rgba(255, 107, 107, 0.95)';
+
+  switch (mode) {
+    case 'sentence':
+      modeText = '📝 Sentence mode (Shift) • Release to extract full text';
+      bgColor = 'rgba(52, 152, 219, 0.95)'; // Blue for sentence
+      break;
+    case 'words':
+      modeText = '✂️ Word mode (Ctrl) • Release to extract full text';
+      bgColor = 'rgba(46, 204, 113, 0.95)'; // Green for words
+      break;
+    default:
+      modeText = 'Full text • Hold Shift for sentence • Ctrl for words';
+      bgColor = 'rgba(255, 107, 107, 0.95)'; // Red for full
+  }
+
+  modeElement.textContent = modeText;
+  mouseTrackingOverlay.style.background = bgColor;
+
+  // Add pulse animation when mode changes
+  if (mode !== 'full') {
+    mouseTrackingOverlay.style.animation = 'slideInFromRight 0.3s ease-out, pulseGlow 1s ease-in-out';
+  } else {
+    mouseTrackingOverlay.style.animation = 'slideInFromRight 0.3s ease-out';
+  }
 }
 
 /**
