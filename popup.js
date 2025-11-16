@@ -1046,6 +1046,7 @@ const EXTRACT_COOLDOWN_MS = 2000; // 2 seconds
  */
 function initializeExtraction() {
   const extractBtn = document.getElementById('extractBtn');
+  const manualEntryBtn = document.getElementById('manualEntryBtn');
   const statusDiv = document.getElementById('extractionStatus');
 
   if (!extractBtn || !statusDiv) return;
@@ -1053,6 +1054,12 @@ function initializeExtraction() {
   extractBtn.addEventListener('click', () => {
     handleExtractClick(extractBtn, statusDiv);
   });
+
+  if (manualEntryBtn) {
+    manualEntryBtn.addEventListener('click', () => {
+      handleManualEntryClick(manualEntryBtn, statusDiv);
+    });
+  }
 }
 
 /**
@@ -1141,6 +1148,51 @@ async function handleExtractClick(button, statusDiv) {
       logJobData(button, statusDiv, response.data);
     }
   );
+}
+
+/**
+ * Handle manual entry button click
+ * Opens the manual entry modal directly without automatic extraction
+ * @param {HTMLButtonElement} button - Manual entry button element
+ * @param {HTMLElement} statusDiv - Status message display element
+ */
+async function handleManualEntryClick(button, statusDiv) {
+  log('[ManualEntry] Manual entry button clicked');
+
+  // Get the source tab
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    logError('[ManualEntry] No source tab found');
+    showStatus(statusDiv, 'error', '✗ No active tab found. Please reopen the popup from the job page.');
+    return;
+  }
+
+  log(`[ManualEntry] Source tab found: ${activeTab.url}`);
+
+  // Check if tab URL is accessible
+  if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+    logError(`[ManualEntry] Invalid tab URL: ${activeTab.url}`);
+    showStatus(statusDiv, 'error', '✗ Cannot use this page. Chrome extension pages and settings are not supported.');
+    return;
+  }
+
+  // Create minimal job data with just the URL
+  const jobData = {
+    url: activeTab.url,
+    title: '',
+    company: '',
+    location: '',
+    role: '',
+    tailor: '',
+    description: '',
+    compensation: '',
+    pay: '',
+    source: ''
+  };
+
+  // Show manual entry modal
+  showManualEntryModal(button, statusDiv, jobData);
+  clearStatus(statusDiv);
 }
 
 /**
@@ -1378,7 +1430,7 @@ function initializeManualEntryModal() {
 
 /**
  * Show manual entry modal with pre-filled data
- * @param {HTMLButtonElement} button - Extract button element
+ * @param {HTMLButtonElement} button - Extract or manual entry button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Extracted job data to pre-fill
  */
@@ -1387,8 +1439,8 @@ function showManualEntryModal(button, statusDiv, jobData) {
   if (!modal) return;
 
   // Store references for later use
-  modal.dataset.button = 'extractBtn';
-  modal.dataset.status = 'extractionStatus';
+  modal.dataset.button = button.id;
+  modal.dataset.status = statusDiv.id;
 
   // Pre-fill form fields with extracted data
   document.getElementById('manualJobTitle').value = jobData.title || '';

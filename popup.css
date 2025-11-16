@@ -572,7 +572,9 @@ footer a:hover {
   font-size: 14px;
 }
 
-.form-field input {
+.form-field input,
+.form-field textarea,
+.form-field select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid #cbd5e0;
@@ -581,7 +583,9 @@ footer a:hover {
   font-family: inherit;
 }
 
-.form-field input:focus {
+.form-field input:focus,
+.form-field textarea:focus,
+.form-field select:focus {
   outline: none;
   border-color: #007bff;
   box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
@@ -590,6 +594,11 @@ footer a:hover {
 .form-field input[readonly] {
   background-color: #f5f5f5;
   cursor: not-allowed;
+}
+
+.form-field textarea {
+  resize: vertical;
+  min-height: 80px;
 }
 
 .modal-actions {
