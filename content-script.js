@@ -784,6 +784,12 @@ let currentGranularity = {
   chars: 1       // Number of characters on each side (default: 1 char)
 };
 let lastMouseEvent = null; // Store last mouse event for re-extraction
+let overlayPosition = {
+  top: 10,    // pixels from top
+  right: 10,  // pixels from right
+  bottom: null,  // pixels from bottom (alternative to top)
+  left: null     // pixels from left (alternative to right)
+};
 
 /**
  * Start interactive mouse tracking for field auto-fill
@@ -900,7 +906,7 @@ function handleMouseClick(event) {
 }
 
 /**
- * Handle escape key to cancel tracking and arrow keys for granularity
+ * Handle escape key to cancel tracking, arrow keys for granularity, and Alt+Arrow to move overlay
  * @param {KeyboardEvent} event - Keyboard event
  */
 function handleEscapeKey(event) {
@@ -912,8 +918,15 @@ function handleEscapeKey(event) {
     return;
   }
 
-  // Handle arrow keys for granularity control
-  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+  // Handle Alt+Arrow keys for overlay repositioning
+  if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    event.preventDefault();
+    handleOverlayReposition(event);
+    return;
+  }
+
+  // Handle arrow keys for granularity control (without Alt)
+  if (!event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
     event.preventDefault();
     handleGranularityChange(event);
   }
@@ -949,6 +962,69 @@ function handleGranularityChange(event) {
       sendTextToPopup(text.trim());
     }
   }
+}
+
+/**
+ * Handle Alt+Arrow key presses to reposition the tracking overlay
+ * @param {KeyboardEvent} event - Keyboard event
+ */
+function handleOverlayReposition(event) {
+  const MOVE_STEP = 20; // pixels to move per keypress
+
+  // Get current viewport dimensions
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  // Calculate overlay dimensions (approximate)
+  const overlayWidth = 300; // approximate width
+  const overlayHeight = 100; // approximate height
+
+  switch (event.key) {
+    case 'ArrowUp':
+      // Move up (decrease top if using top, increase bottom if using bottom)
+      if (overlayPosition.top !== null) {
+        overlayPosition.top = Math.max(0, overlayPosition.top - MOVE_STEP);
+      } else if (overlayPosition.bottom !== null) {
+        overlayPosition.bottom = Math.min(viewportHeight - overlayHeight, overlayPosition.bottom + MOVE_STEP);
+      }
+      break;
+
+    case 'ArrowDown':
+      // Move down (increase top if using top, decrease bottom if using bottom)
+      if (overlayPosition.top !== null) {
+        overlayPosition.top = Math.min(viewportHeight - overlayHeight, overlayPosition.top + MOVE_STEP);
+      } else if (overlayPosition.bottom !== null) {
+        overlayPosition.bottom = Math.max(0, overlayPosition.bottom - MOVE_STEP);
+      }
+      break;
+
+    case 'ArrowLeft':
+      // Move left (switch to left positioning, or decrease left value)
+      if (overlayPosition.right !== null) {
+        // Convert from right to left positioning
+        overlayPosition.left = viewportWidth - overlayPosition.right - overlayWidth;
+        overlayPosition.right = null;
+      }
+      if (overlayPosition.left !== null) {
+        overlayPosition.left = Math.max(0, overlayPosition.left - MOVE_STEP);
+      }
+      break;
+
+    case 'ArrowRight':
+      // Move right (switch to right positioning, or decrease right value)
+      if (overlayPosition.left !== null) {
+        // Convert from left to right positioning
+        overlayPosition.right = viewportWidth - overlayPosition.left - overlayWidth;
+        overlayPosition.left = null;
+      }
+      if (overlayPosition.right !== null) {
+        overlayPosition.right = Math.max(0, overlayPosition.right - MOVE_STEP);
+      }
+      break;
+  }
+
+  // Update overlay position
+  updateOverlayPosition();
 }
 
 /**
@@ -1611,10 +1687,25 @@ function createTrackingOverlay() {
 
   const overlay = document.createElement('div');
   overlay.id = 'jobsprint-tracking-overlay';
+
+  // Build position CSS based on stored position
+  let positionCSS = '';
+  if (overlayPosition.top !== null) {
+    positionCSS += `top: ${overlayPosition.top}px;`;
+  }
+  if (overlayPosition.bottom !== null) {
+    positionCSS += `bottom: ${overlayPosition.bottom}px;`;
+  }
+  if (overlayPosition.right !== null) {
+    positionCSS += `right: ${overlayPosition.right}px;`;
+  }
+  if (overlayPosition.left !== null) {
+    positionCSS += `left: ${overlayPosition.left}px;`;
+  }
+
   overlay.style.cssText = `
     position: fixed;
-    top: 10px;
-    right: 10px;
+    ${positionCSS}
     background: rgba(255, 107, 107, 0.95);
     color: white;
     padding: 12px 20px;
@@ -1637,7 +1728,7 @@ function createTrackingOverlay() {
       ✂️ Word mode (3 words) • ↑↓ to adjust
     </div>
     <div style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
-      Shift=Sentences • Ctrl=Chars • Click=Select • ESC=Cancel
+      Shift=Sentences • Ctrl=Chars • Alt+Arrows=Move • ESC=Cancel
     </div>
   `;
 
@@ -1670,6 +1761,33 @@ function createTrackingOverlay() {
 
   document.body.appendChild(overlay);
   mouseTrackingOverlay = overlay;
+}
+
+/**
+ * Update overlay position based on stored position state
+ */
+function updateOverlayPosition() {
+  if (!mouseTrackingOverlay) return;
+
+  // Clear all position properties first
+  mouseTrackingOverlay.style.top = '';
+  mouseTrackingOverlay.style.bottom = '';
+  mouseTrackingOverlay.style.left = '';
+  mouseTrackingOverlay.style.right = '';
+
+  // Apply stored position
+  if (overlayPosition.top !== null) {
+    mouseTrackingOverlay.style.top = `${overlayPosition.top}px`;
+  }
+  if (overlayPosition.bottom !== null) {
+    mouseTrackingOverlay.style.bottom = `${overlayPosition.bottom}px`;
+  }
+  if (overlayPosition.left !== null) {
+    mouseTrackingOverlay.style.left = `${overlayPosition.left}px`;
+  }
+  if (overlayPosition.right !== null) {
+    mouseTrackingOverlay.style.right = `${overlayPosition.right}px`;
+  }
 }
 
 /**
