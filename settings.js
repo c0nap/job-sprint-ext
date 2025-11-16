@@ -5,7 +5,8 @@ const DEFAULT_CONFIG = {
   APPS_SCRIPT_ENDPOINT: '',
   SPREADSHEET_ID: '',
   PROJECT_ID: '',
-  ENABLE_MANUAL_ENTRY: true
+  ENABLE_MANUAL_ENTRY: true,
+  TARGET_SHEET_NAME: 'Job Applications'
 };
 
 // Default clipboard macros (nested structure)
@@ -31,12 +32,56 @@ let currentEditingIndex = -1; // -1 means adding new, >= 0 means editing existin
 
 // Load settings when page loads
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadSettings();
-  await loadQADatabase();
+  try {
+    await loadSettings();
+  } catch (error) {
+    console.error('Error during loadSettings:', error);
+  }
+  // Always set up event listeners, even if loading settings failed
   setupEventListeners();
   setupFolderHandlers();
-  setupQAEventListeners();
+  setupCloseLink();
 });
+
+// Setup close settings link
+function setupCloseLink() {
+  const closeLink = document.getElementById('closeSettingsLink');
+  if (closeLink) {
+    closeLink.addEventListener('click', (e) => {
+      e.preventDefault();
+
+      // Get the original tab that opened settings
+      chrome.storage.local.get(['settingsOriginTabId'], (result) => {
+        const originTabId = result.settingsOriginTabId;
+
+        chrome.tabs.getCurrent((currentTab) => {
+          if (!currentTab) return;
+
+          // If we have an origin tab, switch to it first
+          if (originTabId) {
+            // Check if the origin tab still exists
+            chrome.tabs.get(originTabId, (originTab) => {
+              if (chrome.runtime.lastError) {
+                // Origin tab no longer exists, just close settings
+                chrome.tabs.remove(currentTab.id);
+                chrome.storage.local.remove('settingsOriginTabId');
+              } else {
+                // Switch to origin tab, then close settings
+                chrome.tabs.update(originTabId, { active: true }, () => {
+                  chrome.tabs.remove(currentTab.id);
+                  chrome.storage.local.remove('settingsOriginTabId');
+                });
+              }
+            });
+          } else {
+            // No origin tab stored, just close settings
+            chrome.tabs.remove(currentTab.id);
+          }
+        });
+      });
+    });
+  }
+}
 
 // Load settings from Chrome storage
 async function loadSettings() {
@@ -46,6 +91,7 @@ async function loadSettings() {
       'SPREADSHEET_ID',
       'PROJECT_ID',
       'ENABLE_MANUAL_ENTRY',
+      'TARGET_SHEET_NAME',
       'clipboardMacros',
       'maxSearchResults',
       'debugConsoleEnabled'
@@ -55,6 +101,7 @@ async function loadSettings() {
     document.getElementById('appsScriptEndpoint').value = result.APPS_SCRIPT_ENDPOINT || '';
     document.getElementById('spreadsheetId').value = result.SPREADSHEET_ID || '';
     document.getElementById('projectId').value = result.PROJECT_ID || '';
+    document.getElementById('targetSheetName').value = result.TARGET_SHEET_NAME || 'Job Applications';
     document.getElementById('enableManualEntry').checked =
       result.ENABLE_MANUAL_ENTRY !== undefined ? result.ENABLE_MANUAL_ENTRY : true;
 
@@ -87,209 +134,56 @@ async function loadSettings() {
 // Setup event listeners
 function setupEventListeners() {
   // Save all settings button
-  document.getElementById('saveSettings').addEventListener('click', saveSettings);
+  const saveSettingsBtn = document.getElementById('saveSettings');
+  if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', saveSettings);
 
   // Save clipboard macros button (specific to clipboard section)
-  document.getElementById('saveClipboardMacros').addEventListener('click', saveClipboardMacros);
+  const saveClipboardBtn = document.getElementById('saveClipboardMacros');
+  if (saveClipboardBtn) saveClipboardBtn.addEventListener('click', saveClipboardMacros);
 
   // Reset button
-  document.getElementById('resetSettings').addEventListener('click', resetSettings);
+  const resetBtn = document.getElementById('resetSettings');
+  if (resetBtn) resetBtn.addEventListener('click', resetSettings);
 
   // Upload config button
-  document.getElementById('uploadConfig').addEventListener('click', uploadConfig);
+  const uploadBtn = document.getElementById('uploadConfig');
+  if (uploadBtn) uploadBtn.addEventListener('click', uploadConfig);
 
   // File input change handler
-  document.getElementById('configFileInput').addEventListener('change', handleConfigFileUpload);
+  const configFileInput = document.getElementById('configFileInput');
+  if (configFileInput) configFileInput.addEventListener('change', handleConfigFileUpload);
 
   // Download config button
-  document.getElementById('downloadConfig').addEventListener('click', downloadConfig);
+  const downloadBtn = document.getElementById('downloadConfig');
+  if (downloadBtn) downloadBtn.addEventListener('click', downloadConfig);
 
   // Clear all data button
-  document.getElementById('clearAllData').addEventListener('click', clearAllData);
+  const clearBtn = document.getElementById('clearAllData');
+  if (clearBtn) clearBtn.addEventListener('click', clearAllData);
 
   // Test connection button
-  document.getElementById('testConnection').addEventListener('click', testConnection);
+  const testBtn = document.getElementById('testConnection');
+  if (testBtn) testBtn.addEventListener('click', testConnection);
 
   // Real-time connection status updates
-  document.getElementById('spreadsheetId').addEventListener('input', updateConnectionStatusFromInputs);
-  document.getElementById('appsScriptEndpoint').addEventListener('input', updateConnectionStatusFromInputs);
-  document.getElementById('projectId').addEventListener('input', updateConnectionStatusFromInputs);
+  const spreadsheetInput = document.getElementById('spreadsheetId');
+  if (spreadsheetInput) spreadsheetInput.addEventListener('input', updateConnectionStatusFromInputs);
+
+  const endpointInput = document.getElementById('appsScriptEndpoint');
+  if (endpointInput) endpointInput.addEventListener('input', updateConnectionStatusFromInputs);
+
+  const projectInput = document.getElementById('projectId');
+  if (projectInput) projectInput.addEventListener('input', updateConnectionStatusFromInputs);
 
   // Export/Import all settings buttons
-  document.getElementById('exportAllSettings').addEventListener('click', exportAllSettings);
-  document.getElementById('importAllSettings').addEventListener('click', importAllSettings);
-  document.getElementById('importFileInput').addEventListener('change', handleImportFile);
-}
+  const exportBtn = document.getElementById('exportAllSettings');
+  if (exportBtn) exportBtn.addEventListener('click', exportAllSettings);
 
-// Setup folder expand/collapse and JSON validation
-function setupFolderHandlers() {
-  // Folder header click handlers
-  const folderHeaders = document.querySelectorAll('.folder-header');
-  folderHeaders.forEach(header => {
-    header.addEventListener('click', () => {
-      const folder = header.getAttribute('data-folder');
-      toggleFolder(header, folder);
-    });
-  });
+  const importBtn = document.getElementById('importAllSettings');
+  if (importBtn) importBtn.addEventListener('click', importAllSettings);
 
-  // JSON editor validation on input
-  const editors = document.querySelectorAll('.folder-json-editor');
-  editors.forEach(editor => {
-    editor.addEventListener('input', () => {
-      const folder = editor.getAttribute('data-folder');
-      validateFolderJSON(folder);
-    });
-  });
-}
-
-// Toggle folder expand/collapse
-function toggleFolder(header, folder) {
-  const content = document.getElementById(`folder-${folder}`);
-  const isExpanded = header.classList.contains('expanded');
-
-  if (isExpanded) {
-    header.classList.remove('expanded');
-    content.style.display = 'none';
-  } else {
-    header.classList.add('expanded');
-    content.style.display = 'block';
-  }
-}
-
-// Recursively validate object values (must be strings or nested objects)
-function validateObjectValues(obj, path) {
-  for (const [key, val] of Object.entries(obj)) {
-    const currentPath = path ? `${path}.${key}` : key;
-
-    if (typeof val === 'string') {
-      // Strings are valid leaf values
-      continue;
-    } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
-      // Nested objects are valid - recurse
-      validateObjectValues(val, currentPath);
-    } else {
-      // Arrays, null, numbers, booleans, etc. are not allowed
-      const typeDesc = Array.isArray(val) ? 'array' : typeof val;
-      throw new Error(`Value at "${currentPath}" must be a string or object, not ${typeDesc}`);
-    }
-  }
-}
-
-// Validate JSON for a folder
-function validateFolderJSON(folder) {
-  const textarea = document.querySelector(`.folder-json-editor[data-folder="${folder}"]`);
-  const errorDiv = document.querySelector(`.folder-error[data-folder="${folder}"]`);
-
-  if (!textarea || !errorDiv) return;
-
-  try {
-    const value = textarea.value.trim();
-    if (value === '') {
-      // Empty is valid (will use {})
-      textarea.classList.remove('error');
-      errorDiv.classList.remove('visible');
-      errorDiv.textContent = '';
-      return true;
-    }
-
-    const parsed = JSON.parse(value);
-
-    // Must be an object, not an array
-    if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('Must be a JSON object, not an array');
-    }
-
-    // Validate values recursively (strings or nested objects)
-    validateObjectValues(parsed, '');
-
-    // Valid JSON
-    textarea.classList.remove('error');
-    errorDiv.classList.remove('visible');
-    errorDiv.textContent = '';
-    return true;
-  } catch (error) {
-    // Invalid JSON
-    textarea.classList.add('error');
-    errorDiv.classList.add('visible');
-    errorDiv.textContent = `Invalid JSON: ${error.message}`;
-    return false;
-  }
-}
-
-// Save only clipboard macros to Chrome storage
-async function saveClipboardMacros() {
-  const folders = ['demographics', 'references', 'education', 'skills', 'projects', 'employment'];
-  const clipboardMacros = {};
-  let hasErrors = false;
-
-  // Validate all folders
-  for (const folder of folders) {
-    if (!validateFolderJSON(folder)) {
-      hasErrors = true;
-      continue;
-    }
-
-    const textarea = document.querySelector(`.folder-json-editor[data-folder="${folder}"]`);
-    if (textarea) {
-      const value = textarea.value.trim();
-      if (value === '') {
-        clipboardMacros[folder] = {};
-      } else {
-        try {
-          clipboardMacros[folder] = JSON.parse(value);
-        } catch (error) {
-          hasErrors = true;
-          showClipboardStatus(`Invalid JSON in ${folder}: ${error.message}`, 'error');
-        }
-      }
-    }
-  }
-
-  if (hasErrors) {
-    showClipboardStatus('Please fix JSON errors before saving', 'error');
-    return;
-  }
-
-  // Get search settings
-  const maxSearchResults = parseInt(document.getElementById('maxSearchResults').value, 10);
-
-  // Get debug console setting
-  const debugConsoleEnabled = document.getElementById('debugConsoleEnabled').checked;
-
-  // Validate search results count
-  if (isNaN(maxSearchResults) || maxSearchResults < 5 || maxSearchResults > 50) {
-    showClipboardStatus('Maximum search results must be between 5 and 50', 'error');
-    return;
-  }
-
-  try {
-    // Save clipboard macros and settings to Chrome storage
-    await chrome.storage.sync.set({ clipboardMacros, maxSearchResults, debugConsoleEnabled });
-    showClipboardStatus('Settings saved successfully!', 'success');
-    console.log('Clipboard macros saved:', clipboardMacros);
-    console.log('Max search results:', maxSearchResults);
-    console.log('Debug console enabled:', debugConsoleEnabled);
-  } catch (error) {
-    showClipboardStatus('Error saving clipboard macros', 'error');
-    console.error('Error saving clipboard macros:', error);
-  }
-}
-
-// Helper to show status for clipboard macros save
-function showClipboardStatus(message, type) {
-  const statusDiv = document.getElementById('clipboardSaveStatus');
-  if (!statusDiv) return;
-
-  statusDiv.textContent = message;
-  statusDiv.className = `status-message ${type}`;
-  statusDiv.style.display = 'block';
-
-  // Auto-hide success messages after 3 seconds
-  if (type === 'success') {
-    setTimeout(() => {
-      statusDiv.style.display = 'none';
-    }, 3000);
-  }
+  const importFileInput = document.getElementById('importFileInput');
+  if (importFileInput) importFileInput.addEventListener('change', handleImportFile);
 }
 
 // Setup folder expand/collapse and JSON validation
@@ -469,7 +363,8 @@ async function saveSettings() {
     APPS_SCRIPT_ENDPOINT: document.getElementById('appsScriptEndpoint').value.trim(),
     SPREADSHEET_ID: document.getElementById('spreadsheetId').value.trim(),
     PROJECT_ID: document.getElementById('projectId').value.trim(),
-    ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked
+    ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked,
+    TARGET_SHEET_NAME: document.getElementById('targetSheetName').value.trim() || 'Job Applications'
   };
 
   // Get and validate clipboard macros
@@ -621,7 +516,8 @@ async function handleConfigFileUpload(event) {
       APPS_SCRIPT_ENDPOINT: config.APPS_SCRIPT_ENDPOINT || '',
       SPREADSHEET_ID: config.SPREADSHEET_ID || '',
       PROJECT_ID: config.PROJECT_ID || '',
-      ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked
+      ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked,
+      TARGET_SHEET_NAME: document.getElementById('targetSheetName').value.trim() || 'Job Applications'
     };
 
     await chrome.storage.sync.set(settings);
@@ -703,7 +599,8 @@ async function testConnection() {
       APPS_SCRIPT_ENDPOINT: document.getElementById('appsScriptEndpoint').value.trim(),
       SPREADSHEET_ID: document.getElementById('spreadsheetId').value.trim(),
       PROJECT_ID: document.getElementById('projectId').value.trim(),
-      ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked
+      ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked,
+      TARGET_SHEET_NAME: document.getElementById('targetSheetName').value.trim() || 'Job Applications'
     };
 
     await chrome.storage.sync.set(settings);
