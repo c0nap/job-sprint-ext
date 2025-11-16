@@ -1435,7 +1435,22 @@ function extractCompensationRange(element, text) {
  * @returns {string|null} Extracted location or null
  */
 function extractLocation(element, text) {
-  // Check for "Remote" first (very common and distinctive)
+  // Check for special location keywords first (hard-coded as valid locations)
+  // These take priority over other patterns to avoid misinterpretation
+  // Priority order matters: more specific patterns first
+
+  // Check for "Multiple Locations" and variations FIRST
+  // (before Remote, as "Multiple Locations (Remote available)" should return "Multiple Locations")
+  if (/\bmultiple\s+locations?\b/i.test(text)) {
+    return 'Multiple Locations';
+  }
+
+  // Check for "Various Locations"
+  if (/\bvarious\s+locations?\b/i.test(text)) {
+    return 'Multiple Locations';
+  }
+
+  // Check for "Remote" (very common and distinctive)
   if (/\bremote\b/i.test(text)) {
     return 'Remote';
   }
@@ -1443,6 +1458,16 @@ function extractLocation(element, text) {
   // Check for "Hybrid"
   if (/\bhybrid\b/i.test(text)) {
     return 'Hybrid';
+  }
+
+  // Check for "Nationwide"
+  if (/\bnationwide\b/i.test(text)) {
+    return 'Nationwide';
+  }
+
+  // Check for "On-site" or "Onsite"
+  if (/\bon-?site\b/i.test(text)) {
+    return 'On-site';
   }
 
   // Common state abbreviations (defensive - validates actual states)
@@ -1591,6 +1616,23 @@ function extractCompanyName(element) {
   // Return null if text is empty after cleaning
   if (!text) return null;
 
+  // Filter out department names to prevent misinterpretation
+  // Department names are not company names
+  // Be careful: "Department Store Inc" is a valid company, but "Department of Engineering" is not
+  const departmentPatterns = [
+    /^department\s+(of|for|:|at)\b/i,    // "Department of/for/:/at..." but NOT "Department Store"
+    /^(engineering|sales|marketing|hr|finance|it|operations|legal)\s+department/i,  // "Engineering Department"
+    /\bdepartment\s*:\s*(?!store)/i,     // "Department:" label (not "Department: Store")
+    /^dept\.?\s+(?!store)/i,             // "Dept." or "Dept" (not "Dept. Store")
+    /\b(team|division|group|unit)\s*:/i  // "Team:", "Division:", etc.
+  ];
+
+  for (const pattern of departmentPatterns) {
+    if (pattern.test(text)) {
+      return null; // This is a department, not a company
+    }
+  }
+
   // Check for corporate suffixes (strong indicator of company name)
   // Must be at the end of the text to avoid false positives
   // Also filter out generic words like "a Company" or "the Corporation"
@@ -1665,7 +1707,40 @@ function extractLargeTextBlock(element) {
   // Check if element is in a navigation, footer, or sidebar (skip these)
   const excludedTags = ['NAV', 'FOOTER', 'ASIDE', 'HEADER'];
   const excludedRoles = ['navigation', 'banner', 'contentinfo', 'complementary'];
-  const excludedClasses = ['nav', 'navigation', 'footer', 'sidebar', 'side-bar', 'menu', 'header-'];
+  const excludedClasses = [
+    'nav', 'navigation', 'footer', 'sidebar', 'side-bar', 'menu', 'header-',
+    'related-jobs', 'similar-jobs', 'job-list', 'job-card',
+    'company-info', 'company-about', 'about-company',
+    'apply-button', 'apply-now', 'application-form',
+    'breadcrumb', 'pagination',
+    'advertisement', 'ad-', 'promo'
+  ];
+
+  // Check for sidebar-specific content patterns in text
+  const text = cleanText(element.textContent || '');
+  const sidebarContentPatterns = [
+    /^about\s+(this\s+)?company/i,       // "About this company" / "About the company"
+    /^how\s+to\s+apply/i,                 // "How to apply"
+    /^apply\s+now/i,                      // "Apply now"
+    /^related\s+jobs?/i,                  // "Related jobs"
+    /^similar\s+(jobs?|positions?)/i,    // "Similar jobs" / "Similar positions"
+    /^recommended\s+jobs?/i,              // "Recommended jobs"
+    /^you\s+might\s+also\s+like/i,       // "You might also like"
+    /^other\s+jobs?\s+(at|from)/i,       // "Other jobs at..." / "Other jobs from..."
+    /^share\s+this\s+job/i,              // "Share this job"
+    /^save\s+this\s+job/i,               // "Save this job"
+    /^report\s+this\s+job/i,             // "Report this job"
+    /^company\s+overview/i,               // "Company overview"
+    /^company\s+culture/i,                // "Company culture"
+    /^company\s+benefits/i,               // "Company benefits"
+    /^why\s+work\s+(here|at)/i           // "Why work here" / "Why work at..."
+  ];
+
+  for (const pattern of sidebarContentPatterns) {
+    if (pattern.test(text)) {
+      return null; // This is sidebar content, not job description
+    }
+  }
 
   let current = element;
   while (current) {
@@ -1681,8 +1756,16 @@ function extractLargeTextBlock(element) {
     }
 
     // Check class names
-    const className = current.className.toLowerCase();
+    const className = (current.className || '').toLowerCase();
     if (excludedClasses.some(cls => className.includes(cls))) {
+      return null;
+    }
+
+    // Check for data attributes that indicate sidebar/auxiliary content
+    const dataType = current.getAttribute('data-type');
+    const dataSection = current.getAttribute('data-section');
+    if (dataType === 'sidebar' || dataType === 'related' ||
+        dataSection === 'sidebar' || dataSection === 'recommended') {
       return null;
     }
 

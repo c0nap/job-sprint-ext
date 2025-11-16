@@ -1417,3 +1417,568 @@ describe('Edge Cases - Robustness Tests', () => {
     });
   });
 });
+
+// ============ MISINTERPRETATION PREVENTION TESTS ============
+
+describe('Misinterpretation Prevention Tests', () => {
+  let mockElement;
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    mockElement = document.createElement('div');
+  });
+
+  describe('Location - Special Keywords Hard-coded', () => {
+    test('should extract "Remote" as valid location', () => {
+      const result = extractLocation(mockElement, 'Remote');
+      expect(result).toBe('Remote');
+    });
+
+    test('should extract "Hybrid" as valid location', () => {
+      const result = extractLocation(mockElement, 'Hybrid');
+      expect(result).toBe('Hybrid');
+    });
+
+    test('should extract "Multiple Locations" as valid location', () => {
+      const result = extractLocation(mockElement, 'Multiple Locations');
+      expect(result).toBe('Multiple Locations');
+    });
+
+    test('should extract "Various Locations" as Multiple Locations', () => {
+      const result = extractLocation(mockElement, 'Various Locations');
+      expect(result).toBe('Multiple Locations');
+    });
+
+    test('should extract "Nationwide" as valid location', () => {
+      const result = extractLocation(mockElement, 'Nationwide');
+      expect(result).toBe('Nationwide');
+    });
+
+    test('should extract "On-site" as valid location', () => {
+      const result = extractLocation(mockElement, 'On-site');
+      expect(result).toBe('On-site');
+    });
+
+    test('should extract "Onsite" (no hyphen) as valid location', () => {
+      const result = extractLocation(mockElement, 'Onsite');
+      expect(result).toBe('On-site');
+    });
+
+    test('should prioritize Remote over state names', () => {
+      const result = extractLocation(mockElement, 'Remote - CA');
+      expect(result).toBe('Remote');
+    });
+
+    test('should extract Hybrid from sentence', () => {
+      const result = extractLocation(mockElement, 'Hybrid work environment in Seattle');
+      expect(result).toBe('Hybrid');
+    });
+
+    test('should handle "Multiple Locations" with context', () => {
+      const result = extractLocation(mockElement, 'We have multiple locations across the US');
+      expect(result).toBe('Multiple Locations');
+    });
+  });
+
+  describe('Company Name - Department Filtering', () => {
+    test('should reject "Department" at start', () => {
+      document.body.innerHTML = '<div class="company">Department of Engineering</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Engineering Department"', () => {
+      document.body.innerHTML = '<div class="company">Engineering Department</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Sales Department"', () => {
+      document.body.innerHTML = '<div class="company">Sales Department</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Marketing Department"', () => {
+      document.body.innerHTML = '<div class="company">Marketing Department</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "HR Department"', () => {
+      document.body.innerHTML = '<div class="company">HR Department</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Finance Department"', () => {
+      document.body.innerHTML = '<div class="company">Finance Department</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "IT Department"', () => {
+      document.body.innerHTML = '<div class="company">IT Department</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Operations Department"', () => {
+      document.body.innerHTML = '<div class="company">Operations Department</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Legal Department"', () => {
+      document.body.innerHTML = '<div class="company">Legal Department</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Department:" label format', () => {
+      document.body.innerHTML = '<div class="company">Department: Engineering</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Dept." abbreviation', () => {
+      document.body.innerHTML = '<div class="company">Dept. of Technology</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Team:" label format', () => {
+      document.body.innerHTML = '<div class="company">Team: Product Development</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Division:" label format', () => {
+      document.body.innerHTML = '<div class="company">Division: Cloud Services</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBeNull();
+    });
+
+    test('should accept real company names with "Department" in name', () => {
+      document.body.innerHTML = '<div class="company">Department Store Inc</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      // Should extract because it has corporate suffix and "Department" is not at start
+      expect(result).toBe('Department Store Inc');
+    });
+
+    test('should accept company name and not confuse with department', () => {
+      document.body.innerHTML = '<div class="company">Tech Solutions LLC</div>';
+      const element = document.querySelector('div');
+
+      const result = extractCompanyName(element);
+      expect(result).toBe('Tech Solutions LLC');
+    });
+  });
+
+  describe('Notes/Description - Sidebar Content Filtering', () => {
+    test('should reject "About this company" sidebar', () => {
+      document.body.innerHTML = `
+        <main>
+          <div class="sidebar">
+            <p>About this company: We are a great place to work.</p>
+          </div>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "About the company" sidebar', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>About the company and our mission</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "How to apply" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>How to apply for this position: Click the apply button below.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Apply now" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <div>
+            <p>Apply now to join our team and start your career today!</p>
+          </div>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Related jobs" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <div class="related-jobs">
+            <p>Related jobs you might be interested in: Software Engineer, Data Scientist</p>
+          </div>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Similar jobs" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Similar jobs in your area that match your profile and experience.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Similar positions" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Similar positions at this company are available now.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Recommended jobs" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Recommended jobs based on your search history and preferences.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "You might also like" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>You might also like these other opportunities in the tech industry.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Other jobs at" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Other jobs at this company include Product Manager and Designer.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Share this job" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Share this job with your network on LinkedIn, Twitter, or Facebook.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Save this job" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Save this job to your favorites and apply later when ready.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Report this job" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Report this job if you believe it violates our terms of service.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Company overview" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Company overview: We are a leading tech company in the industry.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Company culture" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Company culture is important to us and we value diversity and inclusion.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Company benefits" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Company benefits include health insurance, 401k, and unlimited PTO.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject "Why work here" section', () => {
+      document.body.innerHTML = `
+        <main>
+          <p>Why work here? We offer competitive salaries and great benefits.</p>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject elements with class "related-jobs"', () => {
+      document.body.innerHTML = `
+        <div class="related-jobs">
+          <p>Check out these related job opportunities in your field of expertise and location.</p>
+        </div>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject elements with class "similar-jobs"', () => {
+      document.body.innerHTML = `
+        <div class="similar-jobs">
+          <p>Similar jobs are available at other companies in your area right now.</p>
+        </div>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject elements with class "company-info"', () => {
+      document.body.innerHTML = `
+        <div class="company-info">
+          <p>Learn more about our company history, mission, and values on our website.</p>
+        </div>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject elements with class "apply-button"', () => {
+      document.body.innerHTML = `
+        <div class="apply-button">
+          <p>Click here to submit your application and resume for this position.</p>
+        </div>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject elements with data-type="sidebar"', () => {
+      document.body.innerHTML = `
+        <div data-type="sidebar">
+          <p>This is sidebar content that should not be extracted as job description.</p>
+        </div>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should reject elements with data-section="recommended"', () => {
+      document.body.innerHTML = `
+        <div data-section="recommended">
+          <p>These are recommended jobs based on your profile and search history.</p>
+        </div>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toBeNull();
+    });
+
+    test('should extract actual job description from main content', () => {
+      document.body.innerHTML = `
+        <main>
+          <article class="job-description">
+            <p>We are seeking a talented Software Engineer to join our team. You will work on cutting-edge projects using modern technologies.</p>
+          </article>
+        </main>
+      `;
+      const article = document.querySelector('article');
+      const p = article.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toContain('Software Engineer');
+      expect(result).toContain('cutting-edge projects');
+    });
+
+    test('should extract job description while ignoring sidebar', () => {
+      document.body.innerHTML = `
+        <main>
+          <article>
+            <p>Responsibilities include developing software, collaborating with team members, and maintaining code quality.</p>
+          </article>
+        </main>
+      `;
+      const p = document.querySelector('p');
+
+      const result = extractLargeTextBlock(p);
+      expect(result).toContain('Responsibilities');
+      expect(result).toContain('developing software');
+    });
+  });
+
+  describe('Integration - Complex Misinterpretation Scenarios', () => {
+    test('should not confuse department with company name in real job posting', () => {
+      document.body.innerHTML = `
+        <div class="job-posting">
+          <h1>Software Engineer</h1>
+          <div class="company">Tech Corp Inc</div>
+          <div class="department">Engineering Department</div>
+        </div>
+      `;
+
+      const companyElement = document.querySelector('.company');
+      const departmentElement = document.querySelector('.department');
+
+      const companyResult = extractCompanyName(companyElement);
+      const departmentResult = extractCompanyName(departmentElement);
+
+      expect(companyResult).toBe('Tech Corp Inc');
+      expect(departmentResult).toBeNull(); // Department should not be extracted
+    });
+
+    test('should extract Multiple Locations correctly in context', () => {
+      document.body.innerHTML = `
+        <div class="job-info">
+          <span class="location">Multiple Locations (Remote available)</span>
+        </div>
+      `;
+      const locationElement = document.querySelector('.location');
+      const text = locationElement.textContent;
+
+      const result = extractLocation(locationElement, text);
+      expect(result).toBe('Multiple Locations');
+    });
+
+    test('should prioritize Remote over city name', () => {
+      const result1 = extractLocation(mockElement, 'Remote - San Francisco, CA');
+      const result2 = extractLocation(mockElement, 'San Francisco, CA (Remote)');
+
+      expect(result1).toBe('Remote');
+      expect(result2).toBe('Remote');
+    });
+
+    test('should extract job description but not "About this company"', () => {
+      document.body.innerHTML = `
+        <main>
+          <div class="description">
+            <p>We are looking for an experienced developer to join our team. Must have 5+ years of experience with modern web technologies.</p>
+          </div>
+          <div class="sidebar">
+            <p>About this company: Founded in 2010, we are industry leaders.</p>
+          </div>
+        </main>
+      `;
+
+      const descriptionP = document.querySelector('.description p');
+      const sidebarP = document.querySelector('.sidebar p');
+
+      const descriptionResult = extractLargeTextBlock(descriptionP);
+      const sidebarResult = extractLargeTextBlock(sidebarP);
+
+      expect(descriptionResult).toContain('experienced developer');
+      expect(sidebarResult).toBeNull(); // Sidebar should be rejected
+    });
+  });
+});
