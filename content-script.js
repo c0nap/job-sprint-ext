@@ -559,7 +559,13 @@ let mouseTrackingActive = false;
 let currentTrackedFieldId = null;
 let lastHighlightedElement = null;
 let mouseTrackingOverlay = null;
-let currentModifierMode = 'full'; // 'full', 'sentence', 'words'
+let currentModifierMode = 'full'; // 'full', 'sentence', 'words', 'chars'
+let currentGranularity = {
+  words: 1,      // Number of words on each side (default: 1 word = 3 total)
+  sentences: 1,  // Number of sentences (default: 1 sentence)
+  chars: 1       // Number of characters on each side (default: 1 char)
+};
+let lastMouseEvent = null; // Store last mouse event for re-extraction
 
 /**
  * Start interactive mouse tracking for field auto-fill
@@ -618,6 +624,9 @@ function stopMouseTracking() {
 function handleMouseMove(event) {
   if (!mouseTrackingActive) return;
 
+  // Store last mouse event for re-extraction when granularity changes
+  lastMouseEvent = event;
+
   // Detect modifier keys to control extraction scope
   const mode = getExtractionMode(event);
   if (mode !== currentModifierMode) {
@@ -673,28 +682,69 @@ function handleMouseClick(event) {
 }
 
 /**
- * Handle escape key to cancel tracking
+ * Handle escape key to cancel tracking and arrow keys for granularity
  * @param {KeyboardEvent} event - Keyboard event
  */
 function handleEscapeKey(event) {
-  if (event.key === 'Escape' && mouseTrackingActive) {
+  if (!mouseTrackingActive) return;
+
+  if (event.key === 'Escape') {
     event.preventDefault();
     stopMouseTracking();
+    return;
+  }
+
+  // Handle arrow keys for granularity control
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    event.preventDefault();
+    handleGranularityChange(event);
+  }
+}
+
+/**
+ * Handle arrow key presses to adjust extraction granularity
+ * @param {KeyboardEvent} event - Keyboard event
+ */
+function handleGranularityChange(event) {
+  const increment = event.key === 'ArrowUp' ? 1 : -1;
+  const mode = getExtractionMode(event);
+
+  // Update granularity based on current mode
+  if (mode === 'chars') {
+    // Ctrl mode: adjust character granularity
+    currentGranularity.chars = Math.max(0, currentGranularity.chars + increment);
+  } else if (mode === 'sentence') {
+    // Shift mode: adjust sentence granularity
+    currentGranularity.sentences = Math.max(1, currentGranularity.sentences + increment);
+  } else {
+    // No modifier: adjust word granularity
+    currentGranularity.words = Math.max(1, currentGranularity.words + increment);
+  }
+
+  // Update overlay to show current granularity
+  updateOverlayMode(mode);
+
+  // Re-extract text with new granularity if we have a last mouse position
+  if (lastMouseEvent && lastHighlightedElement) {
+    const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, mode);
+    if (text && text.trim()) {
+      sendTextToPopup(text.trim());
+    }
   }
 }
 
 /**
  * Get extraction mode based on modifier keys
  * @param {MouseEvent|KeyboardEvent} event - Event with modifier key info
- * @returns {string} Extraction mode: 'full', 'sentence', or 'words'
+ * @returns {string} Extraction mode: 'words', 'sentence', or 'chars'
  */
 function getExtractionMode(event) {
   if (event.ctrlKey || event.metaKey) {
-    return 'words'; // Ctrl/Cmd: extract just a few words
+    return 'chars'; // Ctrl/Cmd: extract characters
   } else if (event.shiftKey) {
-    return 'sentence'; // Shift: extract current sentence
+    return 'sentence'; // Shift: extract sentences
   }
-  return 'full'; // No modifier: extract full element text
+  return 'words'; // No modifier: extract words (default)
 }
 
 /**
@@ -702,10 +752,10 @@ function getExtractionMode(event) {
  * Handles various element types and nested structures
  * @param {HTMLElement} element - Element to extract text from
  * @param {MouseEvent} event - Mouse event for cursor position
- * @param {string} mode - Extraction mode: 'full', 'sentence', or 'words'
+ * @param {string} mode - Extraction mode: 'chars', 'words', or 'sentence'
  * @returns {string} Extracted text
  */
-function extractTextFromElement(element, event, mode = 'full') {
+function extractTextFromElement(element, event, mode = 'words') {
   if (!element) return '';
 
   // For input elements, get the value
@@ -730,45 +780,51 @@ function extractTextFromElement(element, event, mode = 'full') {
 
   fullText = cleanText(fullText);
 
-  // Apply scope based on mode
+  // Apply scope based on mode and granularity
   if (mode === 'sentence') {
-    return extractNearestSentence(fullText, event, element);
+    return extractNearestSentences(fullText, event, element, currentGranularity.sentences);
   } else if (mode === 'words') {
-    return extractNearestWords(fullText, event, element);
+    return extractNearestWords(fullText, event, element, currentGranularity.words);
+  } else if (mode === 'chars') {
+    return extractNearestChars(fullText, event, element, currentGranularity.chars);
   }
 
   return fullText;
 }
 
 /**
- * Extract the sentence nearest to the cursor position
+ * Extract sentences nearest to the cursor position
  * @param {string} text - Full text content
  * @param {MouseEvent} event - Mouse event for cursor position
  * @param {HTMLElement} element - Element containing the text
- * @returns {string} Nearest sentence
+ * @param {number} count - Number of sentences to extract
+ * @returns {string} Nearest sentences
  */
-function extractNearestSentence(text, event, element) {
+function extractNearestSentences(text, event, element, count = 1) {
   if (!text) return '';
 
-  // Try to find the word under cursor using Range API
+  // Split by sentence endings (.!?) followed by space or end
+  const sentences = text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [text];
+
+  if (sentences.length === 1) {
+    return sentences[0].trim();
+  }
+
+  // Try to find the position under cursor using Range API
   const range = document.caretRangeFromPoint(event.clientX, event.clientY);
   if (!range) {
-    // Fallback: return first sentence
-    return getFirstSentence(text);
+    // Fallback: return first N sentences
+    return sentences.slice(0, count).map(s => s.trim()).join(' ');
   }
 
   // Get approximate position in text
   const textNode = range.startContainer;
   if (textNode.nodeType !== Node.TEXT_NODE) {
-    return getFirstSentence(text);
+    return sentences.slice(0, count).map(s => s.trim()).join(' ');
   }
 
   const offset = range.startOffset;
   const nodeText = textNode.textContent || '';
-
-  // Find which sentence contains this offset
-  // Split by sentence endings (.!?) followed by space or end
-  const sentences = text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [text];
 
   // Find cumulative position in the full text
   let cumulativeLength = 0;
@@ -776,47 +832,58 @@ function extractNearestSentence(text, event, element) {
   const targetPosition = fullTextContent.indexOf(nodeText) + offset;
 
   // Find which sentence contains the target position
-  for (const sentence of sentences) {
-    cumulativeLength += sentence.length;
+  let targetSentenceIndex = 0;
+  for (let i = 0; i < sentences.length; i++) {
+    cumulativeLength += sentences[i].length;
     if (cumulativeLength >= targetPosition) {
-      return sentence.trim();
+      targetSentenceIndex = i;
+      break;
     }
   }
 
-  // Fallback: return first sentence
-  return sentences[0]?.trim() || text;
+  // Extract sentences around the target (center on target sentence)
+  const halfCount = Math.floor(count / 2);
+  const startIndex = Math.max(0, targetSentenceIndex - halfCount);
+  const endIndex = Math.min(sentences.length, startIndex + count);
+  const selectedSentences = sentences.slice(startIndex, endIndex);
+
+  return selectedSentences.map(s => s.trim()).join(' ');
 }
 
 /**
- * Extract a few words nearest to the cursor position
+ * Extract words nearest to the cursor position
  * @param {string} text - Full text content
  * @param {MouseEvent} event - Mouse event for cursor position
  * @param {HTMLElement} element - Element containing the text
- * @returns {string} Nearest words (3-5 words)
+ * @param {number} wordsPerSide - Number of words on each side of cursor
+ * @returns {string} Nearest words
  */
-function extractNearestWords(text, event, element) {
+function extractNearestWords(text, event, element, wordsPerSide = 1) {
   if (!text) return '';
 
-  const WORD_COUNT = 5; // Extract 5 words around cursor
+  // Split text into words
+  const words = text.split(/\s+/).filter(w => w.trim());
+
+  if (words.length === 0) return '';
+  if (words.length === 1) return words[0];
 
   // Try to find the word under cursor using Range API
   const range = document.caretRangeFromPoint(event.clientX, event.clientY);
   if (!range) {
-    // Fallback: return first few words
-    return getFirstWords(text, WORD_COUNT);
+    // Fallback: return first N words
+    const totalWords = wordsPerSide * 2 + 1;
+    return words.slice(0, totalWords).join(' ');
   }
 
   // Get approximate position in text
   const textNode = range.startContainer;
   if (textNode.nodeType !== Node.TEXT_NODE) {
-    return getFirstWords(text, WORD_COUNT);
+    const totalWords = wordsPerSide * 2 + 1;
+    return words.slice(0, totalWords).join(' ');
   }
 
   const offset = range.startOffset;
   const nodeText = textNode.textContent || '';
-
-  // Split text into words
-  const words = text.split(/\s+/);
 
   // Find cumulative position in the full text
   const fullTextContent = element.textContent || '';
@@ -834,33 +901,65 @@ function extractNearestWords(text, event, element) {
     }
   }
 
-  // Extract words around the target (2 before, target, 2 after)
-  const startIndex = Math.max(0, targetWordIndex - 2);
-  const endIndex = Math.min(words.length, targetWordIndex + 3);
+  // Extract words around the target (N before, target, N after)
+  const startIndex = Math.max(0, targetWordIndex - wordsPerSide);
+  const endIndex = Math.min(words.length, targetWordIndex + wordsPerSide + 1);
   const selectedWords = words.slice(startIndex, endIndex);
 
   return selectedWords.join(' ');
 }
 
 /**
- * Get first sentence from text
- * @param {string} text - Text to extract from
- * @returns {string} First sentence
+ * Extract characters nearest to the cursor position
+ * @param {string} text - Full text content
+ * @param {MouseEvent} event - Mouse event for cursor position
+ * @param {HTMLElement} element - Element containing the text
+ * @param {number} charsPerSide - Number of characters on each side of cursor (0 = single char under cursor)
+ * @returns {string} Nearest characters
  */
-function getFirstSentence(text) {
-  const match = text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+/);
-  return match ? match[0].trim() : text.trim();
-}
+function extractNearestChars(text, event, element, charsPerSide = 1) {
+  if (!text) return '';
 
-/**
- * Get first N words from text
- * @param {string} text - Text to extract from
- * @param {number} count - Number of words
- * @returns {string} First N words
- */
-function getFirstWords(text, count) {
-  const words = text.split(/\s+/);
-  return words.slice(0, count).join(' ');
+  // Try to find the position under cursor using Range API
+  const range = document.caretRangeFromPoint(event.clientX, event.clientY);
+  if (!range) {
+    // Fallback: return first N characters
+    if (charsPerSide === 0) return text.charAt(0);
+    const totalChars = charsPerSide * 2 + 1;
+    return text.substring(0, totalChars);
+  }
+
+  // Get approximate position in text
+  const textNode = range.startContainer;
+  if (textNode.nodeType !== Node.TEXT_NODE) {
+    if (charsPerSide === 0) return text.charAt(0);
+    const totalChars = charsPerSide * 2 + 1;
+    return text.substring(0, totalChars);
+  }
+
+  const offset = range.startOffset;
+  const nodeText = textNode.textContent || '';
+
+  // Find cumulative position in the full text
+  const fullTextContent = element.textContent || '';
+  const targetPosition = fullTextContent.indexOf(nodeText) + offset;
+
+  if (targetPosition < 0 || targetPosition >= text.length) {
+    if (charsPerSide === 0) return text.charAt(0);
+    const totalChars = charsPerSide * 2 + 1;
+    return text.substring(0, totalChars);
+  }
+
+  // Extract characters around the target position
+  if (charsPerSide === 0) {
+    // Just the character under cursor
+    return text.charAt(targetPosition) || text.charAt(0);
+  }
+
+  const startIndex = Math.max(0, targetPosition - charsPerSide);
+  const endIndex = Math.min(text.length, targetPosition + charsPerSide + 1);
+
+  return text.substring(startIndex, endIndex);
 }
 
 /**
@@ -924,10 +1023,10 @@ function createTrackingOverlay() {
       <span id="jobsprint-tracking-title">Hover over text to auto-fill</span>
     </div>
     <div id="jobsprint-tracking-mode" style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
-      Full text • Hold Shift for sentence • Ctrl for words
+      ✂️ Word mode (3 words) • ↑↓ to adjust
     </div>
     <div style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
-      Click to select • Press ESC to cancel
+      Shift=Sentences • Ctrl=Chars • Click=Select • ESC=Cancel
     </div>
   `;
 
@@ -963,8 +1062,8 @@ function createTrackingOverlay() {
 }
 
 /**
- * Update overlay to show current extraction mode
- * @param {string} mode - Current mode: 'full', 'sentence', or 'words'
+ * Update overlay to show current extraction mode and granularity
+ * @param {string} mode - Current mode: 'words', 'sentence', or 'chars'
  */
 function updateOverlayMode(mode) {
   if (!mouseTrackingOverlay) return;
@@ -977,27 +1076,36 @@ function updateOverlayMode(mode) {
 
   switch (mode) {
     case 'sentence':
-      modeText = '📝 Sentence mode (Shift) • Release to extract full text';
+      const sentCount = currentGranularity.sentences;
+      modeText = `📝 Sentence mode (${sentCount} sentence${sentCount > 1 ? 's' : ''}) • Shift+↑↓ to adjust`;
       bgColor = 'rgba(52, 152, 219, 0.95)'; // Blue for sentence
       break;
+    case 'chars':
+      const charCount = currentGranularity.chars;
+      if (charCount === 0) {
+        modeText = '🔍 Character mode (single char) • Ctrl+↑ to expand';
+      } else {
+        const totalChars = charCount * 2 + 1;
+        modeText = `🔍 Character mode (${totalChars} chars) • Ctrl+↑↓ to adjust`;
+      }
+      bgColor = 'rgba(155, 89, 182, 0.95)'; // Purple for chars
+      break;
     case 'words':
-      modeText = '✂️ Word mode (Ctrl) • Release to extract full text';
+      const wordCount = currentGranularity.words;
+      const totalWords = wordCount * 2 + 1;
+      modeText = `✂️ Word mode (${totalWords} words) • ↑↓ to adjust`;
       bgColor = 'rgba(46, 204, 113, 0.95)'; // Green for words
       break;
     default:
-      modeText = 'Full text • Hold Shift for sentence • Ctrl for words';
-      bgColor = 'rgba(255, 107, 107, 0.95)'; // Red for full
+      modeText = 'Hover over text • Shift=Sentences, Ctrl=Chars';
+      bgColor = 'rgba(255, 107, 107, 0.95)'; // Red for default
   }
 
   modeElement.textContent = modeText;
   mouseTrackingOverlay.style.background = bgColor;
 
-  // Add pulse animation when mode changes
-  if (mode !== 'full') {
-    mouseTrackingOverlay.style.animation = 'slideInFromRight 0.3s ease-out, pulseGlow 1s ease-in-out';
-  } else {
-    mouseTrackingOverlay.style.animation = 'slideInFromRight 0.3s ease-out';
-  }
+  // Add pulse animation when mode or granularity changes
+  mouseTrackingOverlay.style.animation = 'slideInFromRight 0.3s ease-out, pulseGlow 0.5s ease-in-out';
 }
 
 /**
