@@ -50,7 +50,10 @@
     <!-- Data Extraction Section -->
     <section class="feature-section">
       <h2>Job Data Extraction</h2>
-      <button class="primary-btn" id="extractBtn">Extract & Log Job Data</button>
+      <div class="button-group">
+        <button class="primary-btn" id="extractBtn">Extract & Log Job Data</button>
+        <button class="primary-btn" id="manualEntryBtn">Manual Entry</button>
+      </div>
       <div id="extractionStatus" class="status-message"></div>
     </section>
 
@@ -94,10 +97,28 @@
           <span style="font-size: 12px; opacity: 0.9; margin-top: 4px; display: inline-block;">
             • <strong>Shift</strong>=Sentences, <strong>Ctrl</strong>=Characters, <strong>None</strong>=Words<br>
             • Use <strong>↑↓ arrows</strong> to adjust granularity (expand/reduce selection)<br>
+            • Use <strong>←→ arrows</strong> to extend selection left or right only<br>
             • Use <strong>Alt+Arrows</strong> to move the overlay if it's blocking content<br>
             • <strong>Click</strong> to confirm • <strong>ESC</strong> to cancel
           </span>
         </p>
+
+        <div class="mode-selector" style="margin: 12px 0; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500; font-size: 13px; color: #333;">
+            Extraction Mode:
+          </label>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="mode-btn" data-mode="words" style="flex: 1; padding: 8px 12px; border: 2px solid #46a049; background: #fff; color: #46a049; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+              ✂️ Words
+            </button>
+            <button type="button" class="mode-btn" data-mode="sentence" style="flex: 1; padding: 8px 12px; border: 2px solid #3498db; background: #fff; color: #3498db; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+              📝 Sentences
+            </button>
+            <button type="button" class="mode-btn" data-mode="chars" style="flex: 1; padding: 8px 12px; border: 2px solid #9b59b6; background: #fff; color: #9b59b6; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+              🔍 Characters
+            </button>
+          </div>
+        </div>
 
         <form id="manualEntryForm">
           <div class="form-field">

@@ -1047,6 +1047,7 @@ const EXTRACT_COOLDOWN_MS = 2000; // 2 seconds
  */
 function initializeExtraction() {
   const extractBtn = document.getElementById('extractBtn');
+  const manualEntryBtn = document.getElementById('manualEntryBtn');
   const statusDiv = document.getElementById('extractionStatus');
 
   if (!extractBtn || !statusDiv) return;
@@ -1054,6 +1055,12 @@ function initializeExtraction() {
   extractBtn.addEventListener('click', () => {
     handleExtractClick(extractBtn, statusDiv);
   });
+
+  if (manualEntryBtn) {
+    manualEntryBtn.addEventListener('click', () => {
+      handleManualEntryClick(manualEntryBtn, statusDiv);
+    });
+  }
 }
 
 /**
@@ -1142,6 +1149,51 @@ async function handleExtractClick(button, statusDiv) {
       logJobData(button, statusDiv, response.data);
     }
   );
+}
+
+/**
+ * Handle manual entry button click
+ * Opens the manual entry modal directly without automatic extraction
+ * @param {HTMLButtonElement} button - Manual entry button element
+ * @param {HTMLElement} statusDiv - Status message display element
+ */
+async function handleManualEntryClick(button, statusDiv) {
+  log('[ManualEntry] Manual entry button clicked');
+
+  // Get the source tab
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    logError('[ManualEntry] No source tab found');
+    showStatus(statusDiv, 'error', '✗ No active tab found. Please reopen the popup from the job page.');
+    return;
+  }
+
+  log(`[ManualEntry] Source tab found: ${activeTab.url}`);
+
+  // Check if tab URL is accessible
+  if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+    logError(`[ManualEntry] Invalid tab URL: ${activeTab.url}`);
+    showStatus(statusDiv, 'error', '✗ Cannot use this page. Chrome extension pages and settings are not supported.');
+    return;
+  }
+
+  // Create minimal job data with just the URL
+  const jobData = {
+    url: activeTab.url,
+    title: '',
+    company: '',
+    location: '',
+    role: '',
+    tailor: '',
+    description: '',
+    compensation: '',
+    pay: '',
+    source: ''
+  };
+
+  // Show manual entry modal
+  showManualEntryModal(button, statusDiv, jobData);
+  clearStatus(statusDiv);
 }
 
 /**
@@ -1378,6 +1430,66 @@ function initializeManualEntryModal() {
 
   // Add mouse tracking to manual entry fields
   setupFieldMouseTracking();
+
+  // Add mode selector button handlers
+  setupModeSelectorButtons();
+}
+
+/**
+ * Setup mode selector buttons
+ * Allows user to manually select extraction mode via UI buttons
+ */
+function setupModeSelectorButtons() {
+  const modeButtons = document.querySelectorAll('.mode-btn');
+
+  modeButtons.forEach(button => {
+    button.addEventListener('click', async () => {
+      const mode = button.getAttribute('data-mode');
+      log(`[ModeSelector] Manually selected mode: ${mode}`);
+
+      // Update button states (highlight selected)
+      modeButtons.forEach(btn => {
+        const btnMode = btn.getAttribute('data-mode');
+        if (btnMode === mode) {
+          // Selected state
+          if (mode === 'words') {
+            btn.style.background = '#46a049';
+            btn.style.color = '#fff';
+          } else if (mode === 'sentence') {
+            btn.style.background = '#3498db';
+            btn.style.color = '#fff';
+          } else if (mode === 'chars') {
+            btn.style.background = '#9b59b6';
+            btn.style.color = '#fff';
+          }
+        } else {
+          // Unselected state
+          btn.style.background = '#fff';
+          if (btnMode === 'words') {
+            btn.style.color = '#46a049';
+          } else if (btnMode === 'sentence') {
+            btn.style.color = '#3498db';
+          } else if (btnMode === 'chars') {
+            btn.style.color = '#9b59b6';
+          }
+        }
+      });
+
+      // Send mode change to content script
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'changeExtractionMode', mode: mode },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[ModeSelector] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+    });
+  });
 }
 
 /**
@@ -1395,9 +1507,16 @@ function setupFieldMouseTracking() {
     'manualPay'
   ];
 
+  log(`[MouseTracking] Setting up field tracking for ${trackableFields.length} fields`);
+
   trackableFields.forEach(fieldId => {
     const field = document.getElementById(fieldId);
-    if (!field) return;
+    if (!field) {
+      logError(`[MouseTracking] Field not found: ${fieldId}`);
+      return;
+    }
+
+    log(`[MouseTracking] Field found and listener added: ${fieldId}`);
 
     // Start tracking on focus
     field.addEventListener('focus', () => {
@@ -1429,7 +1548,7 @@ function setupFieldMouseTracking() {
 
 /**
  * Show manual entry modal with pre-filled data
- * @param {HTMLButtonElement} button - Extract button element
+ * @param {HTMLButtonElement} button - Extract or manual entry button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Extracted job data to pre-fill
  */
@@ -1438,8 +1557,8 @@ function showManualEntryModal(button, statusDiv, jobData) {
   if (!modal) return;
 
   // Store references for later use
-  modal.dataset.button = 'extractBtn';
-  modal.dataset.status = 'extractionStatus';
+  modal.dataset.button = button.id;
+  modal.dataset.status = statusDiv.id;
 
   // Pre-fill form fields with extracted data
   document.getElementById('manualJobTitle').value = jobData.title || '';
@@ -1664,6 +1783,9 @@ async function startMouseTrackingForField(fieldId) {
       }
     }
   );
+
+  // Start keyboard event relay (popup captures keys and forwards to content script)
+  startKeyboardRelay();
 }
 
 /**
@@ -1689,5 +1811,121 @@ async function stopMouseTracking() {
     }
   );
 
+  // Stop keyboard event relay
+  stopKeyboardRelay();
+
   currentlyFocusedField = null;
+}
+
+// Keyboard relay state
+let keyboardRelayActive = false;
+let keyboardRelayHandler = null;
+
+/**
+ * Start keyboard event relay from popup to content script
+ * Captures keyboard events in popup and forwards them to content script
+ */
+function startKeyboardRelay() {
+  if (keyboardRelayActive) return;
+
+  log('[KeyboardRelay] Starting keyboard event relay');
+
+  keyboardRelayHandler = async (event) => {
+    // Only relay specific keys that are used for mouse tracking
+    const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key);
+    const isEscape = event.key === 'Escape';
+    const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key);
+    const hasModifier = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
+
+    // Relay if it's an arrow key, escape, modifier key press, or if modifiers are active
+    if (isArrowKey || isEscape || isModifierKey || hasModifier) {
+      log(`[KeyboardRelay] Relaying key: ${event.key}, modifiers: Shift=${event.shiftKey}, Ctrl=${event.ctrlKey}, Alt=${event.altKey}`);
+
+      // Get source tab
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      // Create a serializable representation of the keyboard event
+      const keyEventData = {
+        key: event.key,
+        code: event.code,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        type: event.type // 'keydown' or 'keyup'
+      };
+
+      // Send to content script
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'relayKeyboardEvent', event: keyEventData },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[KeyboardRelay] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+
+      // For arrow keys and escape, prevent default behavior in popup
+      if (isArrowKey || isEscape) {
+        event.preventDefault();
+      }
+    }
+  };
+
+  // Also relay keyup events for modifiers
+  keyboardRelayHandlerUp = async (event) => {
+    const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key);
+
+    if (isModifierKey) {
+      log(`[KeyboardRelay] Relaying keyup: ${event.key}`);
+
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      const keyEventData = {
+        key: event.key,
+        code: event.code,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        type: 'keyup'
+      };
+
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'relayKeyboardEvent', event: keyEventData },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[KeyboardRelay] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+    }
+  };
+
+  // Add event listeners to document (both keydown and keyup)
+  document.addEventListener('keydown', keyboardRelayHandler, true);
+  document.addEventListener('keyup', keyboardRelayHandlerUp, true);
+  keyboardRelayActive = true;
+
+  log('[KeyboardRelay] Keyboard relay active (keydown + keyup)');
+}
+
+/**
+ * Stop keyboard event relay
+ */
+function stopKeyboardRelay() {
+  if (!keyboardRelayActive) return;
+
+  log('[KeyboardRelay] Stopping keyboard event relay');
+
+  if (keyboardRelayHandler) {
+    document.removeEventListener('keydown', keyboardRelayHandler, true);
+    keyboardRelayHandler = null;
+  }
+
+  keyboardRelayActive = false;
 }
