@@ -1197,6 +1197,7 @@ function extractTextFromElement(element, event, mode = 'words') {
 /**
  * Smart mode extraction with configurable aggressiveness
  * Aggressively searches for patterns based on field type and strength setting
+ * Reuses existing field-specific extraction functions with expanded search scope
  * @param {HTMLElement} element - Element being hovered over
  * @param {MouseEvent} event - Mouse event
  * @param {string} fullText - Full text of element
@@ -1205,102 +1206,84 @@ function extractTextFromElement(element, event, mode = 'words') {
 function extractSmartMode(element, event, fullText) {
   const fieldId = currentTrackedFieldId;
 
-  // Calculate search radius based on strength (1=narrow, 5=very wide)
-  const searchRadius = smartModeStrength * 50; // pixels to search around cursor
-
-  // Get larger context by searching nearby elements
-  let contextText = fullText;
-  if (smartModeStrength >= 2) {
-    // Include parent element text for wider context
-    const parent = element.parentElement;
-    if (parent) {
-      contextText = cleanText(parent.textContent);
-    }
-  }
-
-  if (smartModeStrength >= 4) {
-    // Include sibling elements for very aggressive search
-    const siblings = element.parentElement?.children || [];
-    const siblingTexts = Array.from(siblings).map(s => cleanText(s.textContent)).join(' ');
-    contextText = siblingTexts || contextText;
-  }
-
-  // Field-specific aggressive extraction
+  // Try extraction with increasing scope based on strength level
   let result = null;
 
+  // Level 1: Just the hovered element (same as field-aware mode)
   if (fieldId === 'manualPay') {
-    result = extractPayAmount(element, contextText);
-    // If strength is high and nothing found in element, search more aggressively
-    if (!result && smartModeStrength >= 3) {
-      result = searchNearbyForPattern(element, event, /\$\s*\d+(?:\.\d{2})?(?:\s*\/?\s*(?:hour|hr|annually|year))?/gi);
-    }
+    result = extractPayAmount(element, fullText);
   } else if (fieldId === 'manualCompensation') {
-    result = extractCompensationRange(element, contextText);
-    if (!result && smartModeStrength >= 3) {
-      result = searchNearbyForPattern(element, event, /\$\s*\d+(?:,\d{3})*(?:\.\d{2})?\s*-\s*\$?\s*\d+(?:,\d{3})*(?:\.\d{2})?(?:\s*\/?\s*(?:hour|hr|annually|year))?/gi);
-    }
+    result = extractCompensationRange(element, fullText);
   } else if (fieldId === 'manualLocation') {
-    result = extractLocation(element, contextText);
-    if (!result && smartModeStrength >= 2) {
-      // Search for city/state patterns or Remote
-      result = searchNearbyForPattern(element, event, /(?:Remote|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2})/g);
-    }
+    result = extractLocation(element, fullText);
   } else if (fieldId === 'manualJobTitle') {
     result = extractJobTitle(element);
-    if (!result && smartModeStrength >= 2) {
-      // Look for capitalized phrases (likely job titles)
-      result = searchNearbyForPattern(element, event, /\b(?:[A-Z][a-z]+\s+){1,4}(?:Engineer|Developer|Manager|Analyst|Scientist|Designer|Architect|Coordinator|Specialist|Director|Lead)\b/g);
-    }
   } else if (fieldId === 'manualCompany') {
     result = extractCompanyName(element);
-    if (!result && smartModeStrength >= 2) {
-      // Look for capitalized words (likely company names)
-      result = searchNearbyForPattern(element, event, /\b[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3}\b/g);
-    }
   } else if (fieldId === 'manualNotes') {
     result = extractLargeTextBlock(element) || fullText;
   }
 
+  // If found at level 1, return it
+  if (result) return result;
+
+  // Level 2+: Search parent elements based on strength
+  if (smartModeStrength >= 2) {
+    result = searchNearbyElements(element, fieldId);
+    if (result) return result;
+  }
+
   // Fallback to basic field-aware extraction
-  return result || extractFieldAware(element, event, fullText, currentGranularity.words);
+  return extractFieldAware(element, event, fullText, currentGranularity.words);
 }
 
 /**
- * Search nearby elements for a pattern (aggressive mode)
+ * Search nearby elements (parent, siblings) using field-specific extractors
+ * Reuses existing extraction functions for consistency
  * @param {HTMLElement} element - Starting element
- * @param {MouseEvent} event - Mouse event
- * @param {RegExp} pattern - Pattern to search for
- * @returns {string|null} First match found, or null
+ * @param {string} fieldId - Field being filled
+ * @returns {string|null} Extracted value or null
  */
-function searchNearbyForPattern(element, event, pattern) {
-  // Search current element first
-  const elementText = cleanText(element.textContent);
-  const matches = elementText.match(pattern);
-  if (matches && matches.length > 0) {
-    return matches[0];
+function searchNearbyElements(element, fieldId) {
+  const elementsToSearch = [];
+
+  // Add parent element (strength >= 2)
+  if (smartModeStrength >= 2 && element.parentElement) {
+    elementsToSearch.push(element.parentElement);
   }
 
-  // Search parent
-  const parent = element.parentElement;
-  if (parent) {
-    const parentText = cleanText(parent.textContent);
-    const parentMatches = parentText.match(pattern);
-    if (parentMatches && parentMatches.length > 0) {
-      return parentMatches[0];
-    }
+  // Add siblings (strength >= 4)
+  if (smartModeStrength >= 4 && element.parentElement) {
+    const siblings = Array.from(element.parentElement.children);
+    elementsToSearch.push(...siblings.filter(s => s !== element));
   }
 
-  // Search siblings
-  if (parent) {
-    const siblings = Array.from(parent.children);
-    for (const sibling of siblings) {
-      if (sibling === element) continue;
-      const siblingText = cleanText(sibling.textContent);
-      const siblingMatches = siblingText.match(pattern);
-      if (siblingMatches && siblingMatches.length > 0) {
-        return siblingMatches[0];
-      }
+  // Add grandparent (strength >= 5 - maximum)
+  if (smartModeStrength >= 5 && element.parentElement?.parentElement) {
+    elementsToSearch.push(element.parentElement.parentElement);
+  }
+
+  // Try extraction on each element in scope
+  for (const el of elementsToSearch) {
+    const text = cleanText(el.textContent || '');
+    let result = null;
+
+    // Apply field-specific extractor
+    if (fieldId === 'manualPay') {
+      result = extractPayAmount(el, text);
+    } else if (fieldId === 'manualCompensation') {
+      result = extractCompensationRange(el, text);
+    } else if (fieldId === 'manualLocation') {
+      result = extractLocation(el, text);
+    } else if (fieldId === 'manualJobTitle') {
+      result = extractJobTitle(el);
+    } else if (fieldId === 'manualCompany') {
+      result = extractCompanyName(el);
+    } else if (fieldId === 'manualNotes') {
+      result = extractLargeTextBlock(el);
     }
+
+    if (result) return result;
   }
 
   return null;
