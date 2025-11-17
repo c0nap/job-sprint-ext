@@ -779,12 +779,14 @@ let mouseTrackingActive = false;
 let currentTrackedFieldId = null;
 let lastHighlightedElement = null;
 let mouseTrackingOverlay = null;
-let currentModifierMode = 'full'; // 'full', 'sentence', 'words', 'chars'
+let currentModifierMode = 'smart'; // 'smart', 'sentence', 'words', 'chars'
 let currentGranularity = {
   words: 1,      // Number of words on each side (default: 1 word = 3 total)
   sentences: 1,  // Number of sentences (default: 1 sentence)
   chars: 1       // Number of characters on each side (default: 1 char)
 };
+let smartModeStrength = 2; // Aggressiveness level for smart mode (1-5, default: 2)
+let lastHighlightedText = null; // Track the highlighted text range
 let lastMouseEvent = null; // Store last mouse event for re-extraction
 let overlayPosition = {
   top: 10,    // pixels from top
@@ -813,7 +815,8 @@ async function loadMouseTrackingSettings() {
       'CHAR_MODIFIER',
       'WORD_MODIFIER',
       'OVERLAY_MOVE_MODIFIER',
-      'OVERLAY_MOVE_STEP'
+      'OVERLAY_MOVE_STEP',
+      'SMART_MODE_STRENGTH'
     ]);
 
     mouseTrackingSettings = {
@@ -824,7 +827,9 @@ async function loadMouseTrackingSettings() {
       overlayMoveStep: result.OVERLAY_MOVE_STEP || 20
     };
 
-    console.log('[MouseTracking] Settings loaded:', mouseTrackingSettings);
+    smartModeStrength = result.SMART_MODE_STRENGTH || 2;
+
+    console.log('[MouseTracking] Settings loaded:', mouseTrackingSettings, 'Smart mode strength:', smartModeStrength);
   } catch (error) {
     console.error('[MouseTracking] Error loading settings:', error);
     // Use defaults on error
@@ -899,11 +904,11 @@ function handleMouseMove(event) {
   // Store last mouse event for re-extraction when granularity changes
   lastMouseEvent = event;
 
-  // Detect modifier keys to control extraction scope
-  const mode = getExtractionMode(event);
-  if (mode !== currentModifierMode) {
-    currentModifierMode = mode;
-    updateOverlayMode(mode);
+  // Check if user is pressing modifier keys to override the current mode
+  const modifierMode = getExtractionModeFromModifiers(event);
+  if (modifierMode && modifierMode !== currentModifierMode) {
+    currentModifierMode = modifierMode;
+    updateOverlayMode(currentModifierMode);
   }
 
   // Get element under cursor
@@ -915,8 +920,8 @@ function handleMouseMove(event) {
   const text = extractTextFromElement(element, event, mode);
 
   if (text && text.trim()) {
-    // Highlight the element
-    highlightElement(element);
+    // Highlight the element and the extracted text
+    highlightElement(element, text.trim());
 
     // Send text to extension popup
     sendTextToPopup(text.trim());
@@ -935,8 +940,8 @@ function handleMouseClick(event) {
   event.preventDefault();
   event.stopPropagation();
 
-  // Get current extraction mode
-  const mode = getExtractionMode(event);
+  // Get current extraction mode (use button mode unless modifier is pressed)
+  const mode = getExtractionModeFromModifiers(event) || currentModifierMode;
 
   // Get element under cursor
   const element = document.elementFromPoint(event.clientX, event.clientY);
@@ -983,26 +988,27 @@ function handleEscapeKey(event) {
 }
 
 /**
- * Handle arrow key presses to adjust extraction granularity
+ * Handle arrow key presses to adjust extraction granularity or smart mode strength
  * @param {KeyboardEvent} event - Keyboard event
  */
 function handleGranularityChange(event) {
   const increment = event.key === 'ArrowUp' ? 1 : -1;
-  const mode = getExtractionMode(event);
+  const mode = currentModifierMode; // Use current button mode
 
   // Update granularity based on current mode
   if (mode === 'chars') {
-    // Ctrl mode: adjust character granularity
     currentGranularity.chars = Math.max(0, currentGranularity.chars + increment);
   } else if (mode === 'sentence') {
-    // Shift mode: adjust sentence granularity
     currentGranularity.sentences = Math.max(1, currentGranularity.sentences + increment);
+  } else if (mode === 'smart') {
+    // Smart mode: adjust aggressiveness level (1-5)
+    smartModeStrength = Math.max(1, Math.min(5, smartModeStrength + increment));
   } else {
-    // No modifier: adjust word granularity
+    // Words mode: adjust word granularity
     currentGranularity.words = Math.max(1, currentGranularity.words + increment);
   }
 
-  // Update overlay to show current granularity
+  // Update overlay to show current granularity/strength
   updateOverlayMode(mode);
 
   // Re-extract text with new granularity if we have a last mouse position
@@ -1090,13 +1096,12 @@ function handleOverlayReposition(event) {
 }
 
 /**
- * Get extraction mode based on modifier keys and user settings
+ * Get extraction mode based on modifier keys (for temporary override)
  * @param {MouseEvent|KeyboardEvent} event - Event with modifier key info
- * @returns {string} Extraction mode: 'words', 'sentence', or 'chars'
+ * @returns {string|null} Extraction mode if modifier is pressed, null otherwise
  */
-function getExtractionMode(event) {
-  // Check each configured modifier and return corresponding mode
-  // Priority: Check if any specific modifier is pressed
+function getExtractionModeFromModifiers(event) {
+  // Check each configured modifier and return corresponding mode if pressed
 
   // Check for sentence modifier
   if (checkModifierKey(event, mouseTrackingSettings.sentenceModifier)) {
@@ -1108,13 +1113,14 @@ function getExtractionMode(event) {
     return 'chars';
   }
 
-  // Check for word modifier (or default if 'none')
-  if (checkModifierKey(event, mouseTrackingSettings.wordModifier)) {
+  // Check for word modifier
+  if (mouseTrackingSettings.wordModifier !== 'none' &&
+      checkModifierKey(event, mouseTrackingSettings.wordModifier)) {
     return 'words';
   }
 
-  // Default: use word mode with field-aware extraction
-  return 'words';
+  // No modifier pressed - return null to use current button mode
+  return null;
 }
 
 /**
@@ -1175,9 +1181,12 @@ function extractTextFromElement(element, event, mode = 'words') {
   // Apply scope based on mode and granularity
   if (mode === 'sentence') {
     return extractNearestSentences(fullText, event, element, currentGranularity.sentences);
+  } else if (mode === 'smart') {
+    // Smart mode: aggressive field-aware extraction with configurable strength
+    return extractSmartMode(element, event, fullText);
   } else if (mode === 'words') {
-    // In word mode, use field-aware intelligent extraction
-    return extractFieldAware(element, event, fullText, currentGranularity.words);
+    // Word mode: basic nearest words extraction
+    return extractNearestWords(fullText, event, element, currentGranularity.words);
   } else if (mode === 'chars') {
     return extractNearestChars(fullText, event, element, currentGranularity.chars);
   }
@@ -1186,7 +1195,119 @@ function extractTextFromElement(element, event, mode = 'words') {
 }
 
 /**
- * Field-aware intelligent extraction
+ * Smart mode extraction with configurable aggressiveness
+ * Aggressively searches for patterns based on field type and strength setting
+ * @param {HTMLElement} element - Element being hovered over
+ * @param {MouseEvent} event - Mouse event
+ * @param {string} fullText - Full text of element
+ * @returns {string} Extracted text
+ */
+function extractSmartMode(element, event, fullText) {
+  const fieldId = currentTrackedFieldId;
+
+  // Calculate search radius based on strength (1=narrow, 5=very wide)
+  const searchRadius = smartModeStrength * 50; // pixels to search around cursor
+
+  // Get larger context by searching nearby elements
+  let contextText = fullText;
+  if (smartModeStrength >= 2) {
+    // Include parent element text for wider context
+    const parent = element.parentElement;
+    if (parent) {
+      contextText = cleanText(parent.textContent);
+    }
+  }
+
+  if (smartModeStrength >= 4) {
+    // Include sibling elements for very aggressive search
+    const siblings = element.parentElement?.children || [];
+    const siblingTexts = Array.from(siblings).map(s => cleanText(s.textContent)).join(' ');
+    contextText = siblingTexts || contextText;
+  }
+
+  // Field-specific aggressive extraction
+  let result = null;
+
+  if (fieldId === 'manualPay') {
+    result = extractPayAmount(element, contextText);
+    // If strength is high and nothing found in element, search more aggressively
+    if (!result && smartModeStrength >= 3) {
+      result = searchNearbyForPattern(element, event, /\$\s*\d+(?:\.\d{2})?(?:\s*\/?\s*(?:hour|hr|annually|year))?/gi);
+    }
+  } else if (fieldId === 'manualCompensation') {
+    result = extractCompensationRange(element, contextText);
+    if (!result && smartModeStrength >= 3) {
+      result = searchNearbyForPattern(element, event, /\$\s*\d+(?:,\d{3})*(?:\.\d{2})?\s*-\s*\$?\s*\d+(?:,\d{3})*(?:\.\d{2})?(?:\s*\/?\s*(?:hour|hr|annually|year))?/gi);
+    }
+  } else if (fieldId === 'manualLocation') {
+    result = extractLocation(element, contextText);
+    if (!result && smartModeStrength >= 2) {
+      // Search for city/state patterns or Remote
+      result = searchNearbyForPattern(element, event, /(?:Remote|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2})/g);
+    }
+  } else if (fieldId === 'manualJobTitle') {
+    result = extractJobTitle(element);
+    if (!result && smartModeStrength >= 2) {
+      // Look for capitalized phrases (likely job titles)
+      result = searchNearbyForPattern(element, event, /\b(?:[A-Z][a-z]+\s+){1,4}(?:Engineer|Developer|Manager|Analyst|Scientist|Designer|Architect|Coordinator|Specialist|Director|Lead)\b/g);
+    }
+  } else if (fieldId === 'manualCompany') {
+    result = extractCompanyName(element);
+    if (!result && smartModeStrength >= 2) {
+      // Look for capitalized words (likely company names)
+      result = searchNearbyForPattern(element, event, /\b[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3}\b/g);
+    }
+  } else if (fieldId === 'manualNotes') {
+    result = extractLargeTextBlock(element) || fullText;
+  }
+
+  // Fallback to basic field-aware extraction
+  return result || extractFieldAware(element, event, fullText, currentGranularity.words);
+}
+
+/**
+ * Search nearby elements for a pattern (aggressive mode)
+ * @param {HTMLElement} element - Starting element
+ * @param {MouseEvent} event - Mouse event
+ * @param {RegExp} pattern - Pattern to search for
+ * @returns {string|null} First match found, or null
+ */
+function searchNearbyForPattern(element, event, pattern) {
+  // Search current element first
+  const elementText = cleanText(element.textContent);
+  const matches = elementText.match(pattern);
+  if (matches && matches.length > 0) {
+    return matches[0];
+  }
+
+  // Search parent
+  const parent = element.parentElement;
+  if (parent) {
+    const parentText = cleanText(parent.textContent);
+    const parentMatches = parentText.match(pattern);
+    if (parentMatches && parentMatches.length > 0) {
+      return parentMatches[0];
+    }
+  }
+
+  // Search siblings
+  if (parent) {
+    const siblings = Array.from(parent.children);
+    for (const sibling of siblings) {
+      if (sibling === element) continue;
+      const siblingText = cleanText(sibling.textContent);
+      const siblingMatches = siblingText.match(pattern);
+      if (siblingMatches && siblingMatches.length > 0) {
+        return siblingMatches[0];
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Field-aware intelligent extraction (less aggressive than smart mode)
  * Uses context from the focused field to intelligently extract relevant data
  * @param {HTMLElement} element - Element being hovered over
  * @param {MouseEvent} event - Mouse event
@@ -1853,21 +1974,126 @@ function extractLargeTextBlock(element) {
 }
 
 /**
- * Highlight an element with visual feedback
+ * Highlight an element and the extracted text with visual feedback
  * @param {HTMLElement} element - Element to highlight
+ * @param {string} extractedText - The extracted text to highlight within the element
  */
-function highlightElement(element) {
-  if (lastHighlightedElement === element) return;
+function highlightElement(element, extractedText = null) {
+  if (lastHighlightedElement === element && lastHighlightedText === extractedText) return;
 
   // Remove previous highlight
   removeHighlight();
 
-  // Add highlight to new element
+  // Add element outline highlight
   element.style.outline = '3px solid #FF6B6B';
   element.style.outlineOffset = '2px';
-  element.style.backgroundColor = 'rgba(255, 107, 107, 0.1)';
+  element.style.backgroundColor = 'rgba(255, 107, 107, 0.05)';
 
   lastHighlightedElement = element;
+  lastHighlightedText = extractedText;
+
+  // Create text highlight overlay if we have extracted text
+  if (extractedText && extractedText.trim()) {
+    createTextHighlight(element, extractedText);
+  }
+}
+
+/**
+ * Create a text highlight overlay showing the extracted text
+ * @param {HTMLElement} element - Element containing the text
+ * @param {string} text - The extracted text to highlight
+ */
+function createTextHighlight(element, text) {
+  // Try to find and highlight the exact text within the element
+  const elementText = element.textContent || '';
+  const trimmedText = text.trim();
+
+  if (!elementText.includes(trimmedText)) {
+    // Text not found exactly, skip text-level highlighting
+    return;
+  }
+
+  // Find text position
+  const textIndex = elementText.indexOf(trimmedText);
+  if (textIndex === -1) return;
+
+  // Create highlight mark element
+  try {
+    // Find text nodes and apply highlighting
+    highlightTextInElement(element, trimmedText);
+  } catch (error) {
+    console.error('[MouseTracking] Error creating text highlight:', error);
+  }
+}
+
+/**
+ * Highlight specific text within an element by wrapping it in a mark
+ * @param {HTMLElement} element - Element containing the text
+ * @param {string} searchText - Text to highlight
+ */
+function highlightTextInElement(element, searchText) {
+  // Remove any existing highlights first
+  const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
+  existingHighlights.forEach(mark => {
+    const text = mark.textContent;
+    const textNode = document.createTextNode(text);
+    mark.parentNode.replaceChild(textNode, mark);
+  });
+
+  // Walk through text nodes and highlight matching text
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  const nodesToProcess = [];
+  let node;
+  while (node = walker.nextNode()) {
+    const nodeText = node.nodeValue || '';
+    if (nodeText.includes(searchText)) {
+      nodesToProcess.push(node);
+    }
+  }
+
+  // Process nodes (can't modify during tree walk)
+  nodesToProcess.forEach(textNode => {
+    const nodeText = textNode.nodeValue || '';
+    const index = nodeText.indexOf(searchText);
+
+    if (index !== -1) {
+      // Split the text node
+      const before = nodeText.substring(0, index);
+      const match = nodeText.substring(index, index + searchText.length);
+      const after = nodeText.substring(index + searchText.length);
+
+      const fragment = document.createDocumentFragment();
+
+      if (before) {
+        fragment.appendChild(document.createTextNode(before));
+      }
+
+      // Create highlight mark
+      const mark = document.createElement('mark');
+      mark.className = 'jobsprint-text-highlight';
+      mark.style.cssText = `
+        background-color: rgba(255, 235, 59, 0.6);
+        color: inherit;
+        padding: 2px 0;
+        border-radius: 2px;
+        box-shadow: 0 0 0 2px rgba(255, 235, 59, 0.3);
+        font-weight: inherit;
+      `;
+      mark.textContent = match;
+      fragment.appendChild(mark);
+
+      if (after) {
+        fragment.appendChild(document.createTextNode(after));
+      }
+
+      textNode.parentNode.replaceChild(fragment, textNode);
+    }
+  });
 }
 
 /**
@@ -1878,7 +2104,117 @@ function removeHighlight() {
     lastHighlightedElement.style.outline = '';
     lastHighlightedElement.style.outlineOffset = '';
     lastHighlightedElement.style.backgroundColor = '';
+
+    // Remove text highlights
+    const highlights = lastHighlightedElement.querySelectorAll('mark.jobsprint-text-highlight');
+    highlights.forEach(mark => {
+      const text = mark.textContent;
+      const textNode = document.createTextNode(text);
+      mark.parentNode.replaceChild(textNode, mark);
+    });
+
     lastHighlightedElement = null;
+    lastHighlightedText = null;
+  }
+}
+
+/**
+ * Setup click event listeners for mode buttons
+ */
+function setupModeButtons() {
+  if (!mouseTrackingOverlay) return;
+
+  const smartBtn = mouseTrackingOverlay.querySelector('#mode-smart');
+  const sentenceBtn = mouseTrackingOverlay.querySelector('#mode-sentence');
+  const wordsBtn = mouseTrackingOverlay.querySelector('#mode-words');
+  const charsBtn = mouseTrackingOverlay.querySelector('#mode-chars');
+
+  if (smartBtn) {
+    smartBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchMode('smart');
+    });
+  }
+
+  if (sentenceBtn) {
+    sentenceBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchMode('sentence');
+    });
+  }
+
+  if (wordsBtn) {
+    wordsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchMode('words');
+    });
+  }
+
+  if (charsBtn) {
+    charsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchMode('chars');
+    });
+  }
+
+  // Update button states to reflect current mode
+  updateModeButtonStates();
+}
+
+/**
+ * Switch to a different extraction mode
+ * @param {string} mode - Mode to switch to: 'smart', 'sentence', 'words', 'chars'
+ */
+function switchMode(mode) {
+  currentModifierMode = mode;
+  updateOverlayMode(mode);
+  updateModeButtonStates();
+
+  // Re-extract text with new mode if we have a last mouse position
+  if (lastMouseEvent && lastHighlightedElement) {
+    const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, mode);
+    if (text && text.trim()) {
+      sendTextToPopup(text.trim());
+    }
+  }
+}
+
+/**
+ * Update mode button visual states to show active mode
+ */
+function updateModeButtonStates() {
+  if (!mouseTrackingOverlay) return;
+
+  const buttons = {
+    smart: mouseTrackingOverlay.querySelector('#mode-smart'),
+    sentence: mouseTrackingOverlay.querySelector('#mode-sentence'),
+    words: mouseTrackingOverlay.querySelector('#mode-words'),
+    chars: mouseTrackingOverlay.querySelector('#mode-chars')
+  };
+
+  // Reset all buttons to inactive state
+  Object.values(buttons).forEach(btn => {
+    if (btn) {
+      btn.style.background = 'rgba(255,255,255,0.2)';
+      btn.style.transform = 'scale(1)';
+    }
+  });
+
+  // Highlight active button
+  const activeButton = buttons[currentModifierMode];
+  if (activeButton) {
+    // Use mode-specific colors
+    let activeColor = '#3498db'; // Default blue for smart
+    if (currentModifierMode === 'sentence') {
+      activeColor = '#3498db'; // Blue
+    } else if (currentModifierMode === 'words') {
+      activeColor = '#2ecc71'; // Green
+    } else if (currentModifierMode === 'chars') {
+      activeColor = '#9b59b6'; // Purple
+    }
+
+    activeButton.style.background = activeColor;
+    activeButton.style.transform = 'scale(1.05)';
   }
 }
 
@@ -1923,15 +2259,29 @@ function createTrackingOverlay() {
   `;
 
   overlay.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 8px;">
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
       <span style="font-size: 18px;">🎯</span>
       <span id="jobsprint-tracking-title">Hover over text to auto-fill</span>
     </div>
+    <div id="jobsprint-mode-buttons" style="display: flex; gap: 6px; margin-bottom: 8px; pointer-events: auto;">
+      <button id="mode-smart" style="flex: 1; padding: 6px 10px; background: #3498db; color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+        🧠 Smart
+      </button>
+      <button id="mode-sentence" style="flex: 1; padding: 6px 10px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+        📝 Sentence
+      </button>
+      <button id="mode-words" style="flex: 1; padding: 6px 10px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+        ✂️ Words
+      </button>
+      <button id="mode-chars" style="flex: 1; padding: 6px 10px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+        🔍 Chars
+      </button>
+    </div>
     <div id="jobsprint-tracking-mode" style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
-      ✂️ Word mode (3 words) • ↑↓ to adjust
+      🧠 Smart mode (Level ${smartModeStrength}) • ↑↓ to adjust
     </div>
     <div style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
-      Shift=Sentences • Ctrl=Chars • Alt+Arrows=Move • ESC=Cancel
+      Alt+Arrows=Move • ESC=Cancel
     </div>
   `;
 
@@ -1964,6 +2314,9 @@ function createTrackingOverlay() {
 
   document.body.appendChild(overlay);
   mouseTrackingOverlay = overlay;
+
+  // Add click event listeners to mode buttons
+  setupModeButtons();
 }
 
 /**
@@ -1995,7 +2348,7 @@ function updateOverlayPosition() {
 
 /**
  * Update overlay to show current extraction mode and granularity
- * @param {string} mode - Current mode: 'words', 'sentence', or 'chars'
+ * @param {string} mode - Current mode: 'smart', 'words', 'sentence', or 'chars'
  */
 function updateOverlayMode(mode) {
   if (!mouseTrackingOverlay) return;
@@ -2007,18 +2360,23 @@ function updateOverlayMode(mode) {
   let bgColor = 'rgba(255, 107, 107, 0.95)';
 
   switch (mode) {
+    case 'smart':
+      const strengthDesc = ['Minimal', 'Low', 'Medium', 'High', 'Maximum'][smartModeStrength - 1] || 'Medium';
+      modeText = `🧠 Smart mode (${strengthDesc} - Level ${smartModeStrength}/5) • ↑↓ to adjust`;
+      bgColor = 'rgba(52, 152, 219, 0.95)'; // Blue for smart
+      break;
     case 'sentence':
       const sentCount = currentGranularity.sentences;
-      modeText = `📝 Sentence mode (${sentCount} sentence${sentCount > 1 ? 's' : ''}) • Shift+↑↓ to adjust`;
+      modeText = `📝 Sentence mode (${sentCount} sentence${sentCount > 1 ? 's' : ''}) • ↑↓ to adjust`;
       bgColor = 'rgba(52, 152, 219, 0.95)'; // Blue for sentence
       break;
     case 'chars':
       const charCount = currentGranularity.chars;
       if (charCount === 0) {
-        modeText = '🔍 Character mode (single char) • Ctrl+↑ to expand';
+        modeText = '🔍 Character mode (single char) • ↑ to expand';
       } else {
         const totalChars = charCount * 2 + 1;
-        modeText = `🔍 Character mode (${totalChars} chars) • Ctrl+↑↓ to adjust`;
+        modeText = `🔍 Character mode (${totalChars} chars) • ↑↓ to adjust`;
       }
       bgColor = 'rgba(155, 89, 182, 0.95)'; // Purple for chars
       break;
@@ -2029,12 +2387,15 @@ function updateOverlayMode(mode) {
       bgColor = 'rgba(46, 204, 113, 0.95)'; // Green for words
       break;
     default:
-      modeText = 'Hover over text • Shift=Sentences, Ctrl=Chars';
+      modeText = 'Hover over text to select';
       bgColor = 'rgba(255, 107, 107, 0.95)'; // Red for default
   }
 
   modeElement.textContent = modeText;
   mouseTrackingOverlay.style.background = bgColor;
+
+  // Update button states
+  updateModeButtonStates();
 
   // Add pulse animation when mode or granularity changes
   mouseTrackingOverlay.style.animation = 'slideInFromRight 0.3s ease-out, pulseGlow 0.5s ease-in-out';

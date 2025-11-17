@@ -12,7 +12,8 @@ const DEFAULT_CONFIG = {
   CHAR_MODIFIER: 'ctrl',           // Modifier for character extraction
   WORD_MODIFIER: 'none',           // Modifier for word/field-aware extraction
   OVERLAY_MOVE_MODIFIER: 'alt',   // Modifier for moving overlay
-  OVERLAY_MOVE_STEP: 20            // Pixels to move overlay per keypress
+  OVERLAY_MOVE_STEP: 20,           // Pixels to move overlay per keypress
+  SMART_MODE_STRENGTH: 2           // Smart mode aggressiveness (1-5, default: 2)
 };
 
 // Default clipboard macros (nested structure)
@@ -101,7 +102,8 @@ async function loadSettings() {
       'CHAR_MODIFIER',
       'WORD_MODIFIER',
       'OVERLAY_MOVE_MODIFIER',
-      'OVERLAY_MOVE_STEP'
+      'OVERLAY_MOVE_STEP',
+      'SMART_MODE_STRENGTH'
     ]);
 
     // Populate form fields
@@ -124,6 +126,11 @@ async function loadSettings() {
     document.getElementById('wordModifier').value = result.WORD_MODIFIER || 'none';
     document.getElementById('overlayMoveModifier').value = result.OVERLAY_MOVE_MODIFIER || 'alt';
     document.getElementById('overlayMoveStep').value = result.OVERLAY_MOVE_STEP || 20;
+
+    // Populate smart mode strength slider
+    const smartModeStrength = result.SMART_MODE_STRENGTH || 2;
+    document.getElementById('smartModeStrength').value = smartModeStrength;
+    updateSmartModeStrengthLabel(smartModeStrength);
 
     // Populate clipboard macro folders
     const macros = result.clipboardMacros || DEFAULT_MACROS;
@@ -198,6 +205,27 @@ function setupEventListeners() {
 
   const importFileInput = document.getElementById('importFileInput');
   if (importFileInput) importFileInput.addEventListener('change', handleImportFile);
+
+  // Smart mode strength slider
+  const smartModeSlider = document.getElementById('smartModeStrength');
+  if (smartModeSlider) {
+    smartModeSlider.addEventListener('input', (e) => {
+      updateSmartModeStrengthLabel(parseInt(e.target.value));
+    });
+  }
+}
+
+/**
+ * Update smart mode strength label based on slider value
+ * @param {number} value - Strength value (1-5)
+ */
+function updateSmartModeStrengthLabel(value) {
+  const label = document.getElementById('smartModeStrengthValue');
+  if (!label) return;
+
+  const labels = ['Minimal', 'Low', 'Medium', 'High', 'Maximum'];
+  const labelText = labels[value - 1] || 'Medium';
+  label.textContent = `${labelText} (${value})`;
 }
 
 // Setup folder expand/collapse and JSON validation
@@ -384,7 +412,8 @@ async function saveSettings() {
     CHAR_MODIFIER: document.getElementById('charModifier').value,
     WORD_MODIFIER: document.getElementById('wordModifier').value,
     OVERLAY_MOVE_MODIFIER: document.getElementById('overlayMoveModifier').value,
-    OVERLAY_MOVE_STEP: parseInt(document.getElementById('overlayMoveStep').value) || 20
+    OVERLAY_MOVE_STEP: parseInt(document.getElementById('overlayMoveStep').value) || 20,
+    SMART_MODE_STRENGTH: parseInt(document.getElementById('smartModeStrength').value) || 2
   };
 
   // Get and validate clipboard macros
