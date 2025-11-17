@@ -993,6 +993,9 @@ function handleRelayedKeyboardEvent(eventData) {
       updateOverlayMode(newMode);
       console.log('[RelayedKeyEvent] Mode switched to:', newMode, 'due to modifier', eventData.key);
 
+      // Notify popup about mode change so button states can update
+      notifyPopupModeChange(newMode);
+
       // Re-extract text with new mode if we have a last mouse position
       if (lastMouseEvent && lastHighlightedElement) {
         const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, newMode);
@@ -1010,6 +1013,9 @@ function handleRelayedKeyboardEvent(eventData) {
     currentModifierMode = newMode;
     updateOverlayMode(newMode);
     console.log('[RelayedKeyEvent] Mode changed to:', newMode);
+
+    // Notify popup about mode change
+    notifyPopupModeChange(newMode);
 
     // Re-extract text with new mode if we have a last mouse position
     if (lastMouseEvent && lastHighlightedElement) {
@@ -2297,5 +2303,17 @@ function sendTextToPopup(text, confirm = false) {
     fieldId: currentTrackedFieldId,
     text: text,
     confirmed: confirm
+  });
+}
+
+/**
+ * Notify popup about mode change
+ * This allows the popup to update button states when mode changes via keyboard modifiers
+ * @param {string} mode - New mode: 'words', 'sentence', 'chars'
+ */
+function notifyPopupModeChange(mode) {
+  chrome.runtime.sendMessage({
+    action: 'modeChanged',
+    mode: mode
   });
 }

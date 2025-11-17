@@ -1451,19 +1451,11 @@ function setupModeSelectorButtons() {
       const mode = button.getAttribute('data-mode');
       log(`[ModeSelector] Manually selected mode: ${mode}`);
 
-      // Update button states (highlight selected)
-      modeButtons.forEach(btn => {
-        const btnMode = btn.getAttribute('data-mode');
-        if (btnMode === mode) {
-          // Selected state - use loaded color
-          btn.style.background = getModeBorderColor(mode);
-          btn.style.color = '#fff';
-        } else {
-          // Unselected state - white background with colored text
-          btn.style.background = '#fff';
-          btn.style.color = getModeBorderColor(btnMode);
-        }
-      });
+      // Update the global current mode
+      currentMode = mode;
+
+      // Update button states
+      updateModeButtonStates(mode);
 
       // Update the active field's border color to match mode
       if (currentActiveFieldElement) {
@@ -1520,8 +1512,11 @@ function setupFieldMouseTracking() {
       startMouseTrackingForField(fieldId);
 
       // Add visual indicator that tracking is active with current mode color
-      // Default to words mode (green) initially
-      updateFieldBorderColor(field, 'words');
+      // Use the persisted currentMode instead of defaulting to 'words'
+      updateFieldBorderColor(field, currentMode);
+
+      // Also update button states to match current mode
+      updateModeButtonStates(currentMode);
     });
 
     // Stop tracking on blur
@@ -1689,6 +1684,7 @@ function showSuccess(message) {
 // Track currently focused field for mouse tracking
 let currentlyFocusedField = null;
 let currentActiveFieldElement = null; // Track the actual field DOM element
+let currentMode = 'words'; // Track the current mode globally (persists across fields)
 
 // Mode colors (loaded from storage)
 let popupModeColors = {
@@ -1739,6 +1735,26 @@ function getModeBorderColor(mode) {
 }
 
 /**
+ * Update mode button states to reflect current mode
+ * @param {string} mode - Mode name
+ */
+function updateModeButtonStates(mode) {
+  const modeButtons = document.querySelectorAll('.mode-btn');
+  modeButtons.forEach(btn => {
+    const btnMode = btn.getAttribute('data-mode');
+    if (btnMode === mode) {
+      // Selected state - use loaded color
+      btn.style.background = getModeBorderColor(mode);
+      btn.style.color = '#fff';
+    } else {
+      // Unselected state - white background with colored text
+      btn.style.background = '#fff';
+      btn.style.color = getModeBorderColor(btnMode);
+    }
+  });
+}
+
+/**
  * Update field border color based on mode
  * @param {HTMLElement} field - Field element to update
  * @param {string} mode - Mode name
@@ -1760,6 +1776,22 @@ function initializeMouseTracking() {
     if (message.action === 'mouseHoverText') {
       handleMouseHoverText(message.fieldId, message.text, message.confirmed);
       sendResponse({ success: true });
+      return true;
+    }
+
+    // Listen for mode changes from content script (when using Shift/Ctrl modifiers)
+    if (message.action === 'modeChanged') {
+      log(`[ModeSync] Mode changed to: ${message.mode}`);
+      currentMode = message.mode;
+      updateModeButtonStates(message.mode);
+
+      // Also update active field border if there is one
+      if (currentActiveFieldElement) {
+        updateFieldBorderColor(currentActiveFieldElement, message.mode);
+      }
+
+      sendResponse({ success: true });
+      return true;
     }
   });
 
