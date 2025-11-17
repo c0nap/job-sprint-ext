@@ -2257,6 +2257,13 @@ function removeTrackingOverlay() {
  * @param {boolean} confirm - Whether this is a confirmed selection (clicked)
  */
 function sendTextToPopup(text, confirm = false) {
+  // Check if extension context is valid before attempting to send message
+  if (!chrome.runtime?.id) {
+    // Extension context invalidated - stop tracking silently
+    stopMouseTracking();
+    return;
+  }
+
   try {
     chrome.runtime.sendMessage({
       action: 'mouseHoverText',
@@ -2274,11 +2281,9 @@ function sendTextToPopup(text, confirm = false) {
       }
     });
   } catch (error) {
-    // Extension context invalidated is expected when extension reloads - stop tracking silently
+    // Extension context invalidated - stop tracking silently
     if (error.message && error.message.includes('Extension context invalidated')) {
       stopMouseTracking();
-    } else {
-      console.warn('[MouseTracking] Extension context error:', error);
     }
   }
 }
@@ -2289,6 +2294,12 @@ function sendTextToPopup(text, confirm = false) {
  * @param {string} mode - New mode: 'words', 'smart', 'chars'
  */
 function notifyPopupModeChange(mode) {
+  // Check if extension context is valid before attempting to send message
+  if (!chrome.runtime?.id) {
+    // Extension context invalidated - ignore silently
+    return;
+  }
+
   try {
     chrome.runtime.sendMessage({
       action: 'modeChanged',
@@ -2302,7 +2313,7 @@ function notifyPopupModeChange(mode) {
       }
     });
   } catch (error) {
-    // Extension context invalidated is expected when extension reloads - ignore silently
+    // Extension context invalidated - ignore silently
     if (!error.message || !error.message.includes('Extension context invalidated')) {
       console.warn('[MouseTracking] Extension context error during mode change notification:', error);
     }

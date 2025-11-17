@@ -1441,9 +1441,6 @@ function initializeManualEntryModal() {
 
   // Add mode selector button handlers
   setupModeSelectorButtons();
-
-  // Add granularity adjustment button handlers
-  setupGranularityButtons();
 }
 
 /**
@@ -1485,82 +1482,6 @@ function setupModeSelectorButtons() {
       );
     });
   });
-}
-
-/**
- * Setup granularity adjustment buttons (+, -, ←, →)
- * Allows user to adjust text extraction granularity without arrow keys
- */
-function setupGranularityButtons() {
-  const plusBtn = document.getElementById('granularityPlus');
-  const minusBtn = document.getElementById('granularityMinus');
-  const leftBtn = document.getElementById('granularityLeft');
-  const rightBtn = document.getElementById('granularityRight');
-
-  if (!plusBtn || !minusBtn || !leftBtn || !rightBtn) {
-    logError('[GranularityButtons] One or more buttons not found');
-    return;
-  }
-
-  // Plus button simulates ArrowUp (expand both sides)
-  plusBtn.addEventListener('click', async () => {
-    log('[GranularityButtons] Plus clicked (simulate ArrowUp)');
-    await sendSimulatedArrowKey('ArrowUp');
-  });
-
-  // Minus button simulates ArrowDown (retract both sides)
-  minusBtn.addEventListener('click', async () => {
-    log('[GranularityButtons] Minus clicked (simulate ArrowDown)');
-    await sendSimulatedArrowKey('ArrowDown');
-  });
-
-  // Left button simulates ArrowLeft (extend left only)
-  leftBtn.addEventListener('click', async () => {
-    log('[GranularityButtons] Left clicked (simulate ArrowLeft)');
-    await sendSimulatedArrowKey('ArrowLeft');
-  });
-
-  // Right button simulates ArrowRight (extend right only)
-  rightBtn.addEventListener('click', async () => {
-    log('[GranularityButtons] Right clicked (simulate ArrowRight)');
-    await sendSimulatedArrowKey('ArrowRight');
-  });
-}
-
-/**
- * Send simulated arrow key event to content script
- * @param {string} key - Arrow key to simulate: 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'
- */
-async function sendSimulatedArrowKey(key) {
-  const sourceTab = await getSourceTab();
-  if (!sourceTab) {
-    logError('[GranularityButtons] No source tab found');
-    return;
-  }
-
-  // Create synthetic key event data
-  const keyEventData = {
-    key: key,
-    code: key,
-    shiftKey: false,
-    ctrlKey: false,
-    altKey: false,
-    metaKey: false,
-    type: 'keydown'
-  };
-
-  // Send to content script
-  chrome.tabs.sendMessage(
-    sourceTab.id,
-    { action: 'relayKeyboardEvent', event: keyEventData },
-    (response) => {
-      if (chrome.runtime.lastError) {
-        logError(`[GranularityButtons] Error: ${chrome.runtime.lastError.message}`);
-      } else {
-        log(`[GranularityButtons] Sent ${key} to content script`);
-      }
-    }
-  );
 }
 
 /**
