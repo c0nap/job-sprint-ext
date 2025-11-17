@@ -49,6 +49,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       return false; // Synchronous response
 
+    case 'relayKeyboardEvent':
+      // Handle keyboard event relayed from popup
+      console.log('[ContentScript] Received relayed keyboard event:', message.event);
+      handleRelayedKeyboardEvent(message.event);
+      sendResponse({ success: true });
+      return false; // Synchronous response
+
     default:
       // Unknown action - return error
       sendResponse({ success: false, error: `Unknown action: ${message.action}` });
@@ -887,6 +894,52 @@ function stopMouseTracking() {
 
   // Restore cursor
   document.body.style.cursor = '';
+}
+
+/**
+ * Handle keyboard event relayed from popup
+ * Creates a synthetic event object and processes it like a native keyboard event
+ * @param {Object} eventData - Keyboard event data from popup
+ */
+function handleRelayedKeyboardEvent(eventData) {
+  if (!mouseTrackingActive) return;
+
+  console.log('[RelayedKeyEvent] Processing:', eventData.key, 'with modifiers:', {
+    shift: eventData.shiftKey,
+    ctrl: eventData.ctrlKey,
+    alt: eventData.altKey
+  });
+
+  // Create a synthetic event object that matches the KeyboardEvent interface
+  const syntheticEvent = {
+    key: eventData.key,
+    code: eventData.code,
+    shiftKey: eventData.shiftKey,
+    ctrlKey: eventData.ctrlKey,
+    altKey: eventData.altKey,
+    metaKey: eventData.metaKey,
+    preventDefault: () => {}, // No-op since it's already handled in popup
+    stopPropagation: () => {}
+  };
+
+  // Check if extraction mode has changed due to modifier keys
+  const newMode = getExtractionMode(syntheticEvent);
+  if (newMode !== currentModifierMode) {
+    currentModifierMode = newMode;
+    updateOverlayMode(newMode);
+    console.log('[RelayedKeyEvent] Mode changed to:', newMode);
+
+    // Re-extract text with new mode if we have a last mouse position
+    if (lastMouseEvent && lastHighlightedElement) {
+      const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, newMode);
+      if (text && text.trim()) {
+        sendTextToPopup(text.trim());
+      }
+    }
+  }
+
+  // Process the event through the existing keyboard handler
+  handleEscapeKey(syntheticEvent);
 }
 
 /**

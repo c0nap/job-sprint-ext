@@ -1723,6 +1723,9 @@ async function startMouseTrackingForField(fieldId) {
       }
     }
   );
+
+  // Start keyboard event relay (popup captures keys and forwards to content script)
+  startKeyboardRelay();
 }
 
 /**
@@ -1748,5 +1751,86 @@ async function stopMouseTracking() {
     }
   );
 
+  // Stop keyboard event relay
+  stopKeyboardRelay();
+
   currentlyFocusedField = null;
+}
+
+// Keyboard relay state
+let keyboardRelayActive = false;
+let keyboardRelayHandler = null;
+
+/**
+ * Start keyboard event relay from popup to content script
+ * Captures keyboard events in popup and forwards them to content script
+ */
+function startKeyboardRelay() {
+  if (keyboardRelayActive) return;
+
+  log('[KeyboardRelay] Starting keyboard event relay');
+
+  keyboardRelayHandler = async (event) => {
+    // Only relay specific keys that are used for mouse tracking
+    const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key);
+    const isEscape = event.key === 'Escape';
+    const hasModifier = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
+
+    // Relay if it's an arrow key or escape, or if modifiers are pressed
+    if (isArrowKey || isEscape || hasModifier) {
+      log(`[KeyboardRelay] Relaying key: ${event.key}, modifiers: Shift=${event.shiftKey}, Ctrl=${event.ctrlKey}, Alt=${event.altKey}`);
+
+      // Get source tab
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      // Create a serializable representation of the keyboard event
+      const keyEventData = {
+        key: event.key,
+        code: event.code,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey
+      };
+
+      // Send to content script
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'relayKeyboardEvent', event: keyEventData },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[KeyboardRelay] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+
+      // For arrow keys and escape, prevent default behavior in popup
+      if (isArrowKey || isEscape) {
+        event.preventDefault();
+      }
+    }
+  };
+
+  // Add event listener to document
+  document.addEventListener('keydown', keyboardRelayHandler, true);
+  keyboardRelayActive = true;
+
+  log('[KeyboardRelay] Keyboard relay active');
+}
+
+/**
+ * Stop keyboard event relay
+ */
+function stopKeyboardRelay() {
+  if (!keyboardRelayActive) return;
+
+  log('[KeyboardRelay] Stopping keyboard event relay');
+
+  if (keyboardRelayHandler) {
+    document.removeEventListener('keydown', keyboardRelayHandler, true);
+    keyboardRelayHandler = null;
+  }
+
+  keyboardRelayActive = false;
 }
