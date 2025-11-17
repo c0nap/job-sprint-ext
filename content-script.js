@@ -2265,11 +2265,21 @@ function sendTextToPopup(text, confirm = false) {
       confirmed: confirm
     }, (response) => {
       if (chrome.runtime.lastError) {
-        console.warn('[MouseTracking] Could not send message to popup:', chrome.runtime.lastError.message);
+        // Extension context invalidated is expected when extension reloads - stop tracking silently
+        if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+          stopMouseTracking();
+        } else {
+          console.warn('[MouseTracking] Could not send message to popup:', chrome.runtime.lastError.message);
+        }
       }
     });
   } catch (error) {
-    console.warn('[MouseTracking] Extension context error:', error);
+    // Extension context invalidated is expected when extension reloads - stop tracking silently
+    if (error.message && error.message.includes('Extension context invalidated')) {
+      stopMouseTracking();
+    } else {
+      console.warn('[MouseTracking] Extension context error:', error);
+    }
   }
 }
 
@@ -2285,10 +2295,16 @@ function notifyPopupModeChange(mode) {
       mode: mode
     }, (response) => {
       if (chrome.runtime.lastError) {
-        console.warn('[MouseTracking] Could not notify popup of mode change:', chrome.runtime.lastError.message);
+        // Extension context invalidated is expected when extension reloads - ignore silently
+        if (!chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+          console.warn('[MouseTracking] Could not notify popup of mode change:', chrome.runtime.lastError.message);
+        }
       }
     });
   } catch (error) {
-    console.warn('[MouseTracking] Extension context error during mode change notification:', error);
+    // Extension context invalidated is expected when extension reloads - ignore silently
+    if (!error.message || !error.message.includes('Extension context invalidated')) {
+      console.warn('[MouseTracking] Extension context error during mode change notification:', error);
+    }
   }
 }
