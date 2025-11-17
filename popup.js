@@ -1977,8 +1977,13 @@ function startKeyboardRelay() {
         }
       );
 
-      // For arrow keys and escape, prevent default behavior in popup
-      if (isArrowKey || isEscape) {
+      // For arrow keys WITHOUT Shift/Ctrl modifiers, prevent default to allow granularity adjustment
+      // When Shift/Ctrl are held, allow default behavior (cursor movement) but still relay for text mirroring
+      if (isArrowKey && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+      }
+      // For escape, always prevent default
+      if (isEscape) {
         event.preventDefault();
       }
     }

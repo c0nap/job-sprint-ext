@@ -2257,6 +2257,13 @@ function removeTrackingOverlay() {
  * @param {boolean} confirm - Whether this is a confirmed selection (clicked)
  */
 function sendTextToPopup(text, confirm = false) {
+  // Check if extension context is valid before attempting to send message
+  if (!chrome.runtime?.id) {
+    // Extension context invalidated - stop tracking silently
+    stopMouseTracking();
+    return;
+  }
+
   try {
     chrome.runtime.sendMessage({
       action: 'mouseHoverText',
@@ -2265,11 +2272,19 @@ function sendTextToPopup(text, confirm = false) {
       confirmed: confirm
     }, (response) => {
       if (chrome.runtime.lastError) {
-        console.warn('[MouseTracking] Could not send message to popup:', chrome.runtime.lastError.message);
+        // Extension context invalidated is expected when extension reloads - stop tracking silently
+        if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+          stopMouseTracking();
+        } else {
+          console.warn('[MouseTracking] Could not send message to popup:', chrome.runtime.lastError.message);
+        }
       }
     });
   } catch (error) {
-    console.warn('[MouseTracking] Extension context error:', error);
+    // Extension context invalidated - stop tracking silently
+    if (error.message && error.message.includes('Extension context invalidated')) {
+      stopMouseTracking();
+    }
   }
 }
 
@@ -2279,16 +2294,28 @@ function sendTextToPopup(text, confirm = false) {
  * @param {string} mode - New mode: 'words', 'smart', 'chars'
  */
 function notifyPopupModeChange(mode) {
+  // Check if extension context is valid before attempting to send message
+  if (!chrome.runtime?.id) {
+    // Extension context invalidated - ignore silently
+    return;
+  }
+
   try {
     chrome.runtime.sendMessage({
       action: 'modeChanged',
       mode: mode
     }, (response) => {
       if (chrome.runtime.lastError) {
-        console.warn('[MouseTracking] Could not notify popup of mode change:', chrome.runtime.lastError.message);
+        // Extension context invalidated is expected when extension reloads - ignore silently
+        if (!chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+          console.warn('[MouseTracking] Could not notify popup of mode change:', chrome.runtime.lastError.message);
+        }
       }
     });
   } catch (error) {
-    console.warn('[MouseTracking] Extension context error during mode change notification:', error);
+    // Extension context invalidated - ignore silently
+    if (!error.message || !error.message.includes('Extension context invalidated')) {
+      console.warn('[MouseTracking] Extension context error during mode change notification:', error);
+    }
   }
 }
