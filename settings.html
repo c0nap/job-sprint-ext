@@ -575,6 +575,104 @@
             </div>
         </div>
 
+        <!-- Mouse Tracking Settings -->
+        <div class="settings-section">
+            <h3>
+                Mouse Tracking Settings
+                <span class="tooltip">
+                    <span class="help-icon">?</span>
+                    <span class="tooltip-text">Configure keyboard modifiers for text extraction modes and overlay positioning during interactive mouse tracking when filling job data fields.</span>
+                </span>
+            </h3>
+
+            <div class="alert alert-info">
+                Configure keyboard shortcuts for the interactive mouse tracking feature. Press these modifier keys while hovering over text to control extraction scope.
+            </div>
+
+            <div class="form-group">
+                <label for="sentenceModifier">
+                    Sentence Extraction Modifier
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Modifier key that activates sentence-based extraction. Default: Shift key extracts full sentences around the cursor.</span>
+                    </span>
+                </label>
+                <select id="sentenceModifier" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
+                    <option value="shift">Shift</option>
+                    <option value="ctrl">Ctrl/Cmd</option>
+                    <option value="alt">Alt</option>
+                    <option value="none">None (Default mode)</option>
+                </select>
+                <small>Hold this key while hovering to extract full sentences</small>
+            </div>
+
+            <div class="form-group">
+                <label for="charModifier">
+                    Character Extraction Modifier
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Modifier key that activates character-based extraction. Default: Ctrl/Cmd key extracts characters around the cursor.</span>
+                    </span>
+                </label>
+                <select id="charModifier" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
+                    <option value="shift">Shift</option>
+                    <option value="ctrl">Ctrl/Cmd</option>
+                    <option value="alt">Alt</option>
+                    <option value="none">None (Default mode)</option>
+                </select>
+                <small>Hold this key while hovering to extract individual characters</small>
+            </div>
+
+            <div class="form-group">
+                <label for="wordModifier">
+                    Word Extraction Modifier (Field-Aware)
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Modifier key for word-based extraction with intelligent field awareness. Default: No modifier (default mode) extracts words and uses smart detection for pay, location, etc.</span>
+                    </span>
+                </label>
+                <select id="wordModifier" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
+                    <option value="shift">Shift</option>
+                    <option value="ctrl">Ctrl/Cmd</option>
+                    <option value="alt">Alt</option>
+                    <option value="none">None (Default mode)</option>
+                </select>
+                <small>Default mode with intelligent field-aware extraction (e.g., auto-detects pay amounts, locations)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="overlayMoveModifier">
+                    Overlay Repositioning Modifier
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Modifier key for moving the tracking overlay with arrow keys. Default: Alt + Arrow keys move the overlay to prevent it from blocking content.</span>
+                    </span>
+                </label>
+                <select id="overlayMoveModifier" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
+                    <option value="shift">Shift</option>
+                    <option value="ctrl">Ctrl/Cmd</option>
+                    <option value="alt">Alt</option>
+                </select>
+                <small>Hold this key + Arrow keys to move the tracking overlay on the page</small>
+            </div>
+
+            <div class="form-group">
+                <label for="overlayMoveStep">
+                    Overlay Move Distance (pixels)
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">How far the overlay moves with each arrow key press. Default: 20 pixels. Increase for faster repositioning, decrease for fine control.</span>
+                    </span>
+                </label>
+                <input type="number" id="overlayMoveStep" min="5" max="100" step="5" value="20" style="width: 100px;">
+                <small>Distance in pixels per arrow key press (5-100)</small>
+            </div>
+
+            <div class="alert alert-warning">
+                <strong>⚠️ Note:</strong> Ensure each modifier is assigned to a different mode to avoid conflicts. If conflicts exist, the extension will use default settings.
+            </div>
+        </div>
+
         <!-- Full Backup & Restore -->
         <div class="settings-section">
             <h3>

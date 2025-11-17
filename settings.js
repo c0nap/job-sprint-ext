@@ -6,7 +6,13 @@ const DEFAULT_CONFIG = {
   SPREADSHEET_ID: '',
   PROJECT_ID: '',
   ENABLE_MANUAL_ENTRY: true,
-  TARGET_SHEET_NAME: 'Job Applications'
+  TARGET_SHEET_NAME: 'Job Applications',
+  // Mouse tracking settings
+  SENTENCE_MODIFIER: 'shift',      // Modifier for sentence extraction
+  CHAR_MODIFIER: 'ctrl',           // Modifier for character extraction
+  WORD_MODIFIER: 'none',           // Modifier for word/field-aware extraction
+  OVERLAY_MOVE_MODIFIER: 'alt',   // Modifier for moving overlay
+  OVERLAY_MOVE_STEP: 20            // Pixels to move overlay per keypress
 };
 
 // Default clipboard macros (nested structure)
@@ -90,7 +96,12 @@ async function loadSettings() {
       'TARGET_SHEET_NAME',
       'clipboardMacros',
       'maxSearchResults',
-      'debugConsoleEnabled'
+      'debugConsoleEnabled',
+      'SENTENCE_MODIFIER',
+      'CHAR_MODIFIER',
+      'WORD_MODIFIER',
+      'OVERLAY_MOVE_MODIFIER',
+      'OVERLAY_MOVE_STEP'
     ]);
 
     // Populate form fields
@@ -106,6 +117,13 @@ async function loadSettings() {
 
     // Populate debug console setting
     document.getElementById('debugConsoleEnabled').checked = result.debugConsoleEnabled || false;
+
+    // Populate mouse tracking settings
+    document.getElementById('sentenceModifier').value = result.SENTENCE_MODIFIER || 'shift';
+    document.getElementById('charModifier').value = result.CHAR_MODIFIER || 'ctrl';
+    document.getElementById('wordModifier').value = result.WORD_MODIFIER || 'none';
+    document.getElementById('overlayMoveModifier').value = result.OVERLAY_MOVE_MODIFIER || 'alt';
+    document.getElementById('overlayMoveStep').value = result.OVERLAY_MOVE_STEP || 20;
 
     // Populate clipboard macro folders
     const macros = result.clipboardMacros || DEFAULT_MACROS;
@@ -360,7 +378,13 @@ async function saveSettings() {
     SPREADSHEET_ID: document.getElementById('spreadsheetId').value.trim(),
     PROJECT_ID: document.getElementById('projectId').value.trim(),
     ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked,
-    TARGET_SHEET_NAME: document.getElementById('targetSheetName').value.trim() || 'Job Applications'
+    TARGET_SHEET_NAME: document.getElementById('targetSheetName').value.trim() || 'Job Applications',
+    // Mouse tracking settings
+    SENTENCE_MODIFIER: document.getElementById('sentenceModifier').value,
+    CHAR_MODIFIER: document.getElementById('charModifier').value,
+    WORD_MODIFIER: document.getElementById('wordModifier').value,
+    OVERLAY_MOVE_MODIFIER: document.getElementById('overlayMoveModifier').value,
+    OVERLAY_MOVE_STEP: parseInt(document.getElementById('overlayMoveStep').value) || 20
   };
 
   // Get and validate clipboard macros
@@ -398,6 +422,33 @@ async function saveSettings() {
   // Validate Google Sheets inputs
   if (settings.APPS_SCRIPT_ENDPOINT && !isValidUrl(settings.APPS_SCRIPT_ENDPOINT)) {
     showStatus('Invalid Apps Script Endpoint URL', 'error');
+    return;
+  }
+
+  // Validate mouse tracking keybind settings (check for conflicts)
+  const modifiers = [
+    { value: settings.SENTENCE_MODIFIER, name: 'Sentence' },
+    { value: settings.CHAR_MODIFIER, name: 'Character' },
+    { value: settings.WORD_MODIFIER, name: 'Word' }
+  ];
+
+  const modifierCounts = {};
+  for (const mod of modifiers) {
+    if (mod.value !== 'none') {
+      modifierCounts[mod.value] = (modifierCounts[mod.value] || 0) + 1;
+    }
+  }
+
+  for (const [key, count] of Object.entries(modifierCounts)) {
+    if (count > 1) {
+      showStatus(`Keybind conflict: Multiple extraction modes assigned to ${key}. Each modifier must be unique.`, 'error');
+      return;
+    }
+  }
+
+  // Validate overlay move step
+  if (settings.OVERLAY_MOVE_STEP < 5 || settings.OVERLAY_MOVE_STEP > 100) {
+    showStatus('Overlay move distance must be between 5 and 100 pixels', 'error');
     return;
   }
 
