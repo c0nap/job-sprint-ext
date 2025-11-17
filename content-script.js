@@ -2324,12 +2324,20 @@ function removeTrackingOverlay() {
  * @param {boolean} confirm - Whether this is a confirmed selection (clicked)
  */
 function sendTextToPopup(text, confirm = false) {
-  chrome.runtime.sendMessage({
-    action: 'mouseHoverText',
-    fieldId: currentTrackedFieldId,
-    text: text,
-    confirmed: confirm
-  });
+  try {
+    chrome.runtime.sendMessage({
+      action: 'mouseHoverText',
+      fieldId: currentTrackedFieldId,
+      text: text,
+      confirmed: confirm
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[MouseTracking] Could not send message to popup:', chrome.runtime.lastError.message);
+      }
+    });
+  } catch (error) {
+    console.warn('[MouseTracking] Extension context error:', error);
+  }
 }
 
 /**
@@ -2338,8 +2346,16 @@ function sendTextToPopup(text, confirm = false) {
  * @param {string} mode - New mode: 'words', 'sentence', 'chars'
  */
 function notifyPopupModeChange(mode) {
-  chrome.runtime.sendMessage({
-    action: 'modeChanged',
-    mode: mode
-  });
+  try {
+    chrome.runtime.sendMessage({
+      action: 'modeChanged',
+      mode: mode
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[MouseTracking] Could not notify popup of mode change:', chrome.runtime.lastError.message);
+      }
+    });
+  } catch (error) {
+    console.warn('[MouseTracking] Extension context error during mode change notification:', error);
+  }
 }
