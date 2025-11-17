@@ -1282,11 +1282,16 @@ function handleExtractError(button, statusDiv, message) {
 
 /**
  * Reset extract button to default state
- * @param {HTMLButtonElement} button - Extract button element
+ * @param {HTMLButtonElement} button - Extract or manual entry button element
  */
 function resetExtractButton(button) {
   button.disabled = false;
-  button.textContent = 'Extract & Log Job Data';
+  // Reset to appropriate text based on button ID
+  if (button.id === 'manualEntryBtn') {
+    button.textContent = 'Manual Entry';
+  } else {
+    button.textContent = 'Extract & Log Job Data';
+  }
 }
 
 // ============ AUTOFILL ============
@@ -1553,6 +1558,20 @@ function showManualEntryModal(button, statusDiv, jobData) {
   modal.dataset.button = button.id;
   modal.dataset.status = statusDiv.id;
 
+  // Update modal title and info based on the source button
+  const modalTitle = document.getElementById('modalTitle');
+  const modalInfo = document.getElementById('modalInfo');
+
+  if (button.id === 'manualEntryBtn') {
+    // Manual entry was requested directly
+    modalTitle.textContent = 'Add Job Details';
+    modalInfo.textContent = 'Please fill in the job details below:';
+  } else {
+    // Auto-extraction happened but data is missing
+    modalTitle.textContent = 'Review Job Data';
+    modalInfo.textContent = 'Some job details couldn\'t be extracted automatically. Please review and fill in the missing information:';
+  }
+
   // Pre-fill form fields with extracted data
   document.getElementById('manualJobTitle').value = jobData.title || '';
   document.getElementById('manualCompany').value = jobData.company || '';
@@ -1689,7 +1708,7 @@ let currentMode = 'words'; // Track the current mode globally (persists across f
 // Mode colors (loaded from storage)
 let popupModeColors = {
   words: '#2ecc71',
-  sentence: '#3498db',
+  smart: '#3498db',
   chars: '#9b59b6'
 };
 
@@ -1706,7 +1725,7 @@ async function loadModeColors() {
 
     popupModeColors = {
       words: result.WORD_MODE_COLOR || '#2ecc71',
-      sentence: result.SENTENCE_MODE_COLOR || '#3498db',
+      smart: result.SENTENCE_MODE_COLOR || '#3498db',
       chars: result.CHAR_MODE_COLOR || '#9b59b6'
     };
 
@@ -1718,13 +1737,13 @@ async function loadModeColors() {
 
 /**
  * Get border color for a specific mode
- * @param {string} mode - Mode name: 'words', 'sentence', 'chars'
+ * @param {string} mode - Mode name: 'words', 'smart', 'chars'
  * @returns {string} Border color for the mode
  */
 function getModeBorderColor(mode) {
   switch (mode) {
-    case 'sentence':
-      return popupModeColors.sentence;
+    case 'smart':
+      return popupModeColors.smart;
     case 'chars':
       return popupModeColors.chars;
     case 'words':

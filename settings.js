@@ -8,9 +8,9 @@ const DEFAULT_CONFIG = {
   ENABLE_MANUAL_ENTRY: true,
   TARGET_SHEET_NAME: 'Job Applications',
   // Mouse tracking settings
-  SENTENCE_MODIFIER: 'shift',      // Modifier for sentence extraction
+  SENTENCE_MODIFIER: 'shift',      // Modifier for smart field-aware extraction
   CHAR_MODIFIER: 'ctrl',           // Modifier for character extraction
-  WORD_MODIFIER: 'none',           // Modifier for word/field-aware extraction
+  WORD_MODIFIER: 'none',           // Modifier for word extraction
   OVERLAY_MOVE_MODIFIER: 'alt',   // Modifier for moving overlay
   OVERLAY_MOVE_STEP: 20            // Pixels to move overlay per keypress
 };
@@ -439,7 +439,7 @@ async function saveSettings() {
 
   // Validate mouse tracking keybind settings (check for conflicts)
   const modifiers = [
-    { value: settings.SENTENCE_MODIFIER, name: 'Sentence' },
+    { value: settings.SENTENCE_MODIFIER, name: 'Smart' },
     { value: settings.CHAR_MODIFIER, name: 'Character' },
     { value: settings.WORD_MODIFIER, name: 'Word' }
   ];
