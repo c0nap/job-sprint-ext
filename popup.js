@@ -5,9 +5,12 @@
  */
 
 // Initialize all popup features when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   initializeDebugConsole();
   log('JobSprint Popup loaded');
+
+  // Load mode colors early
+  await loadModeColors();
 
   initializeClipboardMacros();
   initializeExtraction();
@@ -1438,42 +1441,26 @@ function initializeManualEntryModal() {
 /**
  * Setup mode selector buttons
  * Allows user to manually select extraction mode via UI buttons
+ * Now activates on mouseover for instant feedback
  */
 function setupModeSelectorButtons() {
   const modeButtons = document.querySelectorAll('.mode-btn');
 
   modeButtons.forEach(button => {
-    button.addEventListener('click', async () => {
+    button.addEventListener('mouseenter', async () => {
       const mode = button.getAttribute('data-mode');
       log(`[ModeSelector] Manually selected mode: ${mode}`);
 
-      // Update button states (highlight selected)
-      modeButtons.forEach(btn => {
-        const btnMode = btn.getAttribute('data-mode');
-        if (btnMode === mode) {
-          // Selected state
-          if (mode === 'words') {
-            btn.style.background = '#46a049';
-            btn.style.color = '#fff';
-          } else if (mode === 'sentence') {
-            btn.style.background = '#3498db';
-            btn.style.color = '#fff';
-          } else if (mode === 'chars') {
-            btn.style.background = '#9b59b6';
-            btn.style.color = '#fff';
-          }
-        } else {
-          // Unselected state
-          btn.style.background = '#fff';
-          if (btnMode === 'words') {
-            btn.style.color = '#46a049';
-          } else if (btnMode === 'sentence') {
-            btn.style.color = '#3498db';
-          } else if (btnMode === 'chars') {
-            btn.style.color = '#9b59b6';
-          }
-        }
-      });
+      // Update the global current mode
+      currentMode = mode;
+
+      // Update button states
+      updateModeButtonStates(mode);
+
+      // Update the active field's border color to match mode
+      if (currentActiveFieldElement) {
+        updateFieldBorderColor(currentActiveFieldElement, mode);
+      }
 
       // Send mode change to content script
       const sourceTab = await getSourceTab();
@@ -1521,11 +1508,15 @@ function setupFieldMouseTracking() {
     // Start tracking on focus
     field.addEventListener('focus', () => {
       log(`[Field] Focused: ${fieldId}`);
+      currentActiveFieldElement = field; // Store the active field
       startMouseTrackingForField(fieldId);
 
-      // Add visual indicator that tracking is active
-      field.style.borderColor = '#FF6B6B';
-      field.style.borderWidth = '2px';
+      // Add visual indicator that tracking is active with current mode color
+      // Use the persisted currentMode instead of defaulting to 'words'
+      updateFieldBorderColor(field, currentMode);
+
+      // Also update button states to match current mode
+      updateModeButtonStates(currentMode);
     });
 
     // Stop tracking on blur
@@ -1542,6 +1533,8 @@ function setupFieldMouseTracking() {
       // Remove visual indicator
       field.style.borderColor = '';
       field.style.borderWidth = '';
+      field.style.boxShadow = '';
+      currentActiveFieldElement = null; // Clear the stored field
     });
   });
 }
@@ -1690,6 +1683,88 @@ function showSuccess(message) {
 
 // Track currently focused field for mouse tracking
 let currentlyFocusedField = null;
+let currentActiveFieldElement = null; // Track the actual field DOM element
+let currentMode = 'words'; // Track the current mode globally (persists across fields)
+
+// Mode colors (loaded from storage)
+let popupModeColors = {
+  words: '#2ecc71',
+  sentence: '#3498db',
+  chars: '#9b59b6'
+};
+
+/**
+ * Load mode colors from chrome storage
+ */
+async function loadModeColors() {
+  try {
+    const result = await chrome.storage.sync.get([
+      'WORD_MODE_COLOR',
+      'SENTENCE_MODE_COLOR',
+      'CHAR_MODE_COLOR'
+    ]);
+
+    popupModeColors = {
+      words: result.WORD_MODE_COLOR || '#2ecc71',
+      sentence: result.SENTENCE_MODE_COLOR || '#3498db',
+      chars: result.CHAR_MODE_COLOR || '#9b59b6'
+    };
+
+    log('[Popup] Mode colors loaded:', popupModeColors);
+  } catch (error) {
+    logError('[Popup] Error loading mode colors:', error);
+  }
+}
+
+/**
+ * Get border color for a specific mode
+ * @param {string} mode - Mode name: 'words', 'sentence', 'chars'
+ * @returns {string} Border color for the mode
+ */
+function getModeBorderColor(mode) {
+  switch (mode) {
+    case 'sentence':
+      return popupModeColors.sentence;
+    case 'chars':
+      return popupModeColors.chars;
+    case 'words':
+      return popupModeColors.words;
+    default:
+      return '#FF6B6B'; // Red (default)
+  }
+}
+
+/**
+ * Update mode button states to reflect current mode
+ * @param {string} mode - Mode name
+ */
+function updateModeButtonStates(mode) {
+  const modeButtons = document.querySelectorAll('.mode-btn');
+  modeButtons.forEach(btn => {
+    const btnMode = btn.getAttribute('data-mode');
+    if (btnMode === mode) {
+      // Selected state - use loaded color
+      btn.style.background = getModeBorderColor(mode);
+      btn.style.color = '#fff';
+    } else {
+      // Unselected state - white background with colored text
+      btn.style.background = '#fff';
+      btn.style.color = getModeBorderColor(btnMode);
+    }
+  });
+}
+
+/**
+ * Update field border color based on mode
+ * @param {HTMLElement} field - Field element to update
+ * @param {string} mode - Mode name
+ */
+function updateFieldBorderColor(field, mode) {
+  const color = getModeBorderColor(mode);
+  field.style.borderColor = color;
+  field.style.borderWidth = '2px';
+  field.style.boxShadow = `0 0 0 1px ${color}`;
+}
 
 /**
  * Initialize mouse tracking message listener
@@ -1701,6 +1776,22 @@ function initializeMouseTracking() {
     if (message.action === 'mouseHoverText') {
       handleMouseHoverText(message.fieldId, message.text, message.confirmed);
       sendResponse({ success: true });
+      return true;
+    }
+
+    // Listen for mode changes from content script (when using Shift/Ctrl modifiers)
+    if (message.action === 'modeChanged') {
+      log(`[ModeSync] Mode changed to: ${message.mode}`);
+      currentMode = message.mode;
+      updateModeButtonStates(message.mode);
+
+      // Also update active field border if there is one
+      if (currentActiveFieldElement) {
+        updateFieldBorderColor(currentActiveFieldElement, message.mode);
+      }
+
+      sendResponse({ success: true });
+      return true;
     }
   });
 
@@ -1771,10 +1862,10 @@ async function startMouseTrackingForField(fieldId) {
     return;
   }
 
-  // Send message to content script to start tracking
+  // Send message to content script to start tracking with current mode
   chrome.tabs.sendMessage(
     sourceTab.id,
-    { action: 'startMouseTracking', fieldId: fieldId },
+    { action: 'startMouseTracking', fieldId: fieldId, mode: currentMode },
     (response) => {
       if (chrome.runtime.lastError) {
         logError(`[MouseTracking] Error: ${chrome.runtime.lastError.message}`);
