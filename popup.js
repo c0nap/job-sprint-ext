@@ -1447,9 +1447,16 @@ function setupFieldMouseTracking() {
     'manualPay'
   ];
 
+  log(`[MouseTracking] Setting up field tracking for ${trackableFields.length} fields`);
+
   trackableFields.forEach(fieldId => {
     const field = document.getElementById(fieldId);
-    if (!field) return;
+    if (!field) {
+      logError(`[MouseTracking] Field not found: ${fieldId}`);
+      return;
+    }
+
+    log(`[MouseTracking] Field found and listener added: ${fieldId}`);
 
     // Start tracking on focus
     field.addEventListener('focus', () => {

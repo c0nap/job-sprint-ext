@@ -37,12 +37,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'startMouseTracking':
       // Start interactive mouse tracking for field auto-fill
+      console.log('[ContentScript] Received startMouseTracking for field:', message.fieldId);
       startMouseTracking(message.fieldId);
       sendResponse({ success: true });
       return false; // Synchronous response
 
     case 'stopMouseTracking':
       // Stop interactive mouse tracking
+      console.log('[ContentScript] Received stopMouseTracking');
       stopMouseTracking();
       sendResponse({ success: true });
       return false; // Synchronous response
@@ -835,27 +837,32 @@ async function loadMouseTrackingSettings() {
  * @param {string} fieldId - ID of the field being filled
  */
 async function startMouseTracking(fieldId) {
-  console.log('Starting mouse tracking for field:', fieldId);
+  console.log('[MouseTracking] Starting mouse tracking for field:', fieldId);
 
   // Load settings before starting
   await loadMouseTrackingSettings();
+  console.log('[MouseTracking] Settings loaded, starting tracking...');
 
   // Stop any existing tracking
   stopMouseTracking();
 
   mouseTrackingActive = true;
   currentTrackedFieldId = fieldId;
+  console.log('[MouseTracking] Tracking state set to active');
 
   // Create visual overlay to indicate tracking mode
   createTrackingOverlay();
+  console.log('[MouseTracking] Overlay created');
 
   // Add event listeners
   document.addEventListener('mousemove', handleMouseMove, true);
   document.addEventListener('click', handleMouseClick, true);
   document.addEventListener('keydown', handleEscapeKey, true);
+  console.log('[MouseTracking] Event listeners added');
 
   // Change cursor to indicate tracking mode
   document.body.style.cursor = 'crosshair';
+  console.log('[MouseTracking] Mouse tracking fully initialized');
 }
 
 /**
