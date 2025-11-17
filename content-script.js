@@ -816,8 +816,15 @@ let mouseTrackingSettings = {
   overlayMoveStep: 20
 };
 
+// Mode colors (loaded from chrome.storage)
+let modeColors = {
+  words: { solid: '#2ecc71', transparent: 'rgba(46, 204, 113, 0.1)', bg: 'rgba(46, 204, 113, 0.95)' },
+  sentence: { solid: '#3498db', transparent: 'rgba(52, 152, 219, 0.1)', bg: 'rgba(52, 152, 219, 0.95)' },
+  chars: { solid: '#9b59b6', transparent: 'rgba(155, 89, 182, 0.1)', bg: 'rgba(155, 89, 182, 0.95)' }
+};
+
 /**
- * Load mouse tracking settings from chrome.storage
+ * Load mouse tracking settings and colors from chrome.storage
  * @returns {Promise<void>}
  */
 async function loadMouseTrackingSettings() {
@@ -827,7 +834,10 @@ async function loadMouseTrackingSettings() {
       'CHAR_MODIFIER',
       'WORD_MODIFIER',
       'OVERLAY_MOVE_MODIFIER',
-      'OVERLAY_MOVE_STEP'
+      'OVERLAY_MOVE_STEP',
+      'WORD_MODE_COLOR',
+      'SENTENCE_MODE_COLOR',
+      'CHAR_MODE_COLOR'
     ]);
 
     mouseTrackingSettings = {
@@ -838,11 +848,53 @@ async function loadMouseTrackingSettings() {
       overlayMoveStep: result.OVERLAY_MOVE_STEP || 20
     };
 
+    // Load and convert colors
+    const wordColor = result.WORD_MODE_COLOR || '#2ecc71';
+    const sentenceColor = result.SENTENCE_MODE_COLOR || '#3498db';
+    const charColor = result.CHAR_MODE_COLOR || '#9b59b6';
+
+    modeColors = {
+      words: {
+        solid: wordColor,
+        transparent: hexToRgba(wordColor, 0.1),
+        bg: hexToRgba(wordColor, 0.95)
+      },
+      sentence: {
+        solid: sentenceColor,
+        transparent: hexToRgba(sentenceColor, 0.1),
+        bg: hexToRgba(sentenceColor, 0.95)
+      },
+      chars: {
+        solid: charColor,
+        transparent: hexToRgba(charColor, 0.1),
+        bg: hexToRgba(charColor, 0.95)
+      }
+    };
+
     console.log('[MouseTracking] Settings loaded:', mouseTrackingSettings);
+    console.log('[MouseTracking] Colors loaded:', modeColors);
   } catch (error) {
     console.error('[MouseTracking] Error loading settings:', error);
     // Use defaults on error
   }
+}
+
+/**
+ * Convert hex color to rgba
+ * @param {string} hex - Hex color (e.g., '#3498db')
+ * @param {number} alpha - Alpha value (0-1)
+ * @returns {string} RGBA color string
+ */
+function hexToRgba(hex, alpha) {
+  // Remove the hash if present
+  hex = hex.replace('#', '');
+
+  // Parse the hex values
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 /**
@@ -2003,12 +2055,45 @@ function highlightElement(element) {
   // Remove previous highlight
   removeHighlight();
 
+  // Get color based on current mode
+  const colors = getModeColors(currentModifierMode);
+
   // Add highlight to new element
-  element.style.outline = '3px solid #FF6B6B';
+  element.style.outline = `3px solid ${colors.solid}`;
   element.style.outlineOffset = '2px';
-  element.style.backgroundColor = 'rgba(255, 107, 107, 0.1)';
+  element.style.backgroundColor = colors.transparent;
 
   lastHighlightedElement = element;
+}
+
+/**
+ * Get colors for a specific mode
+ * @param {string} mode - Mode name: 'words', 'sentence', 'chars'
+ * @returns {Object} Object with solid and transparent color values
+ */
+function getModeColors(mode) {
+  switch (mode) {
+    case 'sentence':
+      return {
+        solid: modeColors.sentence.solid,
+        transparent: modeColors.sentence.transparent
+      };
+    case 'chars':
+      return {
+        solid: modeColors.chars.solid,
+        transparent: modeColors.chars.transparent
+      };
+    case 'words':
+      return {
+        solid: modeColors.words.solid,
+        transparent: modeColors.words.transparent
+      };
+    default:
+      return {
+        solid: '#FF6B6B',              // Red (default)
+        transparent: 'rgba(255, 107, 107, 0.1)'
+      };
+  }
 }
 
 /**
@@ -2151,7 +2236,7 @@ function updateOverlayMode(mode) {
     case 'sentence':
       const sentCount = currentGranularity.sentences;
       modeText = `📝 Sentence mode (${sentCount} sentence${sentCount > 1 ? 's' : ''}) • Shift+↑↓ to adjust`;
-      bgColor = 'rgba(52, 152, 219, 0.95)'; // Blue for sentence
+      bgColor = modeColors.sentence.bg;
       break;
     case 'chars':
       const charLeft = currentGranularity.chars.left;
@@ -2165,7 +2250,7 @@ function updateOverlayMode(mode) {
         const totalChars = charLeft + charRight + 1;
         modeText = `🔍 Character mode (${charLeft}←•→${charRight}, total ${totalChars}) • Ctrl+↑↓←→`;
       }
-      bgColor = 'rgba(155, 89, 182, 0.95)'; // Purple for chars
+      bgColor = modeColors.chars.bg;
       break;
     case 'words':
       const wordLeft = currentGranularity.words.left;
@@ -2177,7 +2262,7 @@ function updateOverlayMode(mode) {
         const totalWords = wordLeft + wordRight + 1;
         modeText = `✂️ Word mode (${wordLeft}←•→${wordRight}, total ${totalWords}) • ↑↓←→`;
       }
-      bgColor = 'rgba(46, 204, 113, 0.95)'; // Green for words
+      bgColor = modeColors.words.bg;
       break;
     default:
       modeText = 'Hover over text • Shift=Sentences, Ctrl=Chars';

@@ -101,7 +101,10 @@ async function loadSettings() {
       'CHAR_MODIFIER',
       'WORD_MODIFIER',
       'OVERLAY_MOVE_MODIFIER',
-      'OVERLAY_MOVE_STEP'
+      'OVERLAY_MOVE_STEP',
+      'WORD_MODE_COLOR',
+      'SENTENCE_MODE_COLOR',
+      'CHAR_MODE_COLOR'
     ]);
 
     // Populate form fields
@@ -124,6 +127,11 @@ async function loadSettings() {
     document.getElementById('wordModifier').value = result.WORD_MODIFIER || 'none';
     document.getElementById('overlayMoveModifier').value = result.OVERLAY_MOVE_MODIFIER || 'alt';
     document.getElementById('overlayMoveStep').value = result.OVERLAY_MOVE_STEP || 20;
+
+    // Populate mode colors
+    document.getElementById('wordModeColor').value = result.WORD_MODE_COLOR || '#2ecc71';
+    document.getElementById('sentenceModeColor').value = result.SENTENCE_MODE_COLOR || '#3498db';
+    document.getElementById('charModeColor').value = result.CHAR_MODE_COLOR || '#9b59b6';
 
     // Populate clipboard macro folders
     const macros = result.clipboardMacros || DEFAULT_MACROS;
@@ -384,7 +392,11 @@ async function saveSettings() {
     CHAR_MODIFIER: document.getElementById('charModifier').value,
     WORD_MODIFIER: document.getElementById('wordModifier').value,
     OVERLAY_MOVE_MODIFIER: document.getElementById('overlayMoveModifier').value,
-    OVERLAY_MOVE_STEP: parseInt(document.getElementById('overlayMoveStep').value) || 20
+    OVERLAY_MOVE_STEP: parseInt(document.getElementById('overlayMoveStep').value) || 20,
+    // Mode colors
+    WORD_MODE_COLOR: document.getElementById('wordModeColor').value,
+    SENTENCE_MODE_COLOR: document.getElementById('sentenceModeColor').value,
+    CHAR_MODE_COLOR: document.getElementById('charModeColor').value
   };
 
   // Get and validate clipboard macros
