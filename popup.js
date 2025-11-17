@@ -1862,10 +1862,10 @@ async function startMouseTrackingForField(fieldId) {
     return;
   }
 
-  // Send message to content script to start tracking
+  // Send message to content script to start tracking with current mode
   chrome.tabs.sendMessage(
     sourceTab.id,
-    { action: 'startMouseTracking', fieldId: fieldId },
+    { action: 'startMouseTracking', fieldId: fieldId, mode: currentMode },
     (response) => {
       if (chrome.runtime.lastError) {
         logError(`[MouseTracking] Error: ${chrome.runtime.lastError.message}`);

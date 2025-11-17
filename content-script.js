@@ -37,8 +37,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'startMouseTracking':
       // Start interactive mouse tracking for field auto-fill
-      console.log('[ContentScript] Received startMouseTracking for field:', message.fieldId);
-      startMouseTracking(message.fieldId);
+      console.log('[ContentScript] Received startMouseTracking for field:', message.fieldId, 'with mode:', message.mode);
+      startMouseTracking(message.fieldId, message.mode);
       sendResponse({ success: true });
       return false; // Synchronous response
 
@@ -901,9 +901,10 @@ function hexToRgba(hex, alpha) {
  * Start interactive mouse tracking for field auto-fill
  * When user hovers over text elements, their content is extracted and sent to the extension
  * @param {string} fieldId - ID of the field being filled
+ * @param {string} mode - Initial mode to use ('words', 'sentence', 'chars')
  */
-async function startMouseTracking(fieldId) {
-  console.log('[MouseTracking] Starting mouse tracking for field:', fieldId);
+async function startMouseTracking(fieldId, mode = 'words') {
+  console.log('[MouseTracking] Starting mouse tracking for field:', fieldId, 'with mode:', mode);
 
   // Load settings before starting
   await loadMouseTrackingSettings();
@@ -914,11 +915,15 @@ async function startMouseTracking(fieldId) {
 
   mouseTrackingActive = true;
   currentTrackedFieldId = fieldId;
-  console.log('[MouseTracking] Tracking state set to active');
+
+  // Set the initial mode (persisted from popup)
+  currentModifierMode = mode;
+  console.log('[MouseTracking] Tracking state set to active with mode:', mode);
 
   // Create visual overlay to indicate tracking mode
   createTrackingOverlay();
-  console.log('[MouseTracking] Overlay created');
+  updateOverlayMode(mode); // Update overlay to show correct mode color
+  console.log('[MouseTracking] Overlay created with mode:', mode);
 
   // Add event listeners
   document.addEventListener('mousemove', handleMouseMove, true);
@@ -996,9 +1001,16 @@ function handleRelayedKeyboardEvent(eventData) {
       // Notify popup about mode change so button states can update
       notifyPopupModeChange(newMode);
 
-      // Re-extract text with new mode if we have a last mouse position
+      // Re-extract text and update highlight with new mode if we have a last mouse position
       if (lastMouseEvent && lastHighlightedElement) {
-        const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, newMode);
+        const element = lastHighlightedElement;
+
+        // Remove and re-add highlight to update color
+        removeHighlight();
+        highlightElement(element);
+
+        // Re-extract text with new mode
+        const text = extractTextFromElement(element, lastMouseEvent, newMode);
         if (text && text.trim()) {
           sendTextToPopup(text.trim());
         }
@@ -1017,9 +1029,16 @@ function handleRelayedKeyboardEvent(eventData) {
     // Notify popup about mode change
     notifyPopupModeChange(newMode);
 
-    // Re-extract text with new mode if we have a last mouse position
+    // Re-extract text and update highlight with new mode if we have a last mouse position
     if (lastMouseEvent && lastHighlightedElement) {
-      const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, newMode);
+      const element = lastHighlightedElement;
+
+      // Remove and re-add highlight to update color
+      removeHighlight();
+      highlightElement(element);
+
+      // Re-extract text with new mode
+      const text = extractTextFromElement(element, lastMouseEvent, newMode);
       if (text && text.trim()) {
         sendTextToPopup(text.trim());
       }
@@ -1043,9 +1062,16 @@ function handleManualModeChange(mode) {
   currentModifierMode = mode;
   updateOverlayMode(mode);
 
-  // Re-extract text with new mode if we have a last mouse position
+  // Re-extract text and update highlight with new mode if we have a last mouse position
   if (lastMouseEvent && lastHighlightedElement) {
-    const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, mode);
+    const element = lastHighlightedElement;
+
+    // Remove and re-add highlight to update color
+    removeHighlight();
+    highlightElement(element);
+
+    // Re-extract text with new mode
+    const text = extractTextFromElement(element, lastMouseEvent, mode);
     if (text && text.trim()) {
       sendTextToPopup(text.trim());
     }
