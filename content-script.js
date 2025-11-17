@@ -793,10 +793,9 @@ let mouseTrackingActive = false;
 let currentTrackedFieldId = null;
 let lastHighlightedElement = null;
 let mouseTrackingOverlay = null;
-let currentModifierMode = 'full'; // 'full', 'sentence', 'words', 'chars'
+let currentModifierMode = 'full'; // 'full', 'smart', 'words', 'chars'
 let currentGranularity = {
   words: { left: 1, right: 1 },  // Number of words on each side (default: 1 word left + 1 word right + target = 3 total)
-  sentences: 1,  // Number of sentences (default: 1 sentence) - kept symmetric for simplicity
   chars: { left: 1, right: 1 }   // Number of characters on each side (default: 1 char left + 1 char right + target = 3 total)
 };
 let lastMouseEvent = null; // Store last mouse event for re-extraction
@@ -809,7 +808,7 @@ let overlayPosition = {
 
 // Mouse tracking settings (loaded from chrome.storage)
 let mouseTrackingSettings = {
-  sentenceModifier: 'shift',
+  smartModifier: 'shift',
   charModifier: 'ctrl',
   wordModifier: 'none',
   overlayMoveModifier: 'alt',
@@ -819,7 +818,7 @@ let mouseTrackingSettings = {
 // Mode colors (loaded from chrome.storage)
 let modeColors = {
   words: { solid: '#2ecc71', transparent: 'rgba(46, 204, 113, 0.1)', bg: 'rgba(46, 204, 113, 0.95)' },
-  sentence: { solid: '#3498db', transparent: 'rgba(52, 152, 219, 0.1)', bg: 'rgba(52, 152, 219, 0.95)' },
+  smart: { solid: '#3498db', transparent: 'rgba(52, 152, 219, 0.1)', bg: 'rgba(52, 152, 219, 0.95)' },
   chars: { solid: '#9b59b6', transparent: 'rgba(155, 89, 182, 0.1)', bg: 'rgba(155, 89, 182, 0.95)' }
 };
 
@@ -841,7 +840,7 @@ async function loadMouseTrackingSettings() {
     ]);
 
     mouseTrackingSettings = {
-      sentenceModifier: result.SENTENCE_MODIFIER || 'shift',
+      smartModifier: result.SENTENCE_MODIFIER || 'shift',
       charModifier: result.CHAR_MODIFIER || 'ctrl',
       wordModifier: result.WORD_MODIFIER || 'none',
       overlayMoveModifier: result.OVERLAY_MOVE_MODIFIER || 'alt',
@@ -850,7 +849,7 @@ async function loadMouseTrackingSettings() {
 
     // Load and convert colors
     const wordColor = result.WORD_MODE_COLOR || '#2ecc71';
-    const sentenceColor = result.SENTENCE_MODE_COLOR || '#3498db';
+    const smartColor = result.SENTENCE_MODE_COLOR || '#3498db';
     const charColor = result.CHAR_MODE_COLOR || '#9b59b6';
 
     modeColors = {
@@ -859,10 +858,10 @@ async function loadMouseTrackingSettings() {
         transparent: hexToRgba(wordColor, 0.1),
         bg: hexToRgba(wordColor, 0.95)
       },
-      sentence: {
-        solid: sentenceColor,
-        transparent: hexToRgba(sentenceColor, 0.1),
-        bg: hexToRgba(sentenceColor, 0.95)
+      smart: {
+        solid: smartColor,
+        transparent: hexToRgba(smartColor, 0.1),
+        bg: hexToRgba(smartColor, 0.95)
       },
       chars: {
         solid: charColor,
@@ -987,13 +986,21 @@ function handleRelayedKeyboardEvent(eventData) {
     stopPropagation: () => {}
   };
 
-  // Handle modifier key press/release for real-time mode switching
+  // Handle modifier key press for persistent mode switching
+  // Only switch modes on keydown (not keyup) to make modes sticky
   const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(eventData.key);
 
-  if (isModifierKey) {
-    // For modifier keys, immediately update mode based on current modifier state
-    const newMode = getExtractionMode(syntheticEvent);
-    if (newMode !== currentModifierMode) {
+  if (isModifierKey && eventData.type === 'keydown') {
+    // Map modifier key to mode
+    let newMode = null;
+    if (eventData.key === 'Shift') {
+      newMode = checkModifierKey(syntheticEvent, mouseTrackingSettings.smartModifier) ? 'smart' : null;
+    } else if (eventData.key === 'Control' || eventData.key === 'Meta') {
+      newMode = checkModifierKey(syntheticEvent, mouseTrackingSettings.charModifier) ? 'chars' : null;
+    }
+
+    // Switch mode persistently (it stays until changed again)
+    if (newMode && newMode !== currentModifierMode) {
       currentModifierMode = newMode;
       updateOverlayMode(newMode);
       console.log('[RelayedKeyEvent] Mode switched to:', newMode, 'due to modifier', eventData.key);
@@ -1019,39 +1026,18 @@ function handleRelayedKeyboardEvent(eventData) {
     return; // Don't process modifier keys further
   }
 
-  // For non-modifier keys, check if extraction mode has changed due to held modifiers
-  const newMode = getExtractionMode(syntheticEvent);
-  if (newMode !== currentModifierMode) {
-    currentModifierMode = newMode;
-    updateOverlayMode(newMode);
-    console.log('[RelayedKeyEvent] Mode changed to:', newMode);
-
-    // Notify popup about mode change
-    notifyPopupModeChange(newMode);
-
-    // Re-extract text and update highlight with new mode if we have a last mouse position
-    if (lastMouseEvent && lastHighlightedElement) {
-      const element = lastHighlightedElement;
-
-      // Remove and re-add highlight to update color
-      removeHighlight();
-      highlightElement(element);
-
-      // Re-extract text with new mode
-      const text = extractTextFromElement(element, lastMouseEvent, newMode);
-      if (text && text.trim()) {
-        sendTextToPopup(text.trim());
-      }
-    }
+  // Ignore keyup events for modifiers - mode should persist
+  if (isModifierKey && eventData.type === 'keyup') {
+    return;
   }
 
-  // Process the event through the existing keyboard handler
+  // For non-modifier keys, process through the existing keyboard handler
   handleEscapeKey(syntheticEvent);
 }
 
 /**
  * Handle manual mode change from popup button click
- * @param {string} mode - Mode to switch to: 'words', 'sentence', 'chars'
+ * @param {string} mode - Mode to switch to: 'words', 'smart', 'chars'
  */
 function handleManualModeChange(mode) {
   if (!mouseTrackingActive) return;
@@ -1088,12 +1074,9 @@ function handleMouseMove(event) {
   // Store last mouse event for re-extraction when granularity changes
   lastMouseEvent = event;
 
-  // Detect modifier keys to control extraction scope
-  const mode = getExtractionMode(event);
-  if (mode !== currentModifierMode) {
-    currentModifierMode = mode;
-    updateOverlayMode(mode);
-  }
+  // Mode is now persistent - don't auto-detect from modifier keys
+  // Use the current mode that was set by button click or explicit key press
+  const mode = currentModifierMode;
 
   // Get element under cursor
   const element = document.elementFromPoint(event.clientX, event.clientY);
@@ -1202,12 +1185,19 @@ function handleGranularityChange(event) {
       // Right: extend/reduce right side only
       currentGranularity.chars.right = Math.max(0, currentGranularity.chars.right + 1);
     }
-  } else if (mode === 'sentence') {
-    // Sentence mode: adjust sentence granularity (kept symmetric for simplicity)
+  } else if (mode === 'smart') {
+    // Smart mode: adjust word granularity (uses same granularity as words mode)
     if (isVertical) {
-      currentGranularity.sentences = Math.max(1, currentGranularity.sentences + increment);
+      // Vertical: expand/contract both sides symmetrically
+      currentGranularity.words.left = Math.max(1, currentGranularity.words.left + increment);
+      currentGranularity.words.right = Math.max(1, currentGranularity.words.right + increment);
+    } else if (increment > 0) {
+      // Right arrow: expand right only
+      currentGranularity.words.right = Math.max(1, currentGranularity.words.right + 1);
+    } else {
+      // Left arrow: expand left only
+      currentGranularity.words.left = Math.max(1, currentGranularity.words.left + 1);
     }
-    // Horizontal arrows don't affect sentence mode
   } else {
     // Word mode: adjust word granularity
     if (isVertical) {
@@ -1315,15 +1305,15 @@ function handleOverlayReposition(event) {
 /**
  * Get extraction mode based on modifier keys and user settings
  * @param {MouseEvent|KeyboardEvent} event - Event with modifier key info
- * @returns {string} Extraction mode: 'words', 'sentence', or 'chars'
+ * @returns {string} Extraction mode: 'words', 'smart', or 'chars'
  */
 function getExtractionMode(event) {
   // Check each configured modifier and return corresponding mode
   // Priority: Check if any specific modifier is pressed
 
-  // Check for sentence modifier
-  if (checkModifierKey(event, mouseTrackingSettings.sentenceModifier)) {
-    return 'sentence';
+  // Check for smart modifier
+  if (checkModifierKey(event, mouseTrackingSettings.smartModifier)) {
+    return 'smart';
   }
 
   // Check for char modifier
@@ -1336,7 +1326,7 @@ function getExtractionMode(event) {
     return 'words';
   }
 
-  // Default: use word mode with field-aware extraction
+  // Default: use word mode
   return 'words';
 }
 
@@ -1367,7 +1357,7 @@ function checkModifierKey(event, modifier) {
  * Handles various element types and nested structures
  * @param {HTMLElement} element - Element to extract text from
  * @param {MouseEvent} event - Mouse event for cursor position
- * @param {string} mode - Extraction mode: 'chars', 'words', or 'sentence'
+ * @param {string} mode - Extraction mode: 'chars', 'words', or 'smart'
  * @returns {string} Extracted text
  */
 function extractTextFromElement(element, event, mode = 'words') {
@@ -1396,11 +1386,12 @@ function extractTextFromElement(element, event, mode = 'words') {
   fullText = cleanText(fullText);
 
   // Apply scope based on mode and granularity
-  if (mode === 'sentence') {
-    return extractNearestSentences(fullText, event, element, currentGranularity.sentences);
-  } else if (mode === 'words') {
-    // In word mode, use field-aware intelligent extraction
+  if (mode === 'smart') {
+    // In smart mode, use field-aware intelligent extraction
     return extractFieldAware(element, event, fullText, currentGranularity.words.left, currentGranularity.words.right);
+  } else if (mode === 'words') {
+    // In word mode, use simple word extraction (no smart field-specific logic)
+    return extractNearestWords(fullText, event, element, currentGranularity.words.left, currentGranularity.words.right);
   } else if (mode === 'chars') {
     return extractNearestChars(fullText, event, element, currentGranularity.chars.left, currentGranularity.chars.right);
   }
@@ -1439,64 +1430,6 @@ function extractFieldAware(element, event, fullText, wordsLeft, wordsRight) {
 
   // Default: use standard word extraction
   return extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
-}
-
-/**
- * Extract sentences nearest to the cursor position
- * @param {string} text - Full text content
- * @param {MouseEvent} event - Mouse event for cursor position
- * @param {HTMLElement} element - Element containing the text
- * @param {number} count - Number of sentences to extract
- * @returns {string} Nearest sentences
- */
-function extractNearestSentences(text, event, element, count = 1) {
-  if (!text) return '';
-
-  // Split by sentence endings (.!?) followed by space or end
-  const sentences = text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [text];
-
-  if (sentences.length === 1) {
-    return sentences[0].trim();
-  }
-
-  // Try to find the position under cursor using Range API
-  const range = document.caretRangeFromPoint(event.clientX, event.clientY);
-  if (!range) {
-    // Fallback: return first N sentences
-    return sentences.slice(0, count).map(s => s.trim()).join(' ');
-  }
-
-  // Get approximate position in text
-  const textNode = range.startContainer;
-  if (textNode.nodeType !== Node.TEXT_NODE) {
-    return sentences.slice(0, count).map(s => s.trim()).join(' ');
-  }
-
-  const offset = range.startOffset;
-  const nodeText = textNode.textContent || '';
-
-  // Find cumulative position in the full text
-  let cumulativeLength = 0;
-  const fullTextContent = element.textContent || '';
-  const targetPosition = fullTextContent.indexOf(nodeText) + offset;
-
-  // Find which sentence contains the target position
-  let targetSentenceIndex = 0;
-  for (let i = 0; i < sentences.length; i++) {
-    cumulativeLength += sentences[i].length;
-    if (cumulativeLength >= targetPosition) {
-      targetSentenceIndex = i;
-      break;
-    }
-  }
-
-  // Extract sentences around the target (center on target sentence)
-  const halfCount = Math.floor(count / 2);
-  const startIndex = Math.max(0, targetSentenceIndex - halfCount);
-  const endIndex = Math.min(sentences.length, startIndex + count);
-  const selectedSentences = sentences.slice(startIndex, endIndex);
-
-  return selectedSentences.map(s => s.trim()).join(' ');
 }
 
 /**
@@ -2100,15 +2033,15 @@ function highlightElement(element) {
 
 /**
  * Get colors for a specific mode
- * @param {string} mode - Mode name: 'words', 'sentence', 'chars'
+ * @param {string} mode - Mode name: 'words', 'smart', 'chars'
  * @returns {Object} Object with solid and transparent color values
  */
 function getModeColors(mode) {
   switch (mode) {
-    case 'sentence':
+    case 'smart':
       return {
-        solid: modeColors.sentence.solid,
-        transparent: modeColors.sentence.transparent
+        solid: modeColors.smart.solid,
+        transparent: modeColors.smart.transparent
       };
     case 'chars':
       return {
@@ -2189,7 +2122,7 @@ function createTrackingOverlay() {
       ✂️ Word mode (3 words) • ↑↓ to adjust
     </div>
     <div style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
-      Shift=Sentences • Ctrl=Chars • Alt+Arrows=Move • ESC=Cancel
+      Shift=Smart • Ctrl=Chars • Alt+Arrows=Move • ESC=Cancel
     </div>
   `;
 
@@ -2265,10 +2198,10 @@ function updateOverlayMode(mode) {
   let bgColor = 'rgba(255, 107, 107, 0.95)';
 
   switch (mode) {
-    case 'sentence':
-      const sentCount = currentGranularity.sentences;
-      modeText = `📝 Sentence mode (${sentCount} sentence${sentCount > 1 ? 's' : ''}) • Shift+↑↓ to adjust`;
-      bgColor = modeColors.sentence.bg;
+    case 'smart':
+      const smartWords = currentGranularity.words.left + currentGranularity.words.right + 1;
+      modeText = `🧠 Smart mode (${smartWords} words) • ↑↓ to adjust • Field-aware extraction`;
+      bgColor = modeColors.smart.bg;
       break;
     case 'chars':
       const charLeft = currentGranularity.chars.left;
@@ -2297,7 +2230,7 @@ function updateOverlayMode(mode) {
       bgColor = modeColors.words.bg;
       break;
     default:
-      modeText = 'Hover over text • Shift=Sentences, Ctrl=Chars';
+      modeText = 'Hover over text • Shift=Smart, Ctrl=Chars';
       bgColor = 'rgba(255, 107, 107, 0.95)'; // Red for default
   }
 
@@ -2343,7 +2276,7 @@ function sendTextToPopup(text, confirm = false) {
 /**
  * Notify popup about mode change
  * This allows the popup to update button states when mode changes via keyboard modifiers
- * @param {string} mode - New mode: 'words', 'sentence', 'chars'
+ * @param {string} mode - New mode: 'words', 'smart', 'chars'
  */
 function notifyPopupModeChange(mode) {
   try {
