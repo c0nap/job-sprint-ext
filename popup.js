@@ -1430,6 +1430,66 @@ function initializeManualEntryModal() {
 
   // Add mouse tracking to manual entry fields
   setupFieldMouseTracking();
+
+  // Add mode selector button handlers
+  setupModeSelectorButtons();
+}
+
+/**
+ * Setup mode selector buttons
+ * Allows user to manually select extraction mode via UI buttons
+ */
+function setupModeSelectorButtons() {
+  const modeButtons = document.querySelectorAll('.mode-btn');
+
+  modeButtons.forEach(button => {
+    button.addEventListener('click', async () => {
+      const mode = button.getAttribute('data-mode');
+      log(`[ModeSelector] Manually selected mode: ${mode}`);
+
+      // Update button states (highlight selected)
+      modeButtons.forEach(btn => {
+        const btnMode = btn.getAttribute('data-mode');
+        if (btnMode === mode) {
+          // Selected state
+          if (mode === 'words') {
+            btn.style.background = '#46a049';
+            btn.style.color = '#fff';
+          } else if (mode === 'sentence') {
+            btn.style.background = '#3498db';
+            btn.style.color = '#fff';
+          } else if (mode === 'chars') {
+            btn.style.background = '#9b59b6';
+            btn.style.color = '#fff';
+          }
+        } else {
+          // Unselected state
+          btn.style.background = '#fff';
+          if (btnMode === 'words') {
+            btn.style.color = '#46a049';
+          } else if (btnMode === 'sentence') {
+            btn.style.color = '#3498db';
+          } else if (btnMode === 'chars') {
+            btn.style.color = '#9b59b6';
+          }
+        }
+      });
+
+      // Send mode change to content script
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'changeExtractionMode', mode: mode },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[ModeSelector] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+    });
+  });
 }
 
 /**
@@ -1774,10 +1834,11 @@ function startKeyboardRelay() {
     // Only relay specific keys that are used for mouse tracking
     const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key);
     const isEscape = event.key === 'Escape';
+    const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key);
     const hasModifier = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
 
-    // Relay if it's an arrow key or escape, or if modifiers are pressed
-    if (isArrowKey || isEscape || hasModifier) {
+    // Relay if it's an arrow key, escape, modifier key press, or if modifiers are active
+    if (isArrowKey || isEscape || isModifierKey || hasModifier) {
       log(`[KeyboardRelay] Relaying key: ${event.key}, modifiers: Shift=${event.shiftKey}, Ctrl=${event.ctrlKey}, Alt=${event.altKey}`);
 
       // Get source tab
@@ -1791,7 +1852,8 @@ function startKeyboardRelay() {
         shiftKey: event.shiftKey,
         ctrlKey: event.ctrlKey,
         altKey: event.altKey,
-        metaKey: event.metaKey
+        metaKey: event.metaKey,
+        type: event.type // 'keydown' or 'keyup'
       };
 
       // Send to content script
@@ -1812,11 +1874,44 @@ function startKeyboardRelay() {
     }
   };
 
-  // Add event listener to document
+  // Also relay keyup events for modifiers
+  keyboardRelayHandlerUp = async (event) => {
+    const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key);
+
+    if (isModifierKey) {
+      log(`[KeyboardRelay] Relaying keyup: ${event.key}`);
+
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      const keyEventData = {
+        key: event.key,
+        code: event.code,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        type: 'keyup'
+      };
+
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'relayKeyboardEvent', event: keyEventData },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[KeyboardRelay] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+    }
+  };
+
+  // Add event listeners to document (both keydown and keyup)
   document.addEventListener('keydown', keyboardRelayHandler, true);
+  document.addEventListener('keyup', keyboardRelayHandlerUp, true);
   keyboardRelayActive = true;
 
-  log('[KeyboardRelay] Keyboard relay active');
+  log('[KeyboardRelay] Keyboard relay active (keydown + keyup)');
 }
 
 /**

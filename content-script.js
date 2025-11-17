@@ -56,6 +56,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       return false; // Synchronous response
 
+    case 'changeExtractionMode':
+      // Manually change extraction mode from popup buttons
+      console.log('[ContentScript] Received mode change request:', message.mode);
+      handleManualModeChange(message.mode);
+      sendResponse({ success: true });
+      return false; // Synchronous response
+
     default:
       // Unknown action - return error
       sendResponse({ success: false, error: `Unknown action: ${message.action}` });
@@ -788,9 +795,9 @@ let lastHighlightedElement = null;
 let mouseTrackingOverlay = null;
 let currentModifierMode = 'full'; // 'full', 'sentence', 'words', 'chars'
 let currentGranularity = {
-  words: 1,      // Number of words on each side (default: 1 word = 3 total)
-  sentences: 1,  // Number of sentences (default: 1 sentence)
-  chars: 1       // Number of characters on each side (default: 1 char)
+  words: { left: 1, right: 1 },  // Number of words on each side (default: 1 word left + 1 word right + target = 3 total)
+  sentences: 1,  // Number of sentences (default: 1 sentence) - kept symmetric for simplicity
+  chars: { left: 1, right: 1 }   // Number of characters on each side (default: 1 char left + 1 char right + target = 3 total)
 };
 let lastMouseEvent = null; // Store last mouse event for re-extraction
 let overlayPosition = {
@@ -904,7 +911,7 @@ function stopMouseTracking() {
 function handleRelayedKeyboardEvent(eventData) {
   if (!mouseTrackingActive) return;
 
-  console.log('[RelayedKeyEvent] Processing:', eventData.key, 'with modifiers:', {
+  console.log('[RelayedKeyEvent] Processing:', eventData.key, 'type:', eventData.type, 'with modifiers:', {
     shift: eventData.shiftKey,
     ctrl: eventData.ctrlKey,
     alt: eventData.altKey
@@ -918,11 +925,34 @@ function handleRelayedKeyboardEvent(eventData) {
     ctrlKey: eventData.ctrlKey,
     altKey: eventData.altKey,
     metaKey: eventData.metaKey,
+    type: eventData.type || 'keydown',
     preventDefault: () => {}, // No-op since it's already handled in popup
     stopPropagation: () => {}
   };
 
-  // Check if extraction mode has changed due to modifier keys
+  // Handle modifier key press/release for real-time mode switching
+  const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(eventData.key);
+
+  if (isModifierKey) {
+    // For modifier keys, immediately update mode based on current modifier state
+    const newMode = getExtractionMode(syntheticEvent);
+    if (newMode !== currentModifierMode) {
+      currentModifierMode = newMode;
+      updateOverlayMode(newMode);
+      console.log('[RelayedKeyEvent] Mode switched to:', newMode, 'due to modifier', eventData.key);
+
+      // Re-extract text with new mode if we have a last mouse position
+      if (lastMouseEvent && lastHighlightedElement) {
+        const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, newMode);
+        if (text && text.trim()) {
+          sendTextToPopup(text.trim());
+        }
+      }
+    }
+    return; // Don't process modifier keys further
+  }
+
+  // For non-modifier keys, check if extraction mode has changed due to held modifiers
   const newMode = getExtractionMode(syntheticEvent);
   if (newMode !== currentModifierMode) {
     currentModifierMode = newMode;
@@ -940,6 +970,28 @@ function handleRelayedKeyboardEvent(eventData) {
 
   // Process the event through the existing keyboard handler
   handleEscapeKey(syntheticEvent);
+}
+
+/**
+ * Handle manual mode change from popup button click
+ * @param {string} mode - Mode to switch to: 'words', 'sentence', 'chars'
+ */
+function handleManualModeChange(mode) {
+  if (!mouseTrackingActive) return;
+
+  console.log('[ManualModeChange] Switching to mode:', mode);
+
+  // Update current mode
+  currentModifierMode = mode;
+  updateOverlayMode(mode);
+
+  // Re-extract text with new mode if we have a last mouse position
+  if (lastMouseEvent && lastHighlightedElement) {
+    const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, mode);
+    if (text && text.trim()) {
+      sendTextToPopup(text.trim());
+    }
+  }
 }
 
 /**
@@ -1029,7 +1081,7 @@ function handleEscapeKey(event) {
 
   // Handle arrow keys for granularity control (without overlay move modifier)
   if (!checkModifierKey(event, mouseTrackingSettings.overlayMoveModifier) &&
-      (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
     event.preventDefault();
     handleGranularityChange(event);
   }
@@ -1037,23 +1089,57 @@ function handleEscapeKey(event) {
 
 /**
  * Handle arrow key presses to adjust extraction granularity
+ * Supports directional control:
+ * - ArrowUp: Extend both sides (increase left and right)
+ * - ArrowDown: Reduce both sides (decrease left and right)
+ * - ArrowLeft: Extend left only (increase left, keep right)
+ * - ArrowRight: Extend right only (keep left, increase right)
  * @param {KeyboardEvent} event - Keyboard event
  */
 function handleGranularityChange(event) {
-  const increment = event.key === 'ArrowUp' ? 1 : -1;
   const mode = getExtractionMode(event);
 
-  // Update granularity based on current mode
+  // Determine what to adjust based on arrow key direction
+  const isVertical = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+  const isHorizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
+  const increment = (event.key === 'ArrowUp' || event.key === 'ArrowRight') ? 1 : -1;
+
+  // Update granularity based on current mode and direction
   if (mode === 'chars') {
-    // Ctrl mode: adjust character granularity
-    currentGranularity.chars = Math.max(0, currentGranularity.chars + increment);
+    // Character mode: adjust character granularity
+    if (isVertical) {
+      // Up/Down: adjust both sides symmetrically
+      currentGranularity.chars.left = Math.max(0, currentGranularity.chars.left + increment);
+      currentGranularity.chars.right = Math.max(0, currentGranularity.chars.right + increment);
+    } else if (event.key === 'ArrowLeft') {
+      // Left: extend/reduce left side only
+      currentGranularity.chars.left = Math.max(0, currentGranularity.chars.left + 1);
+    } else if (event.key === 'ArrowRight') {
+      // Right: extend/reduce right side only
+      currentGranularity.chars.right = Math.max(0, currentGranularity.chars.right + 1);
+    }
   } else if (mode === 'sentence') {
-    // Shift mode: adjust sentence granularity
-    currentGranularity.sentences = Math.max(1, currentGranularity.sentences + increment);
+    // Sentence mode: adjust sentence granularity (kept symmetric for simplicity)
+    if (isVertical) {
+      currentGranularity.sentences = Math.max(1, currentGranularity.sentences + increment);
+    }
+    // Horizontal arrows don't affect sentence mode
   } else {
-    // No modifier: adjust word granularity
-    currentGranularity.words = Math.max(1, currentGranularity.words + increment);
+    // Word mode: adjust word granularity
+    if (isVertical) {
+      // Up/Down: adjust both sides symmetrically
+      currentGranularity.words.left = Math.max(1, currentGranularity.words.left + increment);
+      currentGranularity.words.right = Math.max(1, currentGranularity.words.right + increment);
+    } else if (event.key === 'ArrowLeft') {
+      // Left: extend left side only
+      currentGranularity.words.left = Math.max(1, currentGranularity.words.left + 1);
+    } else if (event.key === 'ArrowRight') {
+      // Right: extend right side only
+      currentGranularity.words.right = Math.max(1, currentGranularity.words.right + 1);
+    }
   }
+
+  console.log('[GranularityChange] New granularity:', mode, JSON.stringify(currentGranularity));
 
   // Update overlay to show current granularity
   updateOverlayMode(mode);
@@ -1230,9 +1316,9 @@ function extractTextFromElement(element, event, mode = 'words') {
     return extractNearestSentences(fullText, event, element, currentGranularity.sentences);
   } else if (mode === 'words') {
     // In word mode, use field-aware intelligent extraction
-    return extractFieldAware(element, event, fullText, currentGranularity.words);
+    return extractFieldAware(element, event, fullText, currentGranularity.words.left, currentGranularity.words.right);
   } else if (mode === 'chars') {
-    return extractNearestChars(fullText, event, element, currentGranularity.chars);
+    return extractNearestChars(fullText, event, element, currentGranularity.chars.left, currentGranularity.chars.right);
   }
 
   return fullText;
@@ -1244,30 +1330,31 @@ function extractTextFromElement(element, event, mode = 'words') {
  * @param {HTMLElement} element - Element being hovered over
  * @param {MouseEvent} event - Mouse event
  * @param {string} fullText - Full text of element
- * @param {number} wordsPerSide - Granularity for word extraction
+ * @param {number} wordsLeft - Number of words to extract on the left side
+ * @param {number} wordsRight - Number of words to extract on the right side
  * @returns {string} Extracted text
  */
-function extractFieldAware(element, event, fullText, wordsPerSide) {
+function extractFieldAware(element, event, fullText, wordsLeft, wordsRight) {
   // Determine which field is being filled based on currentTrackedFieldId
   const fieldId = currentTrackedFieldId;
 
   // Use field-specific extraction logic
   if (fieldId === 'manualPay') {
-    return extractPayAmount(element, fullText) || extractNearestWords(fullText, event, element, wordsPerSide);
+    return extractPayAmount(element, fullText) || extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
   } else if (fieldId === 'manualCompensation') {
-    return extractCompensationRange(element, fullText) || extractNearestWords(fullText, event, element, wordsPerSide);
+    return extractCompensationRange(element, fullText) || extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
   } else if (fieldId === 'manualLocation') {
-    return extractLocation(element, fullText) || extractNearestWords(fullText, event, element, wordsPerSide);
+    return extractLocation(element, fullText) || extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
   } else if (fieldId === 'manualJobTitle') {
-    return extractJobTitle(element) || extractNearestWords(fullText, event, element, wordsPerSide);
+    return extractJobTitle(element) || extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
   } else if (fieldId === 'manualCompany') {
-    return extractCompanyName(element) || extractNearestWords(fullText, event, element, wordsPerSide);
+    return extractCompanyName(element) || extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
   } else if (fieldId === 'manualNotes') {
     return extractLargeTextBlock(element) || fullText;
   }
 
   // Default: use standard word extraction
-  return extractNearestWords(fullText, event, element, wordsPerSide);
+  return extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
 }
 
 /**
@@ -1336,7 +1423,7 @@ function extractNearestSentences(text, event, element, count = 1) {
  * @param {number} wordsPerSide - Number of words on each side of cursor
  * @returns {string} Nearest words
  */
-function extractNearestWords(text, event, element, wordsPerSide = 1) {
+function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1) {
   if (!text) return '';
 
   // Split text into words
@@ -1349,14 +1436,14 @@ function extractNearestWords(text, event, element, wordsPerSide = 1) {
   const range = document.caretRangeFromPoint(event.clientX, event.clientY);
   if (!range) {
     // Fallback: return first N words
-    const totalWords = wordsPerSide * 2 + 1;
+    const totalWords = wordsLeft + wordsRight + 1;
     return words.slice(0, totalWords).join(' ');
   }
 
   // Get approximate position in text
   const textNode = range.startContainer;
   if (textNode.nodeType !== Node.TEXT_NODE) {
-    const totalWords = wordsPerSide * 2 + 1;
+    const totalWords = wordsLeft + wordsRight + 1;
     return words.slice(0, totalWords).join(' ');
   }
 
@@ -1379,9 +1466,9 @@ function extractNearestWords(text, event, element, wordsPerSide = 1) {
     }
   }
 
-  // Extract words around the target (N before, target, N after)
-  const startIndex = Math.max(0, targetWordIndex - wordsPerSide);
-  const endIndex = Math.min(words.length, targetWordIndex + wordsPerSide + 1);
+  // Extract words around the target (wordsLeft before, target, wordsRight after)
+  const startIndex = Math.max(0, targetWordIndex - wordsLeft);
+  const endIndex = Math.min(words.length, targetWordIndex + wordsRight + 1);
   const selectedWords = words.slice(startIndex, endIndex);
 
   return selectedWords.join(' ');
@@ -1392,26 +1479,27 @@ function extractNearestWords(text, event, element, wordsPerSide = 1) {
  * @param {string} text - Full text content
  * @param {MouseEvent} event - Mouse event for cursor position
  * @param {HTMLElement} element - Element containing the text
- * @param {number} charsPerSide - Number of characters on each side of cursor (0 = single char under cursor)
+ * @param {number} charsLeft - Number of characters on the left side (0 = single char under cursor)
+ * @param {number} charsRight - Number of characters on the right side (0 = single char under cursor)
  * @returns {string} Nearest characters
  */
-function extractNearestChars(text, event, element, charsPerSide = 1) {
+function extractNearestChars(text, event, element, charsLeft = 1, charsRight = 1) {
   if (!text) return '';
 
   // Try to find the position under cursor using Range API
   const range = document.caretRangeFromPoint(event.clientX, event.clientY);
   if (!range) {
     // Fallback: return first N characters
-    if (charsPerSide === 0) return text.charAt(0);
-    const totalChars = charsPerSide * 2 + 1;
+    if (charsLeft === 0 && charsRight === 0) return text.charAt(0);
+    const totalChars = charsLeft + charsRight + 1;
     return text.substring(0, totalChars);
   }
 
   // Get approximate position in text
   const textNode = range.startContainer;
   if (textNode.nodeType !== Node.TEXT_NODE) {
-    if (charsPerSide === 0) return text.charAt(0);
-    const totalChars = charsPerSide * 2 + 1;
+    if (charsLeft === 0 && charsRight === 0) return text.charAt(0);
+    const totalChars = charsLeft + charsRight + 1;
     return text.substring(0, totalChars);
   }
 
@@ -1423,19 +1511,19 @@ function extractNearestChars(text, event, element, charsPerSide = 1) {
   const targetPosition = fullTextContent.indexOf(nodeText) + offset;
 
   if (targetPosition < 0 || targetPosition >= text.length) {
-    if (charsPerSide === 0) return text.charAt(0);
-    const totalChars = charsPerSide * 2 + 1;
+    if (charsLeft === 0 && charsRight === 0) return text.charAt(0);
+    const totalChars = charsLeft + charsRight + 1;
     return text.substring(0, totalChars);
   }
 
   // Extract characters around the target position
-  if (charsPerSide === 0) {
+  if (charsLeft === 0 && charsRight === 0) {
     // Just the character under cursor
     return text.charAt(targetPosition) || text.charAt(0);
   }
 
-  const startIndex = Math.max(0, targetPosition - charsPerSide);
-  const endIndex = Math.min(text.length, targetPosition + charsPerSide + 1);
+  const startIndex = Math.max(0, targetPosition - charsLeft);
+  const endIndex = Math.min(text.length, targetPosition + charsRight + 1);
 
   return text.substring(startIndex, endIndex);
 }
@@ -2066,19 +2154,29 @@ function updateOverlayMode(mode) {
       bgColor = 'rgba(52, 152, 219, 0.95)'; // Blue for sentence
       break;
     case 'chars':
-      const charCount = currentGranularity.chars;
-      if (charCount === 0) {
+      const charLeft = currentGranularity.chars.left;
+      const charRight = currentGranularity.chars.right;
+      if (charLeft === 0 && charRight === 0) {
         modeText = '🔍 Character mode (single char) • Ctrl+↑ to expand';
+      } else if (charLeft === charRight) {
+        const totalChars = charLeft + charRight + 1;
+        modeText = `🔍 Character mode (${totalChars} chars) • Ctrl+↑↓←→ to adjust`;
       } else {
-        const totalChars = charCount * 2 + 1;
-        modeText = `🔍 Character mode (${totalChars} chars) • Ctrl+↑↓ to adjust`;
+        const totalChars = charLeft + charRight + 1;
+        modeText = `🔍 Character mode (${charLeft}←•→${charRight}, total ${totalChars}) • Ctrl+↑↓←→`;
       }
       bgColor = 'rgba(155, 89, 182, 0.95)'; // Purple for chars
       break;
     case 'words':
-      const wordCount = currentGranularity.words;
-      const totalWords = wordCount * 2 + 1;
-      modeText = `✂️ Word mode (${totalWords} words) • ↑↓ to adjust`;
+      const wordLeft = currentGranularity.words.left;
+      const wordRight = currentGranularity.words.right;
+      if (wordLeft === wordRight) {
+        const totalWords = wordLeft + wordRight + 1;
+        modeText = `✂️ Word mode (${totalWords} words) • ↑↓←→ to adjust`;
+      } else {
+        const totalWords = wordLeft + wordRight + 1;
+        modeText = `✂️ Word mode (${wordLeft}←•→${wordRight}, total ${totalWords}) • ↑↓←→`;
+      }
       bgColor = 'rgba(46, 204, 113, 0.95)'; // Green for words
       break;
     default:
