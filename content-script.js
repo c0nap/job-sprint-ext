@@ -1022,6 +1022,8 @@ function handleOverlayReposition(event) {
   const overlayWidth = 300; // approximate width
   const overlayHeight = 100; // approximate height
 
+  console.log('[Overlay] Repositioning with', event.key, '- Current position:', {...overlayPosition});
+
   switch (event.key) {
     case 'ArrowUp':
       // Move up (decrease top if using top, increase bottom if using bottom)
@@ -1066,8 +1068,18 @@ function handleOverlayReposition(event) {
       break;
   }
 
+  console.log('[Overlay] New position:', {...overlayPosition});
+
   // Update overlay position
   updateOverlayPosition();
+
+  // Add visual feedback with pulse animation
+  if (mouseTrackingOverlay) {
+    mouseTrackingOverlay.style.animation = 'none';
+    // Force reflow to restart animation
+    void mouseTrackingOverlay.offsetHeight;
+    mouseTrackingOverlay.style.animation = 'pulseGlow 0.3s ease-out';
+  }
 }
 
 /**
@@ -1953,11 +1965,11 @@ function createTrackingOverlay() {
 function updateOverlayPosition() {
   if (!mouseTrackingOverlay) return;
 
-  // Clear all position properties first
-  mouseTrackingOverlay.style.top = '';
-  mouseTrackingOverlay.style.bottom = '';
-  mouseTrackingOverlay.style.left = '';
-  mouseTrackingOverlay.style.right = '';
+  // Clear all position properties first by removing them
+  mouseTrackingOverlay.style.removeProperty('top');
+  mouseTrackingOverlay.style.removeProperty('bottom');
+  mouseTrackingOverlay.style.removeProperty('left');
+  mouseTrackingOverlay.style.removeProperty('right');
 
   // Apply stored position
   if (overlayPosition.top !== null) {
