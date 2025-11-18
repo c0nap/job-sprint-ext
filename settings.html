@@ -668,6 +668,26 @@
                 <small>Distance in pixels per arrow key press (5-100)</small>
             </div>
 
+            <div class="form-group">
+                <label for="smartModeStrength">
+                    Smart Mode Aggressiveness
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Controls how aggressively smart mode searches for patterns using existing field extractors. Level 1 searches only the hovered element, levels 2-3 include parent elements, level 4 adds siblings, and level 5 searches grandparents. Higher levels find patterns even when the mouse is far away.</span>
+                    </span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <input type="range" id="smartModeStrength" min="1" max="5" step="1" value="2" style="flex: 1;">
+                    <span id="smartModeStrengthValue" style="font-weight: 600; min-width: 80px;">Medium (2)</span>
+                </div>
+                <small>
+                    <strong>Minimal (1):</strong> Only hovered element &nbsp;|&nbsp;
+                    <strong>Low (2-3):</strong> + Parent element &nbsp;|&nbsp;
+                    <strong>High (4):</strong> + Sibling elements &nbsp;|&nbsp;
+                    <strong>Maximum (5):</strong> + Grandparent element
+                </small>
+            </div>
+
             <div class="alert alert-warning">
                 <strong>⚠️ Note:</strong> Ensure each modifier is assigned to a different mode to avoid conflicts. If conflicts exist, the extension will use default settings.
             </div>
