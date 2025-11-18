@@ -1029,14 +1029,16 @@ function handleRelayedKeyboardEvent(eventData) {
       if (lastMouseEvent && lastHighlightedElement) {
         const element = lastHighlightedElement;
 
-        // Remove and re-add highlight to update color
-        removeHighlight();
-        highlightElement(element);
-
         // Re-extract text with new mode
         const text = extractTextFromElement(element, lastMouseEvent, newMode);
+
+        // Remove and re-add highlight to update color and text
+        removeHighlight();
         if (text && text.trim()) {
+          highlightElement(element, text.trim());
           sendTextToPopup(text.trim());
+        } else {
+          highlightElement(element);
         }
       }
     }
@@ -1069,14 +1071,16 @@ function handleManualModeChange(mode) {
   if (lastMouseEvent && lastHighlightedElement) {
     const element = lastHighlightedElement;
 
-    // Remove and re-add highlight to update color
-    removeHighlight();
-    highlightElement(element);
-
     // Re-extract text with new mode
     const text = extractTextFromElement(element, lastMouseEvent, mode);
+
+    // Remove and re-add highlight to update color and text
+    removeHighlight();
     if (text && text.trim()) {
+      highlightElement(element, text.trim());
       sendTextToPopup(text.trim());
+    } else {
+      highlightElement(element);
     }
   }
 }
@@ -2140,7 +2144,7 @@ function highlightElement(element, extractedText = null) {
   // Get color based on current mode
   const colors = getModeColors(currentModifierMode);
 
-  // Add highlight to new element (only element-level, no text-level to avoid jitter)
+  // Add highlight to new element (element-level outline)
   element.style.outline = `3px solid ${colors.solid}`;
   element.style.outlineOffset = '2px';
   element.style.backgroundColor = colors.transparent;
@@ -2148,8 +2152,15 @@ function highlightElement(element, extractedText = null) {
   lastHighlightedElement = element;
   lastHighlightedText = extractedText;
 
-  // Note: Text-level highlighting with <mark> tags removed to prevent glitchy jitter
-  // caused by DOM mutations triggering mousemove events
+  // Add text-level highlighting only for the extracted text
+  // The check above (line 2135) prevents re-highlighting the same text, avoiding jitter
+  if (extractedText && extractedText.trim()) {
+    try {
+      highlightTextInElement(element, extractedText.trim());
+    } catch (error) {
+      console.error('[MouseTracking] Error highlighting text:', error);
+    }
+  }
 }
 
 /**
