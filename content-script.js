@@ -997,12 +997,23 @@ function handleRelayedKeyboardEvent(eventData) {
   const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(eventData.key);
 
   if (isModifierKey && eventData.type === 'keydown') {
-    // Map modifier key to mode
+    // Map modifier key to mode based on configured settings
     let newMode = null;
     if (eventData.key === 'Shift') {
-      newMode = checkModifierKey(syntheticEvent, mouseTrackingSettings.smartModifier) ? 'smart' : null;
+      // Check if Shift is configured for any mode
+      if (mouseTrackingSettings.smartModifier === 'shift') newMode = 'smart';
+      else if (mouseTrackingSettings.wordModifier === 'shift') newMode = 'words';
+      else if (mouseTrackingSettings.charModifier === 'shift') newMode = 'chars';
     } else if (eventData.key === 'Control' || eventData.key === 'Meta') {
-      newMode = checkModifierKey(syntheticEvent, mouseTrackingSettings.charModifier) ? 'chars' : null;
+      // Check if Ctrl is configured for any mode
+      if (mouseTrackingSettings.smartModifier === 'ctrl') newMode = 'smart';
+      else if (mouseTrackingSettings.wordModifier === 'ctrl') newMode = 'words';
+      else if (mouseTrackingSettings.charModifier === 'ctrl') newMode = 'chars';
+    } else if (eventData.key === 'Alt') {
+      // Check if Alt is configured for any mode (not overlay move)
+      if (mouseTrackingSettings.smartModifier === 'alt') newMode = 'smart';
+      else if (mouseTrackingSettings.wordModifier === 'alt') newMode = 'words';
+      else if (mouseTrackingSettings.charModifier === 'alt') newMode = 'chars';
     }
 
     // Switch mode persistently (it stays until changed again)
@@ -2428,22 +2439,11 @@ function createTrackingOverlay() {
   `;
 
   overlay.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+    <div style="display: flex; align-items: center; gap: 6px;">
       <span style="font-size: 14px;">🎯</span>
-      <span id="jobsprint-tracking-title" style="font-size: 12px;">Hover to select</span>
+      <span id="jobsprint-tracking-title" style="font-size: 11px; font-weight: 500;">Mouse Text Mirror</span>
     </div>
-    <div id="jobsprint-mode-buttons" style="display: flex; gap: 4px; margin-bottom: 4px; pointer-events: auto;">
-      <button id="mode-smart" style="flex: 1; padding: 4px 8px; background: #3498db; color: white; border: none; border-radius: 3px; font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
-        🧠 Smart
-      </button>
-      <button id="mode-words" style="flex: 1; padding: 4px 8px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 3px; font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
-        ✂️ Words
-      </button>
-      <button id="mode-chars" style="flex: 1; padding: 4px 8px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 3px; font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
-        🔍 Chars
-      </button>
-    </div>
-    <div id="jobsprint-tracking-mode" style="font-size: 9px; opacity: 0.75; line-height: 1.2;">
+    <div id="jobsprint-tracking-mode" style="font-size: 9px; opacity: 0.75; line-height: 1.3; margin-top: 3px;">
       ↑↓ adjust • Alt+Arrows move • ESC cancel
     </div>
   `;
@@ -2478,8 +2478,8 @@ function createTrackingOverlay() {
   document.body.appendChild(overlay);
   mouseTrackingOverlay = overlay;
 
-  // Add click event listeners to mode buttons
-  setupModeButtons();
+  // Note: Mode buttons removed from overlay - they're only in the popup now
+  // This keeps the overlay minimal and non-redundant
 }
 
 /**
@@ -2519,7 +2519,7 @@ function updateOverlayMode(mode) {
   const modeElement = mouseTrackingOverlay.querySelector('#jobsprint-tracking-mode');
   if (!modeElement) return;
 
-  // Simplified status text - just show keyboard shortcuts, no redundant mode info
+  // Simplified status text - just show keyboard shortcuts
   let modeText = '↑↓ adjust • Alt+Arrows move • ESC cancel';
   let bgColor = 'rgba(255, 107, 107, 0.95)';
 
@@ -2540,10 +2540,7 @@ function updateOverlayMode(mode) {
   modeElement.textContent = modeText;
   mouseTrackingOverlay.style.background = bgColor;
 
-  // Update button states
-  updateModeButtonStates();
-
-  // Add pulse animation when mode or granularity changes
+  // Add pulse animation when mode changes
   mouseTrackingOverlay.style.animation = 'slideInFromRight 0.3s ease-out, pulseGlow 0.5s ease-in-out';
 }
 
