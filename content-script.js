@@ -795,7 +795,7 @@ let lastHighlightedElement = null;
 let mouseTrackingOverlay = null;
 let currentModifierMode = 'smart'; // 'smart', 'words', 'chars'
 let currentGranularity = {
-  words: { left: 1, right: 1 },  // Number of words on each side (default: 1 word left + 1 word right + target = 3 total)
+  words: { left: 0, right: 0 },  // Number of words on each side (default: just target word = 1 total)
   chars: { left: 1, right: 1 }   // Number of characters on each side (default: 1 char left + 1 char right + target = 3 total)
 };
 let smartModeStrength = 2; // Aggressiveness level for smart mode (1-5, default: 2)
@@ -810,9 +810,9 @@ let overlayPosition = {
 
 // Mouse tracking settings (loaded from chrome.storage)
 let mouseTrackingSettings = {
-  smartModifier: 'shift',
+  smartModifier: 'none',
   charModifier: 'ctrl',
-  wordModifier: 'none',
+  wordModifier: 'shift',
   overlayMoveModifier: 'alt',
   overlayMoveStep: 20
 };
@@ -843,9 +843,9 @@ async function loadMouseTrackingSettings() {
     ]);
 
     mouseTrackingSettings = {
-      smartModifier: result.SENTENCE_MODIFIER || 'shift',
+      smartModifier: result.SENTENCE_MODIFIER || 'none',
       charModifier: result.CHAR_MODIFIER || 'ctrl',
-      wordModifier: result.WORD_MODIFIER || 'none',
+      wordModifier: result.WORD_MODIFIER || 'shift',
       overlayMoveModifier: result.OVERLAY_MOVE_MODIFIER || 'alt',
       overlayMoveStep: result.OVERLAY_MOVE_STEP || 20
     };
@@ -997,12 +997,23 @@ function handleRelayedKeyboardEvent(eventData) {
   const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(eventData.key);
 
   if (isModifierKey && eventData.type === 'keydown') {
-    // Map modifier key to mode
+    // Map modifier key to mode based on configured settings
     let newMode = null;
     if (eventData.key === 'Shift') {
-      newMode = checkModifierKey(syntheticEvent, mouseTrackingSettings.smartModifier) ? 'smart' : null;
+      // Check if Shift is configured for any mode
+      if (mouseTrackingSettings.smartModifier === 'shift') newMode = 'smart';
+      else if (mouseTrackingSettings.wordModifier === 'shift') newMode = 'words';
+      else if (mouseTrackingSettings.charModifier === 'shift') newMode = 'chars';
     } else if (eventData.key === 'Control' || eventData.key === 'Meta') {
-      newMode = checkModifierKey(syntheticEvent, mouseTrackingSettings.charModifier) ? 'chars' : null;
+      // Check if Ctrl is configured for any mode
+      if (mouseTrackingSettings.smartModifier === 'ctrl') newMode = 'smart';
+      else if (mouseTrackingSettings.wordModifier === 'ctrl') newMode = 'words';
+      else if (mouseTrackingSettings.charModifier === 'ctrl') newMode = 'chars';
+    } else if (eventData.key === 'Alt') {
+      // Check if Alt is configured for any mode (not overlay move)
+      if (mouseTrackingSettings.smartModifier === 'alt') newMode = 'smart';
+      else if (mouseTrackingSettings.wordModifier === 'alt') newMode = 'words';
+      else if (mouseTrackingSettings.charModifier === 'alt') newMode = 'chars';
     }
 
     // Switch mode persistently (it stays until changed again)
@@ -1207,14 +1218,14 @@ function handleGranularityChange(event) {
     // Word mode: adjust word granularity
     if (isVertical) {
       // Up/Down: adjust both sides symmetrically
-      currentGranularity.words.left = Math.max(1, currentGranularity.words.left + increment);
-      currentGranularity.words.right = Math.max(1, currentGranularity.words.right + increment);
+      currentGranularity.words.left = Math.max(0, currentGranularity.words.left + increment);
+      currentGranularity.words.right = Math.max(0, currentGranularity.words.right + increment);
     } else if (event.key === 'ArrowLeft') {
       // Left: extend left side only
-      currentGranularity.words.left = Math.max(1, currentGranularity.words.left + 1);
+      currentGranularity.words.left = Math.max(0, currentGranularity.words.left + 1);
     } else if (event.key === 'ArrowRight') {
       // Right: extend right side only
-      currentGranularity.words.right = Math.max(1, currentGranularity.words.right + 1);
+      currentGranularity.words.right = Math.max(0, currentGranularity.words.right + 1);
     }
   }
 
@@ -1309,29 +1320,33 @@ function handleOverlayReposition(event) {
 
 /**
  * Get extraction mode based on modifier keys (for temporary override)
+ * Only returns a mode if an actual modifier key is pressed (not 'none')
  * @param {MouseEvent|KeyboardEvent} event - Event with modifier key info
  * @returns {string|null} Extraction mode if modifier is pressed, null otherwise
  */
 function getExtractionModeFromModifiers(event) {
   // Check each configured modifier and return corresponding mode if pressed
+  // Skip 'none' modifiers as they shouldn't override the button-selected mode
 
-  // Check for smart modifier
-  if (checkModifierKey(event, mouseTrackingSettings.smartModifier)) {
+  // Check for smart modifier (only if it's not 'none')
+  if (mouseTrackingSettings.smartModifier !== 'none' &&
+      checkModifierKey(event, mouseTrackingSettings.smartModifier)) {
     return 'smart';
   }
 
-  // Check for char modifier
-  if (checkModifierKey(event, mouseTrackingSettings.charModifier)) {
+  // Check for char modifier (only if it's not 'none')
+  if (mouseTrackingSettings.charModifier !== 'none' &&
+      checkModifierKey(event, mouseTrackingSettings.charModifier)) {
     return 'chars';
   }
 
-  // Check for word modifier
+  // Check for word modifier (only if it's not 'none')
   if (mouseTrackingSettings.wordModifier !== 'none' &&
       checkModifierKey(event, mouseTrackingSettings.wordModifier)) {
     return 'words';
   }
 
-  // No modifier pressed - return null to use current button mode
+  // No actual modifier key pressed - return null to use current button mode
   return null;
 }
 
@@ -1543,8 +1558,9 @@ function extractFieldAware(element, event, fullText, wordsLeft, wordsRight) {
 function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1) {
   if (!text) return '';
 
-  // Split text into words
-  const words = text.split(/\s+/).filter(w => w.trim());
+  // Split text into words by whitespace, slashes, and em/en-dashes
+  // Note: Regular hyphens (-) are preserved to keep hyphenated words like "water-soaked" intact
+  const words = text.split(/[\s\/—–]+/).filter(w => w.trim());
 
   if (words.length === 0) return '';
   if (words.length === 1) return words[0];
@@ -2124,7 +2140,7 @@ function highlightElement(element, extractedText = null) {
   // Get color based on current mode
   const colors = getModeColors(currentModifierMode);
 
-  // Add highlight to new element
+  // Add highlight to new element (only element-level, no text-level to avoid jitter)
   element.style.outline = `3px solid ${colors.solid}`;
   element.style.outlineOffset = '2px';
   element.style.backgroundColor = colors.transparent;
@@ -2132,10 +2148,8 @@ function highlightElement(element, extractedText = null) {
   lastHighlightedElement = element;
   lastHighlightedText = extractedText;
 
-  // Create text highlight overlay if we have extracted text
-  if (extractedText && extractedText.trim()) {
-    createTextHighlight(element, extractedText);
-  }
+  // Note: Text-level highlighting with <mark> tags removed to prevent glitchy jitter
+  // caused by DOM mutations triggering mousemove events
 }
 
 /**
@@ -2417,38 +2431,24 @@ function createTrackingOverlay() {
     ${positionCSS}
     background: rgba(255, 107, 107, 0.95);
     color: white;
-    padding: 12px 20px;
-    border-radius: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     z-index: 999998;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     pointer-events: none;
     animation: slideInFromRight 0.3s ease-out;
   `;
 
   overlay.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-      <span style="font-size: 18px;">🎯</span>
-      <span id="jobsprint-tracking-title">Hover over text to auto-fill</span>
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <span style="font-size: 14px;">🎯</span>
+      <span id="jobsprint-tracking-title" style="font-size: 11px; font-weight: 500;">Mouse Text Mirror</span>
     </div>
-    <div id="jobsprint-mode-buttons" style="display: flex; gap: 6px; margin-bottom: 8px; pointer-events: auto;">
-      <button id="mode-smart" style="flex: 1; padding: 6px 10px; background: #3498db; color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
-        🧠 Smart
-      </button>
-      <button id="mode-words" style="flex: 1; padding: 6px 10px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
-        ✂️ Words
-      </button>
-      <button id="mode-chars" style="flex: 1; padding: 6px 10px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
-        🔍 Chars
-      </button>
-    </div>
-    <div id="jobsprint-tracking-mode" style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
-      🧠 Smart mode (Level ${smartModeStrength}) • ↑↓ to adjust
-    </div>
-    <div style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
-      Alt+Arrows=Move • ESC=Cancel
+    <div id="jobsprint-tracking-mode" style="font-size: 9px; opacity: 0.75; line-height: 1.3; margin-top: 3px;">
+      ↑↓ adjust • Alt+Arrows move • ESC cancel
     </div>
   `;
 
@@ -2482,8 +2482,8 @@ function createTrackingOverlay() {
   document.body.appendChild(overlay);
   mouseTrackingOverlay = overlay;
 
-  // Add click event listeners to mode buttons
-  setupModeButtons();
+  // Note: Mode buttons removed from overlay - they're only in the popup now
+  // This keeps the overlay minimal and non-redundant
 }
 
 /**
@@ -2523,53 +2523,28 @@ function updateOverlayMode(mode) {
   const modeElement = mouseTrackingOverlay.querySelector('#jobsprint-tracking-mode');
   if (!modeElement) return;
 
-  let modeText = '';
+  // Simplified status text - just show keyboard shortcuts
+  let modeText = '↑↓ adjust • Alt+Arrows move • ESC cancel';
   let bgColor = 'rgba(255, 107, 107, 0.95)';
 
   switch (mode) {
     case 'smart':
-      const strengthDesc = ['Minimal', 'Low', 'Medium', 'High', 'Maximum'][smartModeStrength - 1] || 'Medium';
-      modeText = `🧠 Smart mode (${strengthDesc} - Level ${smartModeStrength}/5) • ↑↓ to adjust`;
       bgColor = modeColors.smart.bg;
       break;
     case 'chars':
-      const charLeft = currentGranularity.chars.left;
-      const charRight = currentGranularity.chars.right;
-      if (charLeft === 0 && charRight === 0) {
-        modeText = '🔍 Character mode (single char) • ↑ to expand';
-      } else if (charLeft === charRight) {
-        const totalChars = charLeft + charRight + 1;
-        modeText = `🔍 Character mode (${totalChars} chars) • ↑↓←→ to adjust`;
-      } else {
-        const totalChars = charLeft + charRight + 1;
-        modeText = `🔍 Character mode (${charLeft}←•→${charRight}, total ${totalChars}) • ↑↓←→`;
-      }
       bgColor = modeColors.chars.bg;
       break;
     case 'words':
-      const wordLeft = currentGranularity.words.left;
-      const wordRight = currentGranularity.words.right;
-      if (wordLeft === wordRight) {
-        const totalWords = wordLeft + wordRight + 1;
-        modeText = `✂️ Word mode (${totalWords} words) • ↑↓←→ to adjust`;
-      } else {
-        const totalWords = wordLeft + wordRight + 1;
-        modeText = `✂️ Word mode (${wordLeft}←•→${wordRight}, total ${totalWords}) • ↑↓←→`;
-      }
       bgColor = modeColors.words.bg;
       break;
     default:
-      modeText = 'Hover over text to select';
       bgColor = 'rgba(255, 107, 107, 0.95)'; // Red for default
   }
 
   modeElement.textContent = modeText;
   mouseTrackingOverlay.style.background = bgColor;
 
-  // Update button states
-  updateModeButtonStates();
-
-  // Add pulse animation when mode or granularity changes
+  // Add pulse animation when mode changes
   mouseTrackingOverlay.style.animation = 'slideInFromRight 0.3s ease-out, pulseGlow 0.5s ease-in-out';
 }
 

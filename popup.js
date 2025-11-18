@@ -12,6 +12,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load mode colors early
   await loadModeColors();
 
+  // Apply colors to mode buttons after loading
+  applyModeColorsToButtons();
+
   initializeClipboardMacros();
   initializeExtraction();
   initializeAutofill();
@@ -1590,6 +1593,9 @@ function showManualEntryModal(button, statusDiv, jobData) {
   // Show the modal
   modal.style.display = 'flex';
 
+  // Apply mode colors to buttons (in case they weren't applied yet or settings changed)
+  applyModeColorsToButtons();
+
   // Reset button state
   resetExtractButton(button);
 }
@@ -1703,7 +1709,7 @@ function showSuccess(message) {
 // Track currently focused field for mouse tracking
 let currentlyFocusedField = null;
 let currentActiveFieldElement = null; // Track the actual field DOM element
-let currentMode = 'words'; // Track the current mode globally (persists across fields)
+let currentMode = 'smart'; // Track the current mode globally (persists across fields)
 
 // Mode colors (loaded from storage)
 let popupModeColors = {
@@ -1754,6 +1760,33 @@ function getModeBorderColor(mode) {
 }
 
 /**
+ * Apply loaded mode colors to mode buttons
+ * Updates button border and background colors to match settings
+ */
+function applyModeColorsToButtons() {
+  const modeButtons = document.querySelectorAll('.mode-btn');
+
+  modeButtons.forEach(btn => {
+    const mode = btn.getAttribute('data-mode');
+    const color = getModeBorderColor(mode);
+
+    // Update border color
+    btn.style.borderColor = color;
+
+    // If this is the active mode (smart is default), apply background color
+    if (mode === currentMode) {
+      btn.style.backgroundColor = color;
+      btn.style.color = 'white';
+    } else {
+      btn.style.backgroundColor = '#fff';
+      btn.style.color = color;
+    }
+  });
+
+  log('[Popup] Mode button colors applied:', popupModeColors);
+}
+
+/**
  * Update mode button states to reflect current mode
  * @param {string} mode - Mode name
  */
@@ -1761,14 +1794,19 @@ function updateModeButtonStates(mode) {
   const modeButtons = document.querySelectorAll('.mode-btn');
   modeButtons.forEach(btn => {
     const btnMode = btn.getAttribute('data-mode');
+    const color = getModeBorderColor(btnMode);
+
+    // Always update border color to match settings
+    btn.style.borderColor = color;
+
     if (btnMode === mode) {
       // Selected state - use loaded color
-      btn.style.background = getModeBorderColor(mode);
+      btn.style.backgroundColor = color;
       btn.style.color = '#fff';
     } else {
       // Unselected state - white background with colored text
-      btn.style.background = '#fff';
-      btn.style.color = getModeBorderColor(btnMode);
+      btn.style.backgroundColor = '#fff';
+      btn.style.color = color;
     }
   });
 }
