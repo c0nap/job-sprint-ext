@@ -2205,6 +2205,14 @@ function highlightTextInElement(element, searchText) {
     mark.parentNode.replaceChild(textNode, mark);
   });
 
+  // Get colors for current mode
+  const colors = getModeColors(currentModifierMode);
+  const highlightColor = colors.solid;
+
+  // Convert solid color to rgba for background and shadow
+  const bgColor = hexToRgba(highlightColor, 0.5);
+  const shadowColor = hexToRgba(highlightColor, 0.25);
+
   // Walk through text nodes and highlight matching text
   const walker = document.createTreeWalker(
     element,
@@ -2238,15 +2246,15 @@ function highlightTextInElement(element, searchText) {
         fragment.appendChild(document.createTextNode(before));
       }
 
-      // Create highlight mark
+      // Create highlight mark with mode-specific color
       const mark = document.createElement('mark');
       mark.className = 'jobsprint-text-highlight';
       mark.style.cssText = `
-        background-color: rgba(255, 235, 59, 0.6);
+        background-color: ${bgColor};
         color: inherit;
         padding: 2px 0;
         border-radius: 2px;
-        box-shadow: 0 0 0 2px rgba(255, 235, 59, 0.3);
+        box-shadow: 0 0 0 2px ${shadowColor};
         font-weight: inherit;
       `;
       mark.textContent = match;
