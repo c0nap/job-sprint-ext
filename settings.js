@@ -8,9 +8,9 @@ const DEFAULT_CONFIG = {
   ENABLE_MANUAL_ENTRY: true,
   TARGET_SHEET_NAME: 'Job Applications',
   // Mouse tracking settings
-  SENTENCE_MODIFIER: 'shift',      // Modifier for smart field-aware extraction
+  SENTENCE_MODIFIER: 'none',       // Modifier for smart field-aware extraction
   CHAR_MODIFIER: 'ctrl',           // Modifier for character extraction
-  WORD_MODIFIER: 'none',           // Modifier for word extraction
+  WORD_MODIFIER: 'shift',          // Modifier for word extraction
   OVERLAY_MOVE_MODIFIER: 'alt',   // Modifier for moving overlay
   OVERLAY_MOVE_STEP: 20,           // Pixels to move overlay per keypress
   SMART_MODE_STRENGTH: 2           // Smart mode aggressiveness (1-5, default: 2)
@@ -124,9 +124,9 @@ async function loadSettings() {
     document.getElementById('debugConsoleEnabled').checked = result.debugConsoleEnabled || false;
 
     // Populate mouse tracking settings
-    document.getElementById('sentenceModifier').value = result.SENTENCE_MODIFIER || 'shift';
+    document.getElementById('sentenceModifier').value = result.SENTENCE_MODIFIER || 'none';
     document.getElementById('charModifier').value = result.CHAR_MODIFIER || 'ctrl';
-    document.getElementById('wordModifier').value = result.WORD_MODIFIER || 'none';
+    document.getElementById('wordModifier').value = result.WORD_MODIFIER || 'shift';
     document.getElementById('overlayMoveModifier').value = result.OVERLAY_MOVE_MODIFIER || 'alt';
     document.getElementById('overlayMoveStep').value = result.OVERLAY_MOVE_STEP || 20;
 

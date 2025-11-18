@@ -795,7 +795,7 @@ let lastHighlightedElement = null;
 let mouseTrackingOverlay = null;
 let currentModifierMode = 'smart'; // 'smart', 'words', 'chars'
 let currentGranularity = {
-  words: { left: 1, right: 1 },  // Number of words on each side (default: 1 word left + 1 word right + target = 3 total)
+  words: { left: 0, right: 0 },  // Number of words on each side (default: just target word = 1 total)
   chars: { left: 1, right: 1 }   // Number of characters on each side (default: 1 char left + 1 char right + target = 3 total)
 };
 let smartModeStrength = 2; // Aggressiveness level for smart mode (1-5, default: 2)
@@ -810,9 +810,9 @@ let overlayPosition = {
 
 // Mouse tracking settings (loaded from chrome.storage)
 let mouseTrackingSettings = {
-  smartModifier: 'shift',
+  smartModifier: 'none',
   charModifier: 'ctrl',
-  wordModifier: 'none',
+  wordModifier: 'shift',
   overlayMoveModifier: 'alt',
   overlayMoveStep: 20
 };
@@ -843,9 +843,9 @@ async function loadMouseTrackingSettings() {
     ]);
 
     mouseTrackingSettings = {
-      smartModifier: result.SENTENCE_MODIFIER || 'shift',
+      smartModifier: result.SENTENCE_MODIFIER || 'none',
       charModifier: result.CHAR_MODIFIER || 'ctrl',
-      wordModifier: result.WORD_MODIFIER || 'none',
+      wordModifier: result.WORD_MODIFIER || 'shift',
       overlayMoveModifier: result.OVERLAY_MOVE_MODIFIER || 'alt',
       overlayMoveStep: result.OVERLAY_MOVE_STEP || 20
     };
@@ -1207,14 +1207,14 @@ function handleGranularityChange(event) {
     // Word mode: adjust word granularity
     if (isVertical) {
       // Up/Down: adjust both sides symmetrically
-      currentGranularity.words.left = Math.max(1, currentGranularity.words.left + increment);
-      currentGranularity.words.right = Math.max(1, currentGranularity.words.right + increment);
+      currentGranularity.words.left = Math.max(0, currentGranularity.words.left + increment);
+      currentGranularity.words.right = Math.max(0, currentGranularity.words.right + increment);
     } else if (event.key === 'ArrowLeft') {
       // Left: extend left side only
-      currentGranularity.words.left = Math.max(1, currentGranularity.words.left + 1);
+      currentGranularity.words.left = Math.max(0, currentGranularity.words.left + 1);
     } else if (event.key === 'ArrowRight') {
       // Right: extend right side only
-      currentGranularity.words.right = Math.max(1, currentGranularity.words.right + 1);
+      currentGranularity.words.right = Math.max(0, currentGranularity.words.right + 1);
     }
   }
 
