@@ -1543,8 +1543,9 @@ function extractFieldAware(element, event, fullText, wordsLeft, wordsRight) {
 function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1) {
   if (!text) return '';
 
-  // Split text into words
-  const words = text.split(/\s+/).filter(w => w.trim());
+  // Split text into words by whitespace, slashes, and em/en-dashes
+  // Note: Regular hyphens (-) are preserved to keep hyphenated words like "water-soaked" intact
+  const words = text.split(/[\s\/—–]+/).filter(w => w.trim());
 
   if (words.length === 0) return '';
   if (words.length === 1) return words[0];
