@@ -87,20 +87,38 @@
   <div id="manualEntryModal" class="modal" style="display: none;">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>Review Job Data</h3>
+        <h3 id="modalTitle">Add Job Details</h3>
         <button class="modal-close" id="closeModal">&times;</button>
       </div>
       <div class="modal-body">
-        <p class="modal-info">Some job details couldn't be extracted automatically. Please review and fill in the missing information:</p>
+        <p class="modal-info" id="modalInfo">Please fill in the job details below:</p>
         <p class="modal-hint" style="background: #fff9e6; border-left: 3px solid #FF6B6B; padding: 8px 12px; margin: 12px 0; font-size: 13px; border-radius: 4px;">
           💡 <strong>Tip:</strong> Click in a field, then hover your mouse over any text on the job page to auto-fill it.<br>
           <span style="font-size: 12px; opacity: 0.9; margin-top: 4px; display: inline-block;">
-            • <strong>Shift</strong>=Sentences, <strong>Ctrl</strong>=Characters, <strong>None</strong>=Words<br>
+            • <strong>Shift</strong>=Smart, <strong>Ctrl</strong>=Characters, <strong>None</strong>=Words<br>
             • Use <strong>↑↓ arrows</strong> to adjust granularity (expand/reduce selection)<br>
+            • Use <strong>←→ arrows</strong> to extend selection left or right only<br>
             • Use <strong>Alt+Arrows</strong> to move the overlay if it's blocking content<br>
             • <strong>Click</strong> to confirm • <strong>ESC</strong> to cancel
           </span>
         </p>
+
+        <div class="mode-selector" style="margin: 12px 0; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500; font-size: 13px; color: #333;">
+            Extraction Mode:
+          </label>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="mode-btn" data-mode="words" style="flex: 1; padding: 8px 12px; border: 2px solid #46a049; background: #fff; color: #46a049; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+              ✂️ Words
+            </button>
+            <button type="button" class="mode-btn" data-mode="smart" style="flex: 1; padding: 8px 12px; border: 2px solid #3498db; background: #fff; color: #3498db; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+              🧠 Smart
+            </button>
+            <button type="button" class="mode-btn" data-mode="chars" style="flex: 1; padding: 8px 12px; border: 2px solid #9b59b6; background: #fff; color: #9b59b6; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+              🔍 Characters
+            </button>
+          </div>
+        </div>
 
         <form id="manualEntryForm">
           <div class="form-field">

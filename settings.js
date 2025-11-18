@@ -8,9 +8,9 @@ const DEFAULT_CONFIG = {
   ENABLE_MANUAL_ENTRY: true,
   TARGET_SHEET_NAME: 'Job Applications',
   // Mouse tracking settings
-  SENTENCE_MODIFIER: 'shift',      // Modifier for sentence extraction
+  SENTENCE_MODIFIER: 'shift',      // Modifier for smart field-aware extraction
   CHAR_MODIFIER: 'ctrl',           // Modifier for character extraction
-  WORD_MODIFIER: 'none',           // Modifier for word/field-aware extraction
+  WORD_MODIFIER: 'none',           // Modifier for word extraction
   OVERLAY_MOVE_MODIFIER: 'alt',   // Modifier for moving overlay
   OVERLAY_MOVE_STEP: 20,           // Pixels to move overlay per keypress
   SMART_MODE_STRENGTH: 2           // Smart mode aggressiveness (1-5, default: 2)
@@ -103,7 +103,10 @@ async function loadSettings() {
       'WORD_MODIFIER',
       'OVERLAY_MOVE_MODIFIER',
       'OVERLAY_MOVE_STEP',
-      'SMART_MODE_STRENGTH'
+      'SMART_MODE_STRENGTH',
+      'WORD_MODE_COLOR',
+      'SENTENCE_MODE_COLOR',
+      'CHAR_MODE_COLOR'
     ]);
 
     // Populate form fields
@@ -131,6 +134,11 @@ async function loadSettings() {
     const smartModeStrength = result.SMART_MODE_STRENGTH || 2;
     document.getElementById('smartModeStrength').value = smartModeStrength;
     updateSmartModeStrengthLabel(smartModeStrength);
+
+    // Populate mode colors
+    document.getElementById('wordModeColor').value = result.WORD_MODE_COLOR || '#2ecc71';
+    document.getElementById('sentenceModeColor').value = result.SENTENCE_MODE_COLOR || '#3498db';
+    document.getElementById('charModeColor').value = result.CHAR_MODE_COLOR || '#9b59b6';
 
     // Populate clipboard macro folders
     const macros = result.clipboardMacros || DEFAULT_MACROS;
@@ -413,7 +421,11 @@ async function saveSettings() {
     WORD_MODIFIER: document.getElementById('wordModifier').value,
     OVERLAY_MOVE_MODIFIER: document.getElementById('overlayMoveModifier').value,
     OVERLAY_MOVE_STEP: parseInt(document.getElementById('overlayMoveStep').value) || 20,
-    SMART_MODE_STRENGTH: parseInt(document.getElementById('smartModeStrength').value) || 2
+    SMART_MODE_STRENGTH: parseInt(document.getElementById('smartModeStrength').value) || 2,
+    // Mode colors
+    WORD_MODE_COLOR: document.getElementById('wordModeColor').value,
+    SENTENCE_MODE_COLOR: document.getElementById('sentenceModeColor').value,
+    CHAR_MODE_COLOR: document.getElementById('charModeColor').value
   };
 
   // Get and validate clipboard macros
@@ -456,7 +468,7 @@ async function saveSettings() {
 
   // Validate mouse tracking keybind settings (check for conflicts)
   const modifiers = [
-    { value: settings.SENTENCE_MODIFIER, name: 'Sentence' },
+    { value: settings.SENTENCE_MODIFIER, name: 'Smart' },
     { value: settings.CHAR_MODIFIER, name: 'Character' },
     { value: settings.WORD_MODIFIER, name: 'Word' }
   ];

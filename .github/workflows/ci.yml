@@ -112,13 +112,6 @@ jobs:
       - name: Run utility tests
         run: npm test -- tests/utils.test.js
 
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: utils-test-results
-          path: coverage/
-
   # Job 4: Run clipboard feature tests (Feature 1 - parallel)
   test-clipboard:
     name: Test Clipboard Feature (Feature 1)
@@ -142,13 +135,6 @@ jobs:
       - name: Run clipboard content script tests
         run: npm test -- tests/clipboard-content-script.test.js
 
-      - name: Upload clipboard test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: clipboard-test-results
-          path: coverage/
-
   # Job 5: Run extraction feature tests (Feature 2 - parallel)
   test-extraction:
     name: Test Extraction Feature (Feature 2)
@@ -168,13 +154,6 @@ jobs:
 
       - name: Run extraction tests
         run: npm test -- tests/extraction.test.js
-
-      - name: Upload extraction test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: extraction-test-results
-          path: coverage/
 
       - name: Test summary
         if: always()
@@ -204,13 +183,6 @@ jobs:
       - name: Run autofill tests
         run: npm test -- tests/autofill.test.js
 
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: autofill-test-results
-          path: coverage/
-
   # Job 7: Run service worker autofill tests (Feature 3 - parallel)
   test-service-worker-autofill:
     name: Test Service Worker Autofill (Feature 3)
@@ -231,13 +203,6 @@ jobs:
       - name: Run service worker autofill tests
         run: npm test -- tests/service-worker-autofill.test.js
 
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: service-worker-autofill-test-results
-          path: coverage/
-
   # Job 8: Test Local GAS Endpoint (Feature 2 enhancement - parallel)
   test-local-endpoint:
     name: Test Local GAS Endpoint
@@ -257,13 +222,6 @@ jobs:
 
       - name: Run local endpoint tests
         run: npm run test:endpoint
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: local-endpoint-test-results
-          path: coverage/
 
       - name: Test summary
         if: always()
@@ -292,13 +250,6 @@ jobs:
 
       - name: Run field extractor tests
         run: npm test -- tests/field-extractors.test.js
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: field-extractors-test-results
-          path: coverage/
 
       - name: Test summary
         if: always()

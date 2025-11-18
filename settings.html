@@ -591,10 +591,10 @@
 
             <div class="form-group">
                 <label for="sentenceModifier">
-                    Sentence Extraction Modifier
+                    Smart Extraction Modifier
                     <span class="tooltip">
                         <span class="help-icon">?</span>
-                        <span class="tooltip-text">Modifier key that activates sentence-based extraction. Default: Shift key extracts full sentences around the cursor.</span>
+                        <span class="tooltip-text">Modifier key that activates smart field-aware extraction. Default: Shift key uses intelligent extraction based on the field being filled.</span>
                     </span>
                 </label>
                 <select id="sentenceModifier" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
@@ -603,7 +603,7 @@
                     <option value="alt">Alt</option>
                     <option value="none">None (Default mode)</option>
                 </select>
-                <small>Hold this key while hovering to extract full sentences</small>
+                <small>Press this key to activate smart field-aware extraction mode</small>
             </div>
 
             <div class="form-group">
@@ -690,6 +690,53 @@
 
             <div class="alert alert-warning">
                 <strong>⚠️ Note:</strong> Ensure each modifier is assigned to a different mode to avoid conflicts. If conflicts exist, the extension will use default settings.
+            </div>
+
+            <!-- Mode Colors Configuration -->
+            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+                <h4 style="margin-bottom: 10px; font-size: 14px;">
+                    Extraction Mode Colors
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Configure the colors used for visual feedback in each extraction mode. These colors appear in the tracking overlay, element highlights, and text field borders.</span>
+                    </span>
+                </h4>
+
+                <div class="form-group">
+                    <label for="wordModeColor">
+                        Word Mode Color
+                        <span class="tooltip">
+                            <span class="help-icon">?</span>
+                            <span class="tooltip-text">Color for word extraction mode (field-aware intelligent extraction)</span>
+                        </span>
+                    </label>
+                    <input type="color" id="wordModeColor" value="#2ecc71" style="width: 60px; height: 40px; border: 1px solid #cbd5e0; border-radius: 4px; cursor: pointer;">
+                    <small style="margin-left: 10px; vertical-align: middle;">Default: Green (#2ecc71)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="sentenceModeColor">
+                        Smart Mode Color
+                        <span class="tooltip">
+                            <span class="help-icon">?</span>
+                            <span class="tooltip-text">Color for smart field-aware extraction mode</span>
+                        </span>
+                    </label>
+                    <input type="color" id="sentenceModeColor" value="#3498db" style="width: 60px; height: 40px; border: 1px solid #cbd5e0; border-radius: 4px; cursor: pointer;">
+                    <small style="margin-left: 10px; vertical-align: middle;">Default: Blue (#3498db)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="charModeColor">
+                        Character Mode Color
+                        <span class="tooltip">
+                            <span class="help-icon">?</span>
+                            <span class="tooltip-text">Color for character extraction mode</span>
+                        </span>
+                    </label>
+                    <input type="color" id="charModeColor" value="#9b59b6" style="width: 60px; height: 40px; border: 1px solid #cbd5e0; border-radius: 4px; cursor: pointer;">
+                    <small style="margin-left: 10px; vertical-align: middle;">Default: Purple (#9b59b6)</small>
+                </div>
             </div>
         </div>
 
