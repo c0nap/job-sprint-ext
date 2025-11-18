@@ -1703,7 +1703,7 @@ function showSuccess(message) {
 // Track currently focused field for mouse tracking
 let currentlyFocusedField = null;
 let currentActiveFieldElement = null; // Track the actual field DOM element
-let currentMode = 'words'; // Track the current mode globally (persists across fields)
+let currentMode = 'smart'; // Track the current mode globally (persists across fields)
 
 // Mode colors (loaded from storage)
 let popupModeColors = {

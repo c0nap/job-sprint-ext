@@ -2124,7 +2124,7 @@ function highlightElement(element, extractedText = null) {
   // Get color based on current mode
   const colors = getModeColors(currentModifierMode);
 
-  // Add highlight to new element
+  // Add highlight to new element (only element-level, no text-level to avoid jitter)
   element.style.outline = `3px solid ${colors.solid}`;
   element.style.outlineOffset = '2px';
   element.style.backgroundColor = colors.transparent;
@@ -2132,10 +2132,8 @@ function highlightElement(element, extractedText = null) {
   lastHighlightedElement = element;
   lastHighlightedText = extractedText;
 
-  // Create text highlight overlay if we have extracted text
-  if (extractedText && extractedText.trim()) {
-    createTextHighlight(element, extractedText);
-  }
+  // Note: Text-level highlighting with <mark> tags removed to prevent glitchy jitter
+  // caused by DOM mutations triggering mousemove events
 }
 
 /**
@@ -2417,38 +2415,35 @@ function createTrackingOverlay() {
     ${positionCSS}
     background: rgba(255, 107, 107, 0.95);
     color: white;
-    padding: 12px 20px;
-    border-radius: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     z-index: 999998;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     pointer-events: none;
     animation: slideInFromRight 0.3s ease-out;
   `;
 
   overlay.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-      <span style="font-size: 18px;">🎯</span>
-      <span id="jobsprint-tracking-title">Hover over text to auto-fill</span>
+    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+      <span style="font-size: 14px;">🎯</span>
+      <span id="jobsprint-tracking-title" style="font-size: 12px;">Hover to select</span>
     </div>
-    <div id="jobsprint-mode-buttons" style="display: flex; gap: 6px; margin-bottom: 8px; pointer-events: auto;">
-      <button id="mode-smart" style="flex: 1; padding: 6px 10px; background: #3498db; color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+    <div id="jobsprint-mode-buttons" style="display: flex; gap: 4px; margin-bottom: 4px; pointer-events: auto;">
+      <button id="mode-smart" style="flex: 1; padding: 4px 8px; background: #3498db; color: white; border: none; border-radius: 3px; font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
         🧠 Smart
       </button>
-      <button id="mode-words" style="flex: 1; padding: 6px 10px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+      <button id="mode-words" style="flex: 1; padding: 4px 8px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 3px; font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
         ✂️ Words
       </button>
-      <button id="mode-chars" style="flex: 1; padding: 6px 10px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+      <button id="mode-chars" style="flex: 1; padding: 4px 8px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 3px; font-size: 10px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
         🔍 Chars
       </button>
     </div>
-    <div id="jobsprint-tracking-mode" style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
-      🧠 Smart mode (Level ${smartModeStrength}) • ↑↓ to adjust
-    </div>
-    <div style="font-size: 11px; margin-top: 4px; opacity: 0.9;">
-      Alt+Arrows=Move • ESC=Cancel
+    <div id="jobsprint-tracking-mode" style="font-size: 9px; opacity: 0.75; line-height: 1.2;">
+      ↑↓ adjust • Alt+Arrows move • ESC cancel
     </div>
   `;
 
@@ -2523,43 +2518,21 @@ function updateOverlayMode(mode) {
   const modeElement = mouseTrackingOverlay.querySelector('#jobsprint-tracking-mode');
   if (!modeElement) return;
 
-  let modeText = '';
+  // Simplified status text - just show keyboard shortcuts, no redundant mode info
+  let modeText = '↑↓ adjust • Alt+Arrows move • ESC cancel';
   let bgColor = 'rgba(255, 107, 107, 0.95)';
 
   switch (mode) {
     case 'smart':
-      const strengthDesc = ['Minimal', 'Low', 'Medium', 'High', 'Maximum'][smartModeStrength - 1] || 'Medium';
-      modeText = `🧠 Smart mode (${strengthDesc} - Level ${smartModeStrength}/5) • ↑↓ to adjust`;
       bgColor = modeColors.smart.bg;
       break;
     case 'chars':
-      const charLeft = currentGranularity.chars.left;
-      const charRight = currentGranularity.chars.right;
-      if (charLeft === 0 && charRight === 0) {
-        modeText = '🔍 Character mode (single char) • ↑ to expand';
-      } else if (charLeft === charRight) {
-        const totalChars = charLeft + charRight + 1;
-        modeText = `🔍 Character mode (${totalChars} chars) • ↑↓←→ to adjust`;
-      } else {
-        const totalChars = charLeft + charRight + 1;
-        modeText = `🔍 Character mode (${charLeft}←•→${charRight}, total ${totalChars}) • ↑↓←→`;
-      }
       bgColor = modeColors.chars.bg;
       break;
     case 'words':
-      const wordLeft = currentGranularity.words.left;
-      const wordRight = currentGranularity.words.right;
-      if (wordLeft === wordRight) {
-        const totalWords = wordLeft + wordRight + 1;
-        modeText = `✂️ Word mode (${totalWords} words) • ↑↓←→ to adjust`;
-      } else {
-        const totalWords = wordLeft + wordRight + 1;
-        modeText = `✂️ Word mode (${wordLeft}←•→${wordRight}, total ${totalWords}) • ↑↓←→`;
-      }
       bgColor = modeColors.words.bg;
       break;
     default:
-      modeText = 'Hover over text to select';
       bgColor = 'rgba(255, 107, 107, 0.95)'; // Red for default
   }
 
