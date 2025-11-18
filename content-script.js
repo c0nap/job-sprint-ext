@@ -1320,29 +1320,33 @@ function handleOverlayReposition(event) {
 
 /**
  * Get extraction mode based on modifier keys (for temporary override)
+ * Only returns a mode if an actual modifier key is pressed (not 'none')
  * @param {MouseEvent|KeyboardEvent} event - Event with modifier key info
  * @returns {string|null} Extraction mode if modifier is pressed, null otherwise
  */
 function getExtractionModeFromModifiers(event) {
   // Check each configured modifier and return corresponding mode if pressed
+  // Skip 'none' modifiers as they shouldn't override the button-selected mode
 
-  // Check for smart modifier
-  if (checkModifierKey(event, mouseTrackingSettings.smartModifier)) {
+  // Check for smart modifier (only if it's not 'none')
+  if (mouseTrackingSettings.smartModifier !== 'none' &&
+      checkModifierKey(event, mouseTrackingSettings.smartModifier)) {
     return 'smart';
   }
 
-  // Check for char modifier
-  if (checkModifierKey(event, mouseTrackingSettings.charModifier)) {
+  // Check for char modifier (only if it's not 'none')
+  if (mouseTrackingSettings.charModifier !== 'none' &&
+      checkModifierKey(event, mouseTrackingSettings.charModifier)) {
     return 'chars';
   }
 
-  // Check for word modifier
+  // Check for word modifier (only if it's not 'none')
   if (mouseTrackingSettings.wordModifier !== 'none' &&
       checkModifierKey(event, mouseTrackingSettings.wordModifier)) {
     return 'words';
   }
 
-  // No modifier pressed - return null to use current button mode
+  // No actual modifier key pressed - return null to use current button mode
   return null;
 }
 
