@@ -1106,9 +1106,14 @@ function handleMouseMove(event) {
   const mode = currentModifierMode;
 
   // Get element under cursor
-  const element = document.elementFromPoint(event.clientX, event.clientY);
+  let element = document.elementFromPoint(event.clientX, event.clientY);
 
   if (!element || element === mouseTrackingOverlay) return;
+
+  // If we hit a highlight mark, get the actual element
+  if (element.classList && element.classList.contains('jobsprint-text-highlight')) {
+    element = element.closest(':not(.jobsprint-text-highlight)') || element.parentElement;
+  }
 
   // Extract text from element with appropriate scope
   const text = extractTextFromElement(element, event, mode);
@@ -2156,7 +2161,7 @@ function highlightElement(element, extractedText = null) {
   // The check above (line 2135) prevents re-highlighting the same text, avoiding jitter
   if (extractedText && extractedText.trim()) {
     try {
-      highlightTextInElement(element, extractedText.trim());
+      highlightTextInElement(element, extractedText.trim(), lastMouseEvent);
     } catch (error) {
       console.error('[MouseTracking] Error highlighting text:', error);
     }
@@ -2195,8 +2200,9 @@ function createTextHighlight(element, text) {
  * Highlight specific text within an element by wrapping it in a mark
  * @param {HTMLElement} element - Element containing the text
  * @param {string} searchText - Text to highlight
+ * @param {MouseEvent} mouseEvent - Mouse event to determine which occurrence to highlight
  */
-function highlightTextInElement(element, searchText) {
+function highlightTextInElement(element, searchText, mouseEvent) {
   // Remove any existing highlights first
   const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
   existingHighlights.forEach(mark => {
@@ -2213,7 +2219,11 @@ function highlightTextInElement(element, searchText) {
   const bgColor = hexToRgba(highlightColor, 0.5);
   const shadowColor = hexToRgba(highlightColor, 0.25);
 
-  // Walk through text nodes and highlight matching text
+  // Find the text occurrence closest to the mouse cursor
+  const range = mouseEvent ? document.caretRangeFromPoint(mouseEvent.clientX, mouseEvent.clientY) : null;
+  let targetTextNode = range?.startContainer;
+
+  // Walk through text nodes and find all matches
   const walker = document.createTreeWalker(
     element,
     NodeFilter.SHOW_TEXT,
@@ -2222,15 +2232,24 @@ function highlightTextInElement(element, searchText) {
 
   const nodesToProcess = [];
   let node;
+  let foundTargetMatch = false;
+
   while (node = walker.nextNode()) {
     const nodeText = node.nodeValue || '';
     if (nodeText.includes(searchText)) {
-      nodesToProcess.push(node);
+      // If this is the text node under cursor, prioritize it
+      if (node === targetTextNode || node.parentNode === targetTextNode?.parentNode) {
+        nodesToProcess.unshift({ node, priority: true });
+        foundTargetMatch = true;
+      } else if (!foundTargetMatch) {
+        nodesToProcess.push({ node, priority: false });
+      }
     }
   }
 
-  // Process nodes (can't modify during tree walk)
-  nodesToProcess.forEach(textNode => {
+  // Only process the first match (the one closest to cursor)
+  if (nodesToProcess.length > 0) {
+    const { node: textNode } = nodesToProcess[0];
     const nodeText = textNode.nodeValue || '';
     const index = nodeText.indexOf(searchText);
 
@@ -2256,6 +2275,7 @@ function highlightTextInElement(element, searchText) {
         border-radius: 2px;
         box-shadow: 0 0 0 2px ${shadowColor};
         font-weight: inherit;
+        pointer-events: none;
       `;
       mark.textContent = match;
       fragment.appendChild(mark);
@@ -2266,7 +2286,7 @@ function highlightTextInElement(element, searchText) {
 
       textNode.parentNode.replaceChild(fragment, textNode);
     }
-  });
+  }
 }
 
 /**
