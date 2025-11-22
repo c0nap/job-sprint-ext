@@ -2255,130 +2255,88 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   // Get colors for current mode
   const colors = getModeColors(currentModifierMode);
   const highlightColor = colors.solid;
-
-  // Convert solid color to rgba for background and shadow
   const bgColor = hexToRgba(highlightColor, 0.5);
   const shadowColor = hexToRgba(highlightColor, 0.25);
 
-  // Get the exact text node and position under the cursor (mouse buffer approach)
-  const range = mouseEvent ? document.caretRangeFromPoint(mouseEvent.clientX, mouseEvent.clientY) : null;
-  if (!range) {
-    // No cursor position, fall back to first occurrence
+  // Simple approach: Find ALL occurrences, pick the one with screen position closest to mouse
+  if (!mouseEvent) {
     highlightFirstOccurrence(element, searchText, elementText, bgColor, shadowColor);
     return;
   }
 
-  const targetTextNode = range.startContainer;
-  if (targetTextNode.nodeType !== Node.TEXT_NODE) {
-    highlightFirstOccurrence(element, searchText, elementText, bgColor, shadowColor);
-    return;
-  }
+  const mouseX = mouseEvent.clientX;
+  const mouseY = mouseEvent.clientY;
 
-  const cursorOffset = range.startOffset;
-  const nodeText = targetTextNode.textContent || '';
+  // Find all text nodes and their occurrences of searchText
+  const escapedText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const patternText = escapedText.replace(/\s+/g, '\\s+');
+  const regex = new RegExp(patternText, 'g');
 
-  // Create a "mouse buffer" - text immediately around the cursor (our anchor point)
-  const bufferSize = 20;
-  const bufferStart = Math.max(0, cursorOffset - bufferSize);
-  const bufferEnd = Math.min(nodeText.length, cursorOffset + bufferSize);
-  const mouseBuffer = nodeText.substring(bufferStart, bufferEnd);
-  const cleanedMouseBuffer = cleanText(mouseBuffer);
-
-  // Find this buffer in the element's cleaned text
-  const bufferPosition = elementText.indexOf(cleanedMouseBuffer);
-
-  if (bufferPosition === -1) {
-    // Buffer not found (nested elements, etc.), fall back
-    highlightFirstOccurrence(element, searchText, elementText, bgColor, shadowColor);
-    return;
-  }
-
-  // Calculate where the cursor is within the cleaned text
-  const cursorInBuffer = cleanText(nodeText.substring(bufferStart, cursorOffset)).length;
-  const cursorPositionInText = bufferPosition + cursorInBuffer;
-
-  // Find the occurrence of searchText that contains or is closest to this cursor position
-  let bestMatchPosition = -1;
-  let bestMatchDistance = Infinity;
-  let searchPosition = 0;
-
-  while ((searchPosition = elementText.indexOf(searchText, searchPosition)) !== -1) {
-    const matchEnd = searchPosition + searchText.length;
-
-    // Check if cursor is within this match
-    if (cursorPositionInText >= searchPosition && cursorPositionInText <= matchEnd) {
-      bestMatchPosition = searchPosition;
-      break;
-    }
-
-    // Otherwise find closest match
-    const distance = Math.min(
-      Math.abs(cursorPositionInText - searchPosition),
-      Math.abs(cursorPositionInText - matchEnd)
-    );
-
-    if (distance < bestMatchDistance) {
-      bestMatchDistance = distance;
-      bestMatchPosition = searchPosition;
-    }
-
-    searchPosition++;
-  }
-
-  if (bestMatchPosition === -1) return;
-
-  // Now find and highlight the text at bestMatchPosition in the DOM
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
-  let cleanedPosition = 0;
+  const candidates = [];
   let node;
 
   while (node = walker.nextNode()) {
     const nodeText = node.nodeValue || '';
-    const cleanedNodeText = cleanText(nodeText);
-    const cleanedStart = cleanedPosition;
-    const cleanedEnd = cleanedPosition + cleanedNodeText.length;
+    regex.lastIndex = 0; // Reset regex
+    let match;
 
-    // Check if our target match starts within this text node
-    if (bestMatchPosition >= cleanedStart && bestMatchPosition < cleanedEnd) {
-      // Use flexible regex to match searchText with variable whitespace
-      // First escape special regex characters, THEN replace spaces with flexible pattern
-      const escapedText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const patternText = escapedText.replace(/\s+/g, '\\s+');
-      const regex = new RegExp(patternText);
-      const match = nodeText.match(regex);
+    while ((match = regex.exec(nodeText)) !== null) {
+      // Found a match - get its screen position
+      const range = document.createRange();
+      range.setStart(node, match.index);
+      range.setEnd(node, match.index + match[0].length);
 
-      if (match && match.index !== undefined) {
-        const offsetInNode = match.index;
-        const matchedText = match[0];
-        const before = nodeText.substring(0, offsetInNode);
-        const after = nodeText.substring(offsetInNode + matchedText.length);
+      const rects = range.getClientRects();
+      if (rects.length > 0) {
+        const rect = rects[0];
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const distance = Math.sqrt(
+          Math.pow(mouseX - centerX, 2) +
+          Math.pow(mouseY - centerY, 2)
+        );
 
-        const fragment = document.createDocumentFragment();
-        if (before) fragment.appendChild(document.createTextNode(before));
-
-        const mark = document.createElement('mark');
-        mark.className = 'jobsprint-text-highlight';
-        mark.style.cssText = `
-          background-color: ${bgColor};
-          color: inherit;
-          padding: 2px 0;
-          border-radius: 2px;
-          box-shadow: 0 0 0 2px ${shadowColor};
-          font-weight: inherit;
-          pointer-events: none;
-        `;
-        mark.textContent = matchedText;
-        fragment.appendChild(mark);
-
-        if (after) fragment.appendChild(document.createTextNode(after));
-
-        node.parentNode.replaceChild(fragment, node);
-        return;  // Exit after highlighting
+        candidates.push({
+          node,
+          matchIndex: match.index,
+          matchText: match[0],
+          distance
+        });
       }
     }
-
-    cleanedPosition += cleanedNodeText.length;
   }
+
+  if (candidates.length === 0) return;
+
+  // Sort by distance and pick the closest
+  candidates.sort((a, b) => a.distance - b.distance);
+  const best = candidates[0];
+
+  // Highlight the best match
+  const before = best.node.nodeValue.substring(0, best.matchIndex);
+  const after = best.node.nodeValue.substring(best.matchIndex + best.matchText.length);
+
+  const fragment = document.createDocumentFragment();
+  if (before) fragment.appendChild(document.createTextNode(before));
+
+  const mark = document.createElement('mark');
+  mark.className = 'jobsprint-text-highlight';
+  mark.style.cssText = `
+    background-color: ${bgColor};
+    color: inherit;
+    padding: 2px 0;
+    border-radius: 2px;
+    box-shadow: 0 0 0 2px ${shadowColor};
+    font-weight: inherit;
+    pointer-events: none;
+  `;
+  mark.textContent = best.matchText;
+  fragment.appendChild(mark);
+
+  if (after) fragment.appendChild(document.createTextNode(after));
+
+  best.node.parentNode.replaceChild(fragment, best.node);
 }
 
 /**
