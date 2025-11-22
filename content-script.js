@@ -2235,6 +2235,21 @@ function highlightTextInElement(element, searchText, mouseEvent) {
     mark.parentNode.replaceChild(textNode, mark);
   });
 
+  // Check if the text actually exists in this element (for smart mode)
+  const clone = element.cloneNode(true);
+  const marks = clone.querySelectorAll('mark.jobsprint-text-highlight');
+  marks.forEach(mark => {
+    const textContent = document.createTextNode(mark.textContent);
+    mark.parentNode.replaceChild(textContent, mark);
+  });
+  const elementText = clone.textContent || '';
+
+  if (!elementText.includes(searchText)) {
+    // Text not in this element (smart mode extracted from parent/sibling)
+    // Don't highlight - just show the outline
+    return;
+  }
+
   // Get colors for current mode
   const colors = getModeColors(currentModifierMode);
   const highlightColor = colors.solid;
@@ -2243,45 +2258,80 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   const bgColor = hexToRgba(highlightColor, 0.5);
   const shadowColor = hexToRgba(highlightColor, 0.25);
 
-  // Find the text occurrence closest to the mouse cursor
+  // Find the exact character position where we should highlight
   const range = mouseEvent ? document.caretRangeFromPoint(mouseEvent.clientX, mouseEvent.clientY) : null;
   let targetTextNode = range?.startContainer;
+  let cursorPosition = 0;
 
-  // Walk through text nodes and find all matches
+  if (range && targetTextNode?.nodeType === Node.TEXT_NODE) {
+    // Calculate exact cursor position in the element's text
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    let currentNode;
+    while (currentNode = walker.nextNode()) {
+      if (currentNode === targetTextNode) {
+        cursorPosition += range.startOffset;
+        break;
+      }
+      cursorPosition += currentNode.textContent.length;
+    }
+  }
+
+  // Find the occurrence of searchText that contains or is closest to the cursor position
+  let bestMatchPosition = -1;
+  let bestMatchDistance = Infinity;
+  let searchPosition = 0;
+
+  while ((searchPosition = elementText.indexOf(searchText, searchPosition)) !== -1) {
+    const matchEnd = searchPosition + searchText.length;
+
+    // Check if cursor is within this match
+    if (cursorPosition >= searchPosition && cursorPosition <= matchEnd) {
+      bestMatchPosition = searchPosition;
+      break;
+    }
+
+    // Otherwise find closest match
+    const distance = Math.min(
+      Math.abs(cursorPosition - searchPosition),
+      Math.abs(cursorPosition - matchEnd)
+    );
+
+    if (distance < bestMatchDistance) {
+      bestMatchDistance = distance;
+      bestMatchPosition = searchPosition;
+    }
+
+    searchPosition++;
+  }
+
+  if (bestMatchPosition === -1) return;
+
+  // Now find and highlight the text at bestMatchPosition
   const walker = document.createTreeWalker(
     element,
     NodeFilter.SHOW_TEXT,
     null
   );
 
-  const nodesToProcess = [];
+  let currentPosition = 0;
   let node;
-  let foundTargetMatch = false;
 
   while (node = walker.nextNode()) {
     const nodeText = node.nodeValue || '';
-    if (nodeText.includes(searchText)) {
-      // If this is the text node under cursor, prioritize it
-      if (node === targetTextNode || node.parentNode === targetTextNode?.parentNode) {
-        nodesToProcess.unshift({ node, priority: true });
-        foundTargetMatch = true;
-      } else if (!foundTargetMatch) {
-        nodesToProcess.push({ node, priority: false });
-      }
-    }
-  }
+    const nodeStart = currentPosition;
+    const nodeEnd = currentPosition + nodeText.length;
 
-  // Only process the first match (the one closest to cursor)
-  if (nodesToProcess.length > 0) {
-    const { node: textNode } = nodesToProcess[0];
-    const nodeText = textNode.nodeValue || '';
-    const index = nodeText.indexOf(searchText);
-
-    if (index !== -1) {
-      // Split the text node
-      const before = nodeText.substring(0, index);
-      const match = nodeText.substring(index, index + searchText.length);
-      const after = nodeText.substring(index + searchText.length);
+    // Check if our target match is within this text node
+    if (bestMatchPosition >= nodeStart && bestMatchPosition < nodeEnd) {
+      const offsetInNode = bestMatchPosition - nodeStart;
+      const before = nodeText.substring(0, offsetInNode);
+      const match = nodeText.substring(offsetInNode, offsetInNode + searchText.length);
+      const after = nodeText.substring(offsetInNode + searchText.length);
 
       const fragment = document.createDocumentFragment();
 
@@ -2308,8 +2358,11 @@ function highlightTextInElement(element, searchText, mouseEvent) {
         fragment.appendChild(document.createTextNode(after));
       }
 
-      textNode.parentNode.replaceChild(fragment, textNode);
+      node.parentNode.replaceChild(fragment, node);
+      break;
     }
+
+    currentPosition += nodeText.length;
   }
 }
 
