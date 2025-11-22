@@ -2242,7 +2242,7 @@ function highlightTextInElement(element, searchText, mouseEvent) {
     const textContent = document.createTextNode(mark.textContent);
     mark.parentNode.replaceChild(textContent, mark);
   });
-  const elementText = clone.textContent || '';
+  const elementText = cleanText(clone.textContent || '');
 
   if (!elementText.includes(searchText)) {
     // Text not in this element (smart mode extracted from parent/sibling)
@@ -2264,7 +2264,7 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   let cursorPosition = 0;
 
   if (range && targetTextNode?.nodeType === Node.TEXT_NODE) {
-    // Calculate exact cursor position in the element's text
+    // Calculate exact cursor position in the element's cleaned text
     const walker = document.createTreeWalker(
       element,
       NodeFilter.SHOW_TEXT,
@@ -2274,14 +2274,18 @@ function highlightTextInElement(element, searchText, mouseEvent) {
     let currentNode;
     while (currentNode = walker.nextNode()) {
       if (currentNode === targetTextNode) {
-        cursorPosition += range.startOffset;
+        // Add offset in cleaned text
+        const beforeCursor = currentNode.textContent.substring(0, range.startOffset);
+        cursorPosition += cleanText(beforeCursor).length;
         break;
       }
-      cursorPosition += currentNode.textContent.length;
+      // Track position in cleaned text
+      cursorPosition += cleanText(currentNode.textContent).length;
     }
   }
 
   // Find the occurrence of searchText that contains or is closest to the cursor position
+  // Search in the cleaned text for consistency with extraction
   let bestMatchPosition = -1;
   let bestMatchDistance = Infinity;
   let searchPosition = 0;
@@ -2311,58 +2315,71 @@ function highlightTextInElement(element, searchText, mouseEvent) {
 
   if (bestMatchPosition === -1) return;
 
-  // Now find and highlight the text at bestMatchPosition
+  // Now find and highlight the text at bestMatchPosition in the cleaned text
+  // Walk through DOM and track position in cleaned vs uncleaned text
   const walker = document.createTreeWalker(
     element,
     NodeFilter.SHOW_TEXT,
     null
   );
 
-  let currentPosition = 0;
+  let cleanedPosition = 0;
   let node;
 
   while (node = walker.nextNode()) {
     const nodeText = node.nodeValue || '';
-    const nodeStart = currentPosition;
-    const nodeEnd = currentPosition + nodeText.length;
+    const cleanedNodeText = cleanText(nodeText);
+    const cleanedStart = cleanedPosition;
+    const cleanedEnd = cleanedPosition + cleanedNodeText.length;
 
-    // Check if our target match is within this text node
-    if (bestMatchPosition >= nodeStart && bestMatchPosition < nodeEnd) {
-      const offsetInNode = bestMatchPosition - nodeStart;
-      const before = nodeText.substring(0, offsetInNode);
-      const match = nodeText.substring(offsetInNode, offsetInNode + searchText.length);
-      const after = nodeText.substring(offsetInNode + searchText.length);
+    // Check if our target match starts within this text node (in cleaned text coordinates)
+    if (bestMatchPosition >= cleanedStart && bestMatchPosition < cleanedEnd) {
+      // Find the actual text to highlight in the original node
+      // We need to find searchText in the original nodeText, preferably near the cursor
+      const searchStart = Math.max(0, bestMatchPosition - cleanedStart);
 
-      const fragment = document.createDocumentFragment();
+      // Create a simple pattern that matches searchText with flexible whitespace
+      const patternText = searchText.replace(/\s+/g, '\\s+');
+      const regex = new RegExp(patternText, 'i');
+      const match = nodeText.match(regex);
 
-      if (before) {
-        fragment.appendChild(document.createTextNode(before));
+      if (match && match.index !== undefined) {
+        const offsetInNode = match.index;
+        const matchedText = match[0];
+        const before = nodeText.substring(0, offsetInNode);
+        const after = nodeText.substring(offsetInNode + matchedText.length);
+
+        const fragment = document.createDocumentFragment();
+
+        if (before) {
+          fragment.appendChild(document.createTextNode(before));
+        }
+
+        // Create highlight mark with mode-specific color
+        const mark = document.createElement('mark');
+        mark.className = 'jobsprint-text-highlight';
+        mark.style.cssText = `
+          background-color: ${bgColor};
+          color: inherit;
+          padding: 2px 0;
+          border-radius: 2px;
+          box-shadow: 0 0 0 2px ${shadowColor};
+          font-weight: inherit;
+          pointer-events: none;
+        `;
+        mark.textContent = matchedText;
+        fragment.appendChild(mark);
+
+        if (after) {
+          fragment.appendChild(document.createTextNode(after));
+        }
+
+        node.parentNode.replaceChild(fragment, node);
       }
-
-      // Create highlight mark with mode-specific color
-      const mark = document.createElement('mark');
-      mark.className = 'jobsprint-text-highlight';
-      mark.style.cssText = `
-        background-color: ${bgColor};
-        color: inherit;
-        padding: 2px 0;
-        border-radius: 2px;
-        box-shadow: 0 0 0 2px ${shadowColor};
-        font-weight: inherit;
-        pointer-events: none;
-      `;
-      mark.textContent = match;
-      fragment.appendChild(mark);
-
-      if (after) {
-        fragment.appendChild(document.createTextNode(after));
-      }
-
-      node.parentNode.replaceChild(fragment, node);
       break;
     }
 
-    currentPosition += nodeText.length;
+    cleanedPosition += cleanedNodeText.length;
   }
 }
 
