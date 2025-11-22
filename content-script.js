@@ -1249,6 +1249,8 @@ function handleGranularityChange(event) {
     const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, mode);
     if (text && text.trim()) {
       sendTextToPopup(text.trim());
+      // Update the highlight to reflect the new extraction
+      highlightElement(lastHighlightedElement, text.trim(), lastMouseEvent);
     }
   }
 }
