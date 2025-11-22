@@ -800,7 +800,8 @@ let currentGranularity = {
 };
 let smartModeStrength = 2; // Aggressiveness level for smart mode (1-5, default: 2)
 let lastHighlightedText = null; // Track the highlighted text range
-let lastMouseEvent = null; // Store last mouse event for re-extraction
+let lastHighlightPosition = null; // Screen coordinates of last highlight for hysteresis { x, y, text }
+let lastMouseEvent = null; // Store last mouse event for re-extraction on mode/granularity changes
 let overlayPosition = {
   top: 10,    // pixels from top
   right: 10,  // pixels from right
@@ -1029,14 +1030,16 @@ function handleRelayedKeyboardEvent(eventData) {
       if (lastMouseEvent && lastHighlightedElement) {
         const element = lastHighlightedElement;
 
-        // Remove and re-add highlight to update color
-        removeHighlight();
-        highlightElement(element);
-
         // Re-extract text with new mode
         const text = extractTextFromElement(element, lastMouseEvent, newMode);
+
+        // Remove and re-add highlight to update color and text
+        removeHighlight();
         if (text && text.trim()) {
+          highlightElement(element, text.trim(), lastMouseEvent);
           sendTextToPopup(text.trim());
+        } else {
+          highlightElement(element, null, lastMouseEvent);
         }
       }
     }
@@ -1069,14 +1072,16 @@ function handleManualModeChange(mode) {
   if (lastMouseEvent && lastHighlightedElement) {
     const element = lastHighlightedElement;
 
-    // Remove and re-add highlight to update color
-    removeHighlight();
-    highlightElement(element);
-
     // Re-extract text with new mode
     const text = extractTextFromElement(element, lastMouseEvent, mode);
+
+    // Remove and re-add highlight to update color and text
+    removeHighlight();
     if (text && text.trim()) {
+      highlightElement(element, text.trim(), lastMouseEvent);
       sendTextToPopup(text.trim());
+    } else {
+      highlightElement(element, null, lastMouseEvent);
     }
   }
 }
@@ -1102,16 +1107,21 @@ function handleMouseMove(event) {
   const mode = currentModifierMode;
 
   // Get element under cursor
-  const element = document.elementFromPoint(event.clientX, event.clientY);
+  let element = document.elementFromPoint(event.clientX, event.clientY);
 
   if (!element || element === mouseTrackingOverlay) return;
+
+  // If we hit a highlight mark, get the actual element
+  if (element.classList && element.classList.contains('jobsprint-text-highlight')) {
+    element = element.closest(':not(.jobsprint-text-highlight)') || element.parentElement;
+  }
 
   // Extract text from element with appropriate scope
   const text = extractTextFromElement(element, event, mode);
 
   if (text && text.trim()) {
     // Highlight the element and the extracted text
-    highlightElement(element, text.trim());
+    highlightElement(element, text.trim(), event);
 
     // Send text to extension popup
     sendTextToPopup(text.trim());
@@ -1239,6 +1249,8 @@ function handleGranularityChange(event) {
     const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, mode);
     if (text && text.trim()) {
       sendTextToPopup(text.trim());
+      // Update the highlight to reflect the new extraction
+      highlightElement(lastHighlightedElement, text.trim(), lastMouseEvent);
     }
   }
 }
@@ -1388,21 +1400,21 @@ function extractTextFromElement(element, event, mode = 'words') {
     return element.value;
   }
 
-  // Get the full text content
+  // Get the full text content, ignoring our highlight marks
   let fullText = '';
 
-  // Try to get text from the element itself (not children)
-  for (const node of element.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      fullText += node.textContent;
-    }
-  }
+  // Clone the element to get clean text without modifying the original
+  const clone = element.cloneNode(true);
 
-  // If no direct text, get all text content
-  if (!fullText.trim() && element.textContent) {
-    fullText = element.textContent;
-  }
+  // Remove all our highlight marks from the clone
+  const marks = clone.querySelectorAll('mark.jobsprint-text-highlight');
+  marks.forEach(mark => {
+    const text = document.createTextNode(mark.textContent);
+    mark.parentNode.replaceChild(text, mark);
+  });
 
+  // Get text from the cleaned clone
+  fullText = clone.textContent || '';
   fullText = cleanText(fullText);
 
   // Apply scope based on mode and granularity
@@ -1581,11 +1593,23 @@ function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1
   }
 
   const offset = range.startOffset;
-  const nodeText = textNode.textContent || '';
 
-  // Find cumulative position in the full text
-  const fullTextContent = element.textContent || '';
-  const targetPosition = fullTextContent.indexOf(nodeText) + offset;
+  // Calculate the actual position by walking through all text nodes before the cursor
+  let targetPosition = 0;
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  let currentNode;
+  while (currentNode = walker.nextNode()) {
+    if (currentNode === textNode) {
+      targetPosition += offset;
+      break;
+    }
+    targetPosition += currentNode.textContent.length;
+  }
 
   // Find which word the cursor is near
   let cumulativeLength = 0;
@@ -1637,11 +1661,23 @@ function extractNearestChars(text, event, element, charsLeft = 1, charsRight = 1
   }
 
   const offset = range.startOffset;
-  const nodeText = textNode.textContent || '';
 
-  // Find cumulative position in the full text
-  const fullTextContent = element.textContent || '';
-  const targetPosition = fullTextContent.indexOf(nodeText) + offset;
+  // Calculate the actual position by walking through all text nodes before the cursor
+  let targetPosition = 0;
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  let currentNode;
+  while (currentNode = walker.nextNode()) {
+    if (currentNode === textNode) {
+      targetPosition += offset;
+      break;
+    }
+    targetPosition += currentNode.textContent.length;
+  }
 
   if (targetPosition < 0 || targetPosition >= text.length) {
     if (charsLeft === 0 && charsRight === 0) return text.charAt(0);
@@ -2126,30 +2162,77 @@ function extractLargeTextBlock(element) {
   return null;
 }
 
+// ============================================================================
+// TEXT HIGHLIGHTING SYSTEM
+// ============================================================================
+//
+// PURPOSE:
+// Provides visual feedback showing which text is being extracted and mirrored.
+// Two-level system: element outline + specific text highlighting.
+//
+// CORE ALGORITHM:
+// 1. Find ALL occurrences of the extracted text in the element
+// 2. Get screen position of each occurrence using Range.getClientRects()
+// 3. Calculate Euclidean distance from mouse to each occurrence
+// 4. Highlight the closest one (with hysteresis to prevent jitter)
+//
+// KEY CHALLENGES SOLVED:
+// - DOM fragmentation: normalize() after every update prevents text node accumulation
+// - Stale references: clean DOM before searching prevents detached node failures
+// - Wrapped text: use closest rectangle when text spans multiple lines
+// - Jitter: hysteresis keeps current highlight unless new one is significantly better
+// - Whitespace: cleanText() normalization ensures consistent matching
+// - Mouse interference: pointer-events: none on marks prevents highlight/element flickering
+//
+// PERFORMANCE:
+// - Runs on every mousemove event (high frequency)
+// - Must be efficient to avoid lag
+// - Early exits and DOM cleaning are critical
+//
+// ============================================================================
+
 /**
- * Highlight an element and the extracted text with visual feedback
+ * Highlight an element with both an outline and specific text highlighting.
+ * This is the main entry point for visual feedback during mouse tracking.
+ *
+ * TWO-LEVEL HIGHLIGHTING:
+ * 1. Element-level: Colored outline around the entire element
+ * 2. Text-level: <mark> tag highlighting the specific extracted text within the element
+ *
  * @param {HTMLElement} element - Element to highlight
- * @param {string} extractedText - The extracted text to highlight within the element
+ * @param {string} extractedText - The extracted text to highlight within the element (null for outline only)
+ * @param {MouseEvent} mouseEvent - Mouse event for cursor position (used by position-based highlighting)
  */
-function highlightElement(element, extractedText = null) {
+function highlightElement(element, extractedText = null, mouseEvent = null) {
+  // Early exit: if already highlighting the same element with the same text, do nothing
+  // This prevents unnecessary DOM manipulation and improves performance
   if (lastHighlightedElement === element && lastHighlightedText === extractedText) return;
 
-  // Remove previous highlight
+  // Remove previous highlight from different element (if any)
   removeHighlight();
 
-  // Get color based on current mode
+  // Get mode-specific colors (green=words, blue=smart, purple=chars)
   const colors = getModeColors(currentModifierMode);
 
-  // Add highlight to new element (only element-level, no text-level to avoid jitter)
+  // Apply element-level outline - always shown for any hovered element
   element.style.outline = `3px solid ${colors.solid}`;
   element.style.outlineOffset = '2px';
   element.style.backgroundColor = colors.transparent;
 
+  // Track what we're currently highlighting
   lastHighlightedElement = element;
   lastHighlightedText = extractedText;
 
-  // Note: Text-level highlighting with <mark> tags removed to prevent glitchy jitter
-  // caused by DOM mutations triggering mousemove events
+  // Apply text-level highlighting if we have extracted text
+  // In smart mode, extractedText may be null if element doesn't contain the extracted text
+  if (extractedText && extractedText.trim()) {
+    try {
+      highlightTextInElement(element, extractedText.trim(), mouseEvent || lastMouseEvent);
+    } catch (error) {
+      console.error('[MouseTracking] Error highlighting text:', error);
+      // Fail gracefully - element outline will still be visible
+    }
+  }
 }
 
 /**
@@ -2181,12 +2264,77 @@ function createTextHighlight(element, text) {
 }
 
 /**
- * Highlight specific text within an element by wrapping it in a mark
- * @param {HTMLElement} element - Element containing the text
- * @param {string} searchText - Text to highlight
+ * Highlight specific text within an element by wrapping it in a <mark> tag.
+ *
+ * ALGORITHM: Screen Coordinate Distance-Based Highlighting
+ * 1. Find ALL occurrences of searchText within element's text nodes
+ * 2. For each occurrence, get its actual screen position using Range.getClientRects()
+ * 3. Calculate Euclidean distance from mouse cursor to each occurrence
+ * 4. Highlight the occurrence closest to the mouse
+ *
+ * CRITICAL DESIGN DECISIONS:
+ * - Uses browser's layout engine (Range.getClientRects) for accurate positioning
+ * - Handles wrapped text by finding closest rectangle when text spans multiple lines
+ * - Prevents DOM fragmentation via normalize() after each update
+ * - Implements hysteresis to avoid jitter when many identical matches are close together
+ * - Works with cleaned (whitespace-normalized) text for consistent matching
+ *
+ * WHY THIS APPROACH:
+ * - Previous "mouse buffer" approach failed because text positions are unreliable in complex layouts
+ * - Screen coordinates are the ground truth - they reflect actual rendered positions
+ * - Prevents highlighting wrong occurrence when text repeats (e.g., common words like "and")
+ *
+ * @param {HTMLElement} element - Element containing the text to highlight
+ * @param {string} searchText - Text to highlight (will be cleaned/normalized)
+ * @param {MouseEvent} mouseEvent - Mouse event for cursor position (null for fallback to first occurrence)
  */
-function highlightTextInElement(element, searchText) {
-  // Remove any existing highlights first
+function highlightTextInElement(element, searchText, mouseEvent) {
+  // STEP 1: Verify the search text actually exists in this element
+  // This is crucial for smart mode which may extract text from parent/sibling elements
+  // We clone and clean to avoid false negatives from existing highlights or whitespace differences
+  const clone = element.cloneNode(true);
+  const marks = clone.querySelectorAll('mark.jobsprint-text-highlight');
+  marks.forEach(mark => {
+    const textContent = document.createTextNode(mark.textContent);
+    mark.parentNode.replaceChild(textContent, mark);
+  });
+  const elementText = cleanText(clone.textContent || '');
+  const cleanedSearchText = cleanText(searchText);
+
+  if (!elementText.includes(cleanedSearchText)) {
+    // Text not in this element - only show outline, no text highlight
+    // This is normal for smart mode which extracts from broader context
+    lastHighlightPosition = null;
+    return;
+  }
+
+  // STEP 2: Get mode-specific colors for the highlight
+  const colors = getModeColors(currentModifierMode);
+  const highlightColor = colors.solid;
+  const bgColor = hexToRgba(highlightColor, 0.5);
+  const shadowColor = hexToRgba(highlightColor, 0.25);
+
+  // STEP 3: Handle edge case - no mouse event available (shouldn't happen in normal usage)
+  if (!mouseEvent) {
+    // Fallback: highlight first occurrence without position-based selection
+    const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
+    existingHighlights.forEach(mark => {
+      const text = mark.textContent;
+      const textNode = document.createTextNode(text);
+      mark.parentNode.replaceChild(textNode, mark);
+    });
+    element.normalize(); // Prevent fragmentation even in fallback path
+    highlightFirstOccurrence(element, cleanedSearchText, elementText, bgColor, shadowColor);
+    lastHighlightPosition = null;
+    return;
+  }
+
+  const mouseX = mouseEvent.clientX;
+  const mouseY = mouseEvent.clientY;
+
+  // STEP 4: Clean the DOM before searching
+  // CRITICAL: Remove existing highlights first to prevent stale node references
+  // When we later modify nodes, having old references causes failures
   const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
   existingHighlights.forEach(mark => {
     const text = mark.textContent;
@@ -2194,60 +2342,256 @@ function highlightTextInElement(element, searchText) {
     mark.parentNode.replaceChild(textNode, mark);
   });
 
-  // Walk through text nodes and highlight matching text
-  const walker = document.createTreeWalker(
-    element,
-    NodeFilter.SHOW_TEXT,
-    null
-  );
+  // CRITICAL: Normalize to prevent DOM fragmentation
+  // Each highlight splits a text node into 3 parts: [before, <mark>, after]
+  // After many mousemoves (50-100), element has hundreds of tiny text nodes
+  // normalize() merges adjacent text nodes back together, keeping DOM healthy
+  // WITHOUT THIS: highlighting degrades after ~5 seconds and eventually fails completely
+  element.normalize();
 
-  const nodesToProcess = [];
+  // STEP 5: Build regex pattern for finding all occurrences
+  // Must escape special regex characters and allow flexible whitespace matching
+  const escapedText = cleanedSearchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const patternText = escapedText.replace(/\s+/g, '\\s+'); // Match any whitespace sequence
+  const regex = new RegExp(patternText, 'g'); // Global flag to find ALL matches
+
+  // STEP 6: Find ALL occurrences of the search text in the element
+  // Use TreeWalker to traverse all text nodes efficiently
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+  const candidates = [];
   let node;
+
   while (node = walker.nextNode()) {
     const nodeText = node.nodeValue || '';
-    if (nodeText.includes(searchText)) {
-      nodesToProcess.push(node);
+    regex.lastIndex = 0; // MUST reset regex for global flag to work correctly
+    let match;
+
+    while ((match = regex.exec(nodeText)) !== null) {
+      // Found a match - now calculate its distance from the mouse cursor
+
+      // Create a Range covering exactly this match
+      const range = document.createRange();
+      range.setStart(node, match.index);
+      range.setEnd(node, match.index + match[0].length);
+
+      // Get screen rectangles for this range
+      // NOTE: Can be multiple rects if text wraps across lines or is split by inline elements
+      const rects = range.getClientRects();
+      if (rects.length > 0) {
+        // CRITICAL: For wrapped text, use the rectangle closest to the mouse
+        // Example: "very long text that wraps" has 2 rects if it spans 2 lines
+        // We want distance to the part the mouse is actually near
+        // WITHOUT THIS: highlights jump to wrong line of wrapped text
+        let closestRect = rects[0];
+        let minRectDistance = Infinity;
+
+        for (let i = 0; i < rects.length; i++) {
+          const rect = rects[i];
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const rectDistance = Math.sqrt(
+            Math.pow(mouseX - centerX, 2) +
+            Math.pow(mouseY - centerY, 2)
+          );
+
+          if (rectDistance < minRectDistance) {
+            minRectDistance = rectDistance;
+            closestRect = rect;
+          }
+        }
+
+        // Calculate final distance using the closest rectangle
+        const centerX = closestRect.left + closestRect.width / 2;
+        const centerY = closestRect.top + closestRect.height / 2;
+        const distance = Math.sqrt(
+          Math.pow(mouseX - centerX, 2) +
+          Math.pow(mouseY - centerY, 2)
+        );
+
+        // Store this candidate with all info needed for highlighting
+        candidates.push({
+          node,              // Text node containing this match
+          matchIndex: match.index,  // Character offset within the node
+          matchText: match[0],      // Actual matched text (may differ in whitespace)
+          distance,          // Distance from mouse to this occurrence
+          centerX,           // Screen X coordinate (for hysteresis)
+          centerY            // Screen Y coordinate (for hysteresis)
+        });
+      }
     }
   }
 
-  // Process nodes (can't modify during tree walk)
-  nodesToProcess.forEach(textNode => {
-    const nodeText = textNode.nodeValue || '';
-    const index = nodeText.indexOf(searchText);
+  // STEP 7: Handle edge case - no matches found
+  if (candidates.length === 0) {
+    lastHighlightPosition = null;
+    return;
+  }
 
-    if (index !== -1) {
-      // Split the text node
-      const before = nodeText.substring(0, index);
-      const match = nodeText.substring(index, index + searchText.length);
-      const after = nodeText.substring(index + searchText.length);
+  // STEP 8: Select the occurrence closest to the mouse cursor
+  candidates.sort((a, b) => a.distance - b.distance);
+  let best = candidates[0];
 
-      const fragment = document.createDocumentFragment();
+  // STEP 9: Apply hysteresis to prevent jitter
+  // PROBLEM: In char mode, there are often many identical characters very close together
+  //          (e.g., the letter 'e' appears every few pixels in dense text)
+  //          Tiny mouse movements cause highlights to jump between nearby matches
+  // SOLUTION: If the last highlighted position is still a reasonable candidate,
+  //           only switch to a new position if it's SIGNIFICANTLY better (20px threshold)
+  // RESULT: "Sticky" highlighting that doesn't jump unless there's clear reason to move
+  if (lastHighlightPosition && candidates.length > 1) {
+    // Find the candidate that matches our last position (within 3px tolerance)
+    const lastCandidate = candidates.find(c =>
+      Math.abs(c.centerX - lastHighlightPosition.x) < 3 &&
+      Math.abs(c.centerY - lastHighlightPosition.y) < 3
+    );
 
-      if (before) {
-        fragment.appendChild(document.createTextNode(before));
+    if (lastCandidate) {
+      // Calculate how much better the new best candidate is
+      const improvement = lastCandidate.distance - best.distance;
+      if (improvement < 20) {
+        best = lastCandidate; // Stick with the current position
       }
-
-      // Create highlight mark
-      const mark = document.createElement('mark');
-      mark.className = 'jobsprint-text-highlight';
-      mark.style.cssText = `
-        background-color: rgba(255, 235, 59, 0.6);
-        color: inherit;
-        padding: 2px 0;
-        border-radius: 2px;
-        box-shadow: 0 0 0 2px rgba(255, 235, 59, 0.3);
-        font-weight: inherit;
-      `;
-      mark.textContent = match;
-      fragment.appendChild(mark);
-
-      if (after) {
-        fragment.appendChild(document.createTextNode(after));
-      }
-
-      textNode.parentNode.replaceChild(fragment, textNode);
     }
-  });
+  }
+
+  // STEP 10: Store position for next hysteresis comparison
+  lastHighlightPosition = {
+    x: best.centerX,
+    y: best.centerY,
+    text: best.matchText
+  };
+
+  // STEP 11: Apply the highlight to the DOM
+  // Split the text node into 3 parts: [before, <mark>highlighted</mark>, after]
+  const before = best.node.nodeValue.substring(0, best.matchIndex);
+  const after = best.node.nodeValue.substring(best.matchIndex + best.matchText.length);
+
+  // Use DocumentFragment for efficient DOM manipulation (single reflow)
+  const fragment = document.createDocumentFragment();
+  if (before) fragment.appendChild(document.createTextNode(before));
+
+  // Create the <mark> element with mode-specific styling
+  const mark = document.createElement('mark');
+  mark.className = 'jobsprint-text-highlight';
+  mark.style.cssText = `
+    background-color: ${bgColor};
+    color: inherit;
+    padding: 2px 0;
+    border-radius: 2px;
+    box-shadow: 0 0 0 2px ${shadowColor};
+    font-weight: inherit;
+    pointer-events: none;
+  `;
+  // CRITICAL: pointer-events: none prevents the mark from interfering with mouse tracking
+  // WITHOUT THIS: mouse would constantly hit the mark itself, causing jitter/flicker
+  mark.textContent = best.matchText;
+  fragment.appendChild(mark);
+
+  if (after) fragment.appendChild(document.createTextNode(after));
+
+  // Replace the original text node with our fragment (containing before + mark + after)
+  best.node.parentNode.replaceChild(fragment, best.node);
+  // NOTE: This splits the text node, which is why normalize() is critical to prevent fragmentation
+}
+
+/**
+ * WHAT IF WE REMOVED CERTAIN FEATURES?
+ *
+ * 1. REMOVING element.normalize():
+ *    - DOM degrades after ~50-100 mousemove events
+ *    - Text nodes fragment into hundreds of 1-2 character pieces
+ *    - TreeWalker becomes unpredictable, missing nodes
+ *    - Highlighting stops working on parts of the text
+ *    - Performance degrades significantly
+ *    - VERDICT: CRITICAL - must keep normalize()
+ *
+ * 2. REMOVING hysteresis (sticky highlighting):
+ *    - Char mode becomes unusable - highlights jump rapidly between nearby characters
+ *    - Word mode also affected when hovering over repeated words
+ *    - Creates visual "jitter" that's distracting and hard to use
+ *    - VERDICT: IMPORTANT - significantly degrades UX without it
+ *
+ * 3. REMOVING wrapped text handling (multiple rects):
+ *    - Highlights wrong line when text wraps across multiple lines
+ *    - Distance calculation becomes inaccurate for long text
+ *    - Especially bad in narrow containers with lots of wrapping
+ *    - VERDICT: IMPORTANT - causes incorrect highlighting in common scenarios
+ *
+ * 4. REMOVING cleanText() normalization:
+ *    - Text with extra whitespace won't match ("between  disparate  sources")
+ *    - Smart mode fails when whitespace differs between extraction and element
+ *    - Causes "no highlight" bugs even when mouse is directly on text
+ *    - VERDICT: CRITICAL - breaks matching in real-world HTML with irregular whitespace
+ *
+ * 5. REMOVING pointer-events: none from <mark>:
+ *    - Mouse cursor hits the mark element instead of underlying content
+ *    - Triggers constant element changes (mark -> element -> mark -> element)
+ *    - Creates rapid jitter/flicker that was the original bug being fixed
+ *    - VERDICT: CRITICAL - reintroduces the primary bug this implementation fixed
+ *
+ * 6. REMOVING stale reference prevention (cleaning DOM first):
+ *    - Node references become detached after first highlight removal
+ *    - Attempting to use detached node fails silently
+ *    - Highlighting stops working after first successful highlight
+ *    - VERDICT: CRITICAL - highlighting fails completely without this
+ */
+
+/**
+ * Helper: Highlight first occurrence of text (fallback)
+ */
+function highlightFirstOccurrence(element, searchText, elementText, bgColor, shadowColor) {
+  const position = elementText.indexOf(searchText);
+  if (position === -1) return;
+
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+  let cleanedPosition = 0;
+  let node;
+
+  while (node = walker.nextNode()) {
+    const nodeText = node.nodeValue || '';
+    const cleanedNodeText = cleanText(nodeText);
+    const cleanedStart = cleanedPosition;
+    const cleanedEnd = cleanedPosition + cleanedNodeText.length;
+
+    if (position >= cleanedStart && position < cleanedEnd) {
+      // Escape special regex characters, then replace spaces with flexible pattern
+      const escapedText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const patternText = escapedText.replace(/\s+/g, '\\s+');
+      const regex = new RegExp(patternText);
+      const match = nodeText.match(regex);
+
+      if (match && match.index !== undefined) {
+        const offsetInNode = match.index;
+        const matchedText = match[0];
+        const before = nodeText.substring(0, offsetInNode);
+        const after = nodeText.substring(offsetInNode + matchedText.length);
+
+        const fragment = document.createDocumentFragment();
+        if (before) fragment.appendChild(document.createTextNode(before));
+
+        const mark = document.createElement('mark');
+        mark.className = 'jobsprint-text-highlight';
+        mark.style.cssText = `
+          background-color: ${bgColor};
+          color: inherit;
+          padding: 2px 0;
+          border-radius: 2px;
+          box-shadow: 0 0 0 2px ${shadowColor};
+          font-weight: inherit;
+          pointer-events: none;
+        `;
+        mark.textContent = matchedText;
+        fragment.appendChild(mark);
+
+        if (after) fragment.appendChild(document.createTextNode(after));
+
+        node.parentNode.replaceChild(fragment, node);
+      }
+      break;
+    }
+
+    cleanedPosition += cleanedNodeText.length;
+  }
 }
 
 /**
@@ -2281,15 +2625,22 @@ function getModeColors(mode) {
 }
 
 /**
- * Remove highlight from currently highlighted element
+ * Remove highlight from currently highlighted element.
+ * Called when:
+ * - Mouse moves to a different element
+ * - Mouse tracking is disabled
+ * - Element changes (mode switch, granularity change)
+ *
+ * CRITICAL: Always calls normalize() to prevent DOM fragmentation
  */
 function removeHighlight() {
   if (lastHighlightedElement) {
+    // Remove visual outline around element
     lastHighlightedElement.style.outline = '';
     lastHighlightedElement.style.outlineOffset = '';
     lastHighlightedElement.style.backgroundColor = '';
 
-    // Remove text highlights
+    // Remove <mark> tags and restore original text nodes
     const highlights = lastHighlightedElement.querySelectorAll('mark.jobsprint-text-highlight');
     highlights.forEach(mark => {
       const text = mark.textContent;
@@ -2297,8 +2648,14 @@ function removeHighlight() {
       mark.parentNode.replaceChild(textNode, mark);
     });
 
+    // CRITICAL: Merge adjacent text nodes to prevent fragmentation
+    // Without this, the element accumulates fragmented text nodes over time
+    lastHighlightedElement.normalize();
+
+    // Clear tracking variables
     lastHighlightedElement = null;
     lastHighlightedText = null;
+    lastHighlightPosition = null;
   }
 }
 
