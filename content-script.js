@@ -800,6 +800,7 @@ let currentGranularity = {
 };
 let smartModeStrength = 2; // Aggressiveness level for smart mode (1-5, default: 2)
 let lastHighlightedText = null; // Track the highlighted text range
+let lastHighlightPosition = null; // Track position of last highlight { x, y, text }
 let lastMouseEvent = null; // Store last mouse event for re-extraction
 let overlayPosition = {
   top: 10,    // pixels from top
@@ -2229,15 +2230,8 @@ function createTextHighlight(element, text) {
  * @param {MouseEvent} mouseEvent - Mouse event to determine which occurrence to highlight
  */
 function highlightTextInElement(element, searchText, mouseEvent) {
-  // Remove any existing highlights first
-  const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
-  existingHighlights.forEach(mark => {
-    const text = mark.textContent;
-    const textNode = document.createTextNode(text);
-    mark.parentNode.replaceChild(textNode, mark);
-  });
-
   // Check if the text actually exists in this element (for smart mode)
+  // We need to check this before removing highlights to avoid unnecessary DOM manipulation
   const clone = element.cloneNode(true);
   const marks = clone.querySelectorAll('mark.jobsprint-text-highlight');
   marks.forEach(mark => {
@@ -2250,6 +2244,7 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   if (!elementText.includes(cleanedSearchText)) {
     // Text not in this element (smart mode extracted from parent/sibling)
     // Don't highlight - just show the outline
+    lastHighlightPosition = null;
     return;
   }
 
@@ -2261,7 +2256,15 @@ function highlightTextInElement(element, searchText, mouseEvent) {
 
   // Simple approach: Find ALL occurrences, pick the one with screen position closest to mouse
   if (!mouseEvent) {
+    // Remove existing highlights before fallback
+    const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
+    existingHighlights.forEach(mark => {
+      const text = mark.textContent;
+      const textNode = document.createTextNode(text);
+      mark.parentNode.replaceChild(textNode, mark);
+    });
     highlightFirstOccurrence(element, cleanedSearchText, elementText, bgColor, shadowColor);
+    lastHighlightPosition = null;
     return;
   }
 
@@ -2278,6 +2281,36 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   let node;
 
   while (node = walker.nextNode()) {
+    // Skip text nodes that are inside our highlight marks
+    if (node.parentElement && node.parentElement.classList &&
+        node.parentElement.classList.contains('jobsprint-text-highlight')) {
+      node = node.parentElement; // Use the mark's text instead
+      const nodeText = node.textContent || '';
+
+      // Get position of the existing mark
+      const range = document.createRange();
+      range.selectNode(node);
+      const rects = range.getClientRects();
+      if (rects.length > 0) {
+        const rect = rects[0];
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const distance = Math.sqrt(
+          Math.pow(mouseX - centerX, 2) +
+          Math.pow(mouseY - centerY, 2)
+        );
+
+        candidates.push({
+          node,
+          matchIndex: 0,
+          matchText: nodeText,
+          distance,
+          isExistingMark: true
+        });
+      }
+      continue;
+    }
+
     const nodeText = node.nodeValue || '';
     regex.lastIndex = 0; // Reset regex
     let match;
@@ -2302,17 +2335,35 @@ function highlightTextInElement(element, searchText, mouseEvent) {
           node,
           matchIndex: match.index,
           matchText: match[0],
-          distance
+          distance,
+          isExistingMark: false
         });
       }
     }
   }
 
-  if (candidates.length === 0) return;
+  if (candidates.length === 0) {
+    lastHighlightPosition = null;
+    return;
+  }
 
   // Sort by distance and pick the closest
   candidates.sort((a, b) => a.distance - b.distance);
   const best = candidates[0];
+
+  // Check if the best match is the existing highlight - if so, don't update
+  if (best.isExistingMark) {
+    // Already highlighting the right text, no need to update DOM
+    return;
+  }
+
+  // Different position - need to update. First remove existing highlights
+  const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
+  existingHighlights.forEach(mark => {
+    const text = mark.textContent;
+    const textNode = document.createTextNode(text);
+    mark.parentNode.replaceChild(textNode, mark);
+  });
 
   // Highlight the best match
   const before = best.node.nodeValue.substring(0, best.matchIndex);
@@ -2447,6 +2498,7 @@ function removeHighlight() {
 
     lastHighlightedElement = null;
     lastHighlightedText = null;
+    lastHighlightPosition = null;
   }
 }
 
