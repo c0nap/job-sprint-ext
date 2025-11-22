@@ -2341,8 +2341,10 @@ function highlightTextInElement(element, searchText, mouseEvent) {
     // Check if our target match starts within this text node
     if (bestMatchPosition >= cleanedStart && bestMatchPosition < cleanedEnd) {
       // Use flexible regex to match searchText with variable whitespace
-      const patternText = searchText.replace(/\s+/g, '\\s+');
-      const regex = new RegExp(patternText, 'i');
+      // First escape special regex characters, THEN replace spaces with flexible pattern
+      const escapedText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const patternText = escapedText.replace(/\s+/g, '\\s+');
+      const regex = new RegExp(patternText);
       const match = nodeText.match(regex);
 
       if (match && match.index !== undefined) {
@@ -2371,8 +2373,8 @@ function highlightTextInElement(element, searchText, mouseEvent) {
         if (after) fragment.appendChild(document.createTextNode(after));
 
         node.parentNode.replaceChild(fragment, node);
+        return;  // Exit after highlighting
       }
-      break;
     }
 
     cleanedPosition += cleanedNodeText.length;
@@ -2397,8 +2399,10 @@ function highlightFirstOccurrence(element, searchText, elementText, bgColor, sha
     const cleanedEnd = cleanedPosition + cleanedNodeText.length;
 
     if (position >= cleanedStart && position < cleanedEnd) {
-      const patternText = searchText.replace(/\s+/g, '\\s+');
-      const regex = new RegExp(patternText, 'i');
+      // Escape special regex characters, then replace spaces with flexible pattern
+      const escapedText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const patternText = escapedText.replace(/\s+/g, '\\s+');
+      const regex = new RegExp(patternText);
       const match = nodeText.match(regex);
 
       if (match && match.index !== undefined) {
