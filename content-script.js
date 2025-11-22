@@ -2223,9 +2223,9 @@ function createTextHighlight(element, text) {
 
 /**
  * Highlight specific text within an element by wrapping it in a mark
- * Simple approach: Just highlight what's being mirrored, at the location closest to cursor
+ * Uses "mouse buffer" approach: creates anchor from text immediately around cursor
  * @param {HTMLElement} element - Element containing the text
- * @param {string} searchText - Text to highlight (what's being mirrored)
+ * @param {string} searchText - Text to highlight
  * @param {MouseEvent} mouseEvent - Mouse event to determine which occurrence to highlight
  */
 function highlightTextInElement(element, searchText, mouseEvent) {
@@ -2237,7 +2237,7 @@ function highlightTextInElement(element, searchText, mouseEvent) {
     mark.parentNode.replaceChild(textNode, mark);
   });
 
-  // Get cleaned element text for searching
+  // Check if the text actually exists in this element (for smart mode)
   const clone = element.cloneNode(true);
   const marks = clone.querySelectorAll('mark.jobsprint-text-highlight');
   marks.forEach(mark => {
@@ -2246,7 +2246,6 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   });
   const elementText = cleanText(clone.textContent || '');
 
-  // Check if the text actually exists in this element (for smart mode)
   if (!elementText.includes(searchText)) {
     // Text not in this element (smart mode extracted from parent/sibling)
     // Don't highlight - just show the outline
@@ -2256,106 +2255,79 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   // Get colors for current mode
   const colors = getModeColors(currentModifierMode);
   const highlightColor = colors.solid;
+
+  // Convert solid color to rgba for background and shadow
   const bgColor = hexToRgba(highlightColor, 0.5);
   const shadowColor = hexToRgba(highlightColor, 0.25);
 
-  // Find which occurrence to highlight based on mouse position
-  let targetOccurrenceIndex = 0;
-
-  if (mouseEvent) {
-    const range = document.caretRangeFromPoint(mouseEvent.clientX, mouseEvent.clientY);
-    if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
-      // Get the text node under cursor and find its position in cleaned text
-      const cursorNode = range.startContainer;
-      const cursorOffset = range.startOffset;
-
-      // Walk through all text nodes to find cursor position in cleaned text
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
-      let cleanedPosition = 0;
-      let cursorCleanedPosition = -1;
-      let node;
-
-      while (node = walker.nextNode()) {
-        const nodeText = node.textContent || '';
-        const cleanedNodeText = cleanText(nodeText);
-
-        if (node === cursorNode) {
-          // Calculate position within cleaned text
-          const beforeCursor = nodeText.substring(0, cursorOffset);
-          cursorCleanedPosition = cleanedPosition + cleanText(beforeCursor).length;
-          break;
-        }
-
-        cleanedPosition += cleanedNodeText.length;
-      }
-
-      if (cursorCleanedPosition !== -1) {
-        // Find all occurrences and pick the one closest to cursor
-        const occurrences = [];
-        let searchPos = 0;
-        while ((searchPos = elementText.indexOf(searchText, searchPos)) !== -1) {
-          occurrences.push(searchPos);
-          searchPos++;
-        }
-
-        if (occurrences.length > 0) {
-          // Find occurrence closest to cursor
-          let minDistance = Infinity;
-          let bestIndex = 0;
-
-          occurrences.forEach((pos, idx) => {
-            const matchMid = pos + searchText.length / 2;
-            const distance = Math.abs(cursorCleanedPosition - matchMid);
-            if (distance < minDistance) {
-              minDistance = distance;
-              bestIndex = idx;
-            }
-          });
-
-          targetOccurrenceIndex = bestIndex;
-        }
-      }
-    }
+  // Get the exact text node and position under the cursor (mouse buffer approach)
+  const range = mouseEvent ? document.caretRangeFromPoint(mouseEvent.clientX, mouseEvent.clientY) : null;
+  if (!range) {
+    // No cursor position, fall back to first occurrence
+    highlightFirstOccurrence(element, searchText, elementText, bgColor, shadowColor);
+    return;
   }
 
-  // Now highlight the target occurrence
-  highlightOccurrence(element, searchText, targetOccurrenceIndex, bgColor, shadowColor);
-}
+  const targetTextNode = range.startContainer;
+  if (targetTextNode.nodeType !== Node.TEXT_NODE) {
+    highlightFirstOccurrence(element, searchText, elementText, bgColor, shadowColor);
+    return;
+  }
 
-/**
- * Highlight a specific occurrence of text in element
- * @param {HTMLElement} element - Element containing text
- * @param {string} searchText - Text to highlight
- * @param {number} occurrenceIndex - Which occurrence (0-based)
- * @param {string} bgColor - Background color
- * @param {string} shadowColor - Shadow color
- */
-function highlightOccurrence(element, searchText, occurrenceIndex, bgColor, shadowColor) {
-  const clone = element.cloneNode(true);
-  const marks = clone.querySelectorAll('mark.jobsprint-text-highlight');
-  marks.forEach(mark => {
-    const textContent = document.createTextNode(mark.textContent);
-    mark.parentNode.replaceChild(textContent, mark);
-  });
-  const elementText = cleanText(clone.textContent || '');
+  const cursorOffset = range.startOffset;
+  const nodeText = targetTextNode.textContent || '';
 
-  // Find the target occurrence position in cleaned text
-  let searchPos = 0;
-  let currentOccurrence = 0;
-  let targetPosition = -1;
+  // Create a "mouse buffer" - text immediately around the cursor (our anchor point)
+  const bufferSize = 20;
+  const bufferStart = Math.max(0, cursorOffset - bufferSize);
+  const bufferEnd = Math.min(nodeText.length, cursorOffset + bufferSize);
+  const mouseBuffer = nodeText.substring(bufferStart, bufferEnd);
+  const cleanedMouseBuffer = cleanText(mouseBuffer);
 
-  while ((searchPos = elementText.indexOf(searchText, searchPos)) !== -1) {
-    if (currentOccurrence === occurrenceIndex) {
-      targetPosition = searchPos;
+  // Find this buffer in the element's cleaned text
+  const bufferPosition = elementText.indexOf(cleanedMouseBuffer);
+
+  if (bufferPosition === -1) {
+    // Buffer not found (nested elements, etc.), fall back
+    highlightFirstOccurrence(element, searchText, elementText, bgColor, shadowColor);
+    return;
+  }
+
+  // Calculate where the cursor is within the cleaned text
+  const cursorInBuffer = cleanText(nodeText.substring(bufferStart, cursorOffset)).length;
+  const cursorPositionInText = bufferPosition + cursorInBuffer;
+
+  // Find the occurrence of searchText that contains or is closest to this cursor position
+  let bestMatchPosition = -1;
+  let bestMatchDistance = Infinity;
+  let searchPosition = 0;
+
+  while ((searchPosition = elementText.indexOf(searchText, searchPosition)) !== -1) {
+    const matchEnd = searchPosition + searchText.length;
+
+    // Check if cursor is within this match
+    if (cursorPositionInText >= searchPosition && cursorPositionInText <= matchEnd) {
+      bestMatchPosition = searchPosition;
       break;
     }
-    currentOccurrence++;
-    searchPos++;
+
+    // Otherwise find closest match
+    const distance = Math.min(
+      Math.abs(cursorPositionInText - searchPosition),
+      Math.abs(cursorPositionInText - matchEnd)
+    );
+
+    if (distance < bestMatchDistance) {
+      bestMatchDistance = distance;
+      bestMatchPosition = searchPosition;
+    }
+
+    searchPosition++;
   }
 
-  if (targetPosition === -1) return;
+  if (bestMatchPosition === -1) return;
 
-  // Walk through DOM nodes and find where to insert the highlight
+  // Now find and highlight the text at bestMatchPosition in the DOM
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
   let cleanedPosition = 0;
   let node;
@@ -2366,11 +2338,10 @@ function highlightOccurrence(element, searchText, occurrenceIndex, bgColor, shad
     const cleanedStart = cleanedPosition;
     const cleanedEnd = cleanedPosition + cleanedNodeText.length;
 
-    // Check if target position is in this node
-    if (targetPosition >= cleanedStart && targetPosition < cleanedEnd) {
-      // Escape special regex chars in searchText, then replace spaces with flexible pattern
-      const escapedText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const patternText = escapedText.replace(/\s+/g, '\\s+');
+    // Check if our target match starts within this text node
+    if (bestMatchPosition >= cleanedStart && bestMatchPosition < cleanedEnd) {
+      // Use flexible regex to match searchText with variable whitespace
+      const patternText = searchText.replace(/\s+/g, '\\s+');
       const regex = new RegExp(patternText, 'i');
       const match = nodeText.match(regex);
 
@@ -2400,13 +2371,70 @@ function highlightOccurrence(element, searchText, occurrenceIndex, bgColor, shad
         if (after) fragment.appendChild(document.createTextNode(after));
 
         node.parentNode.replaceChild(fragment, node);
-        return;
       }
+      break;
     }
 
     cleanedPosition += cleanedNodeText.length;
   }
 }
+
+/**
+ * Helper: Highlight first occurrence of text (fallback)
+ */
+function highlightFirstOccurrence(element, searchText, elementText, bgColor, shadowColor) {
+  const position = elementText.indexOf(searchText);
+  if (position === -1) return;
+
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+  let cleanedPosition = 0;
+  let node;
+
+  while (node = walker.nextNode()) {
+    const nodeText = node.nodeValue || '';
+    const cleanedNodeText = cleanText(nodeText);
+    const cleanedStart = cleanedPosition;
+    const cleanedEnd = cleanedPosition + cleanedNodeText.length;
+
+    if (position >= cleanedStart && position < cleanedEnd) {
+      const patternText = searchText.replace(/\s+/g, '\\s+');
+      const regex = new RegExp(patternText, 'i');
+      const match = nodeText.match(regex);
+
+      if (match && match.index !== undefined) {
+        const offsetInNode = match.index;
+        const matchedText = match[0];
+        const before = nodeText.substring(0, offsetInNode);
+        const after = nodeText.substring(offsetInNode + matchedText.length);
+
+        const fragment = document.createDocumentFragment();
+        if (before) fragment.appendChild(document.createTextNode(before));
+
+        const mark = document.createElement('mark');
+        mark.className = 'jobsprint-text-highlight';
+        mark.style.cssText = `
+          background-color: ${bgColor};
+          color: inherit;
+          padding: 2px 0;
+          border-radius: 2px;
+          box-shadow: 0 0 0 2px ${shadowColor};
+          font-weight: inherit;
+          pointer-events: none;
+        `;
+        mark.textContent = matchedText;
+        fragment.appendChild(mark);
+
+        if (after) fragment.appendChild(document.createTextNode(after));
+
+        node.parentNode.replaceChild(fragment, node);
+      }
+      break;
+    }
+
+    cleanedPosition += cleanedNodeText.length;
+  }
+}
+
 /**
  * Get colors for a specific mode
  * @param {string} mode - Mode name: 'words', 'smart', 'chars'
