@@ -2271,7 +2271,16 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   const mouseX = mouseEvent.clientX;
   const mouseY = mouseEvent.clientY;
 
-  // Find all text nodes and their occurrences of searchText
+  // Remove existing highlights to get clean DOM for searching
+  // This prevents stale node references
+  const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
+  existingHighlights.forEach(mark => {
+    const text = mark.textContent;
+    const textNode = document.createTextNode(text);
+    mark.parentNode.replaceChild(textNode, mark);
+  });
+
+  // Find all text nodes and their occurrences of searchText (in clean DOM)
   const escapedText = cleanedSearchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const patternText = escapedText.replace(/\s+/g, '\\s+');
   const regex = new RegExp(patternText, 'g');
@@ -2281,36 +2290,6 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   let node;
 
   while (node = walker.nextNode()) {
-    // Skip text nodes that are inside our highlight marks
-    if (node.parentElement && node.parentElement.classList &&
-        node.parentElement.classList.contains('jobsprint-text-highlight')) {
-      node = node.parentElement; // Use the mark's text instead
-      const nodeText = node.textContent || '';
-
-      // Get position of the existing mark
-      const range = document.createRange();
-      range.selectNode(node);
-      const rects = range.getClientRects();
-      if (rects.length > 0) {
-        const rect = rects[0];
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-        const distance = Math.sqrt(
-          Math.pow(mouseX - centerX, 2) +
-          Math.pow(mouseY - centerY, 2)
-        );
-
-        candidates.push({
-          node,
-          matchIndex: 0,
-          matchText: nodeText,
-          distance,
-          isExistingMark: true
-        });
-      }
-      continue;
-    }
-
     const nodeText = node.nodeValue || '';
     regex.lastIndex = 0; // Reset regex
     let match;
@@ -2336,7 +2315,8 @@ function highlightTextInElement(element, searchText, mouseEvent) {
           matchIndex: match.index,
           matchText: match[0],
           distance,
-          isExistingMark: false
+          centerX,
+          centerY
         });
       }
     }
@@ -2349,23 +2329,34 @@ function highlightTextInElement(element, searchText, mouseEvent) {
 
   // Sort by distance and pick the closest
   candidates.sort((a, b) => a.distance - b.distance);
-  const best = candidates[0];
+  let best = candidates[0];
 
-  // Check if the best match is the existing highlight - if so, don't update
-  if (best.isExistingMark) {
-    // Already highlighting the right text, no need to update DOM
-    return;
+  // Hysteresis: if we have a last position and it's still reasonably close,
+  // require the new position to be significantly better to avoid jitter
+  if (lastHighlightPosition && candidates.length > 1) {
+    // Find the candidate that matches our last position
+    const lastCandidate = candidates.find(c =>
+      Math.abs(c.centerX - lastHighlightPosition.x) < 3 &&
+      Math.abs(c.centerY - lastHighlightPosition.y) < 3
+    );
+
+    if (lastCandidate) {
+      // Only switch if the new best is significantly better (at least 20px closer)
+      const improvement = lastCandidate.distance - best.distance;
+      if (improvement < 20) {
+        best = lastCandidate; // Stick with the current position
+      }
+    }
   }
 
-  // Different position - need to update. First remove existing highlights
-  const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
-  existingHighlights.forEach(mark => {
-    const text = mark.textContent;
-    const textNode = document.createTextNode(text);
-    mark.parentNode.replaceChild(textNode, mark);
-  });
+  // Store position for next comparison
+  lastHighlightPosition = {
+    x: best.centerX,
+    y: best.centerY,
+    text: best.matchText
+  };
 
-  // Highlight the best match
+  // Highlight the best match (DOM is already clean from earlier removal)
   const before = best.node.nodeValue.substring(0, best.matchIndex);
   const after = best.node.nodeValue.substring(best.matchIndex + best.matchText.length);
 
