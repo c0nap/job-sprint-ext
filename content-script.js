@@ -2265,6 +2265,7 @@ function highlightTextInElement(element, searchText, mouseEvent) {
       const textNode = document.createTextNode(text);
       mark.parentNode.replaceChild(textNode, mark);
     });
+    element.normalize();
     highlightFirstOccurrence(element, cleanedSearchText, elementText, bgColor, shadowColor);
     lastHighlightPosition = null;
     return;
@@ -2281,6 +2282,10 @@ function highlightTextInElement(element, searchText, mouseEvent) {
     const textNode = document.createTextNode(text);
     mark.parentNode.replaceChild(textNode, mark);
   });
+
+  // Normalize the element to merge adjacent text nodes
+  // This prevents text node fragmentation from repeated highlighting
+  element.normalize();
 
   // Find all text nodes and their occurrences of searchText (in clean DOM)
   const escapedText = cleanedSearchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -2304,9 +2309,27 @@ function highlightTextInElement(element, searchText, mouseEvent) {
 
       const rects = range.getClientRects();
       if (rects.length > 0) {
-        const rect = rects[0];
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
+        // For text that spans multiple lines/boxes, find the rectangle closest to the mouse
+        let closestRect = rects[0];
+        let minRectDistance = Infinity;
+
+        for (let i = 0; i < rects.length; i++) {
+          const rect = rects[i];
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const rectDistance = Math.sqrt(
+            Math.pow(mouseX - centerX, 2) +
+            Math.pow(mouseY - centerY, 2)
+          );
+
+          if (rectDistance < minRectDistance) {
+            minRectDistance = rectDistance;
+            closestRect = rect;
+          }
+        }
+
+        const centerX = closestRect.left + closestRect.width / 2;
+        const centerY = closestRect.top + closestRect.height / 2;
         const distance = Math.sqrt(
           Math.pow(mouseX - centerX, 2) +
           Math.pow(mouseY - centerY, 2)
@@ -2488,6 +2511,9 @@ function removeHighlight() {
       const textNode = document.createTextNode(text);
       mark.parentNode.replaceChild(textNode, mark);
     });
+
+    // Normalize to merge text nodes and prevent fragmentation
+    lastHighlightedElement.normalize();
 
     lastHighlightedElement = null;
     lastHighlightedText = null;
