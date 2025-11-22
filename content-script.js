@@ -2261,7 +2261,7 @@ function highlightTextInElement(element, searchText, mouseEvent) {
 
   // Simple approach: Find ALL occurrences, pick the one with screen position closest to mouse
   if (!mouseEvent) {
-    highlightFirstOccurrence(element, searchText, elementText, bgColor, shadowColor);
+    highlightFirstOccurrence(element, cleanedSearchText, elementText, bgColor, shadowColor);
     return;
   }
 
@@ -2269,7 +2269,7 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   const mouseY = mouseEvent.clientY;
 
   // Find all text nodes and their occurrences of searchText
-  const escapedText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedText = cleanedSearchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const patternText = escapedText.replace(/\s+/g, '\\s+');
   const regex = new RegExp(patternText, 'g');
 
