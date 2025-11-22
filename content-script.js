@@ -1397,21 +1397,21 @@ function extractTextFromElement(element, event, mode = 'words') {
     return element.value;
   }
 
-  // Get the full text content
+  // Get the full text content, ignoring our highlight marks
   let fullText = '';
 
-  // Try to get text from the element itself (not children)
-  for (const node of element.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      fullText += node.textContent;
-    }
-  }
+  // Clone the element to get clean text without modifying the original
+  const clone = element.cloneNode(true);
 
-  // If no direct text, get all text content
-  if (!fullText.trim() && element.textContent) {
-    fullText = element.textContent;
-  }
+  // Remove all our highlight marks from the clone
+  const marks = clone.querySelectorAll('mark.jobsprint-text-highlight');
+  marks.forEach(mark => {
+    const text = document.createTextNode(mark.textContent);
+    mark.parentNode.replaceChild(text, mark);
+  });
 
+  // Get text from the cleaned clone
+  fullText = clone.textContent || '';
   fullText = cleanText(fullText);
 
   // Apply scope based on mode and granularity
@@ -1590,11 +1590,23 @@ function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1
   }
 
   const offset = range.startOffset;
-  const nodeText = textNode.textContent || '';
 
-  // Find cumulative position in the full text
-  const fullTextContent = element.textContent || '';
-  const targetPosition = fullTextContent.indexOf(nodeText) + offset;
+  // Calculate the actual position by walking through all text nodes before the cursor
+  let targetPosition = 0;
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  let currentNode;
+  while (currentNode = walker.nextNode()) {
+    if (currentNode === textNode) {
+      targetPosition += offset;
+      break;
+    }
+    targetPosition += currentNode.textContent.length;
+  }
 
   // Find which word the cursor is near
   let cumulativeLength = 0;
@@ -1646,11 +1658,23 @@ function extractNearestChars(text, event, element, charsLeft = 1, charsRight = 1
   }
 
   const offset = range.startOffset;
-  const nodeText = textNode.textContent || '';
 
-  // Find cumulative position in the full text
-  const fullTextContent = element.textContent || '';
-  const targetPosition = fullTextContent.indexOf(nodeText) + offset;
+  // Calculate the actual position by walking through all text nodes before the cursor
+  let targetPosition = 0;
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  let currentNode;
+  while (currentNode = walker.nextNode()) {
+    if (currentNode === textNode) {
+      targetPosition += offset;
+      break;
+    }
+    targetPosition += currentNode.textContent.length;
+  }
 
   if (targetPosition < 0 || targetPosition >= text.length) {
     if (charsLeft === 0 && charsRight === 0) return text.charAt(0);
