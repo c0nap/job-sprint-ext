@@ -2245,8 +2245,9 @@ function highlightTextInElement(element, searchText, mouseEvent) {
     mark.parentNode.replaceChild(textContent, mark);
   });
   const elementText = cleanText(clone.textContent || '');
+  const cleanedSearchText = cleanText(searchText);
 
-  if (!elementText.includes(searchText)) {
+  if (!elementText.includes(cleanedSearchText)) {
     // Text not in this element (smart mode extracted from parent/sibling)
     // Don't highlight - just show the outline
     return;
