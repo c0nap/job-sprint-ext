@@ -1125,6 +1125,12 @@ function handleMouseMove(event) {
   // Use the current mode (either from button or modifier key)
   const mode = currentModifierMode;
 
+  // If mode is disabled, don't highlight anything
+  if (mode === 'disabled') {
+    removeHighlight();
+    return;
+  }
+
   // Get element under cursor
   let element = document.elementFromPoint(event.clientX, event.clientY);
 
@@ -2641,6 +2647,11 @@ function getModeColors(mode) {
         solid: modeColors.words.solid,
         transparent: modeColors.words.transparent
       };
+    case 'disabled':
+      return {
+        solid: modeColors.disabled.solid,
+        transparent: modeColors.disabled.transparent
+      };
     default:
       return {
         solid: '#FF6B6B',              // Red (default)
@@ -2986,6 +2997,9 @@ function updateOverlayMode(mode) {
       break;
     case 'words':
       bgColor = modeColors.words.bg;
+      break;
+    case 'disabled':
+      bgColor = modeColors.disabled.bg;
       break;
     default:
       bgColor = 'rgba(255, 107, 107, 0.95)'; // Red for default
