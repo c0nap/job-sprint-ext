@@ -535,6 +535,18 @@
                 <small>Your Google Cloud numeric project ID (for Apps Script configuration and logging)</small>
             </div>
 
+            <div class="form-group">
+                <label for="appsScriptEditorUrl">
+                    Apps Script Editor URL (Optional)
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Direct link to your Apps Script editor for debugging. Open your script in the editor and copy the URL. Format: https://script.google.com/home/projects/YOUR_SCRIPT_ID/edit</span>
+                    </span>
+                </label>
+                <input type="url" id="appsScriptEditorUrl" placeholder="https://script.google.com/home/projects/...">
+                <small>Used for quick debugging access from error messages (optional)</small>
+            </div>
+
             <div class="sheet-connection">
                 <div id="connectionStatus" class="connection-status disconnected">
                     Not connected to Google Sheets

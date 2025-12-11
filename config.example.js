@@ -14,6 +14,11 @@ const CONFIG = {
   // Your Google Cloud Project ID (numeric project number, not project name)
   // Find this in Google Cloud Console or Apps Script Project Settings
   PROJECT_ID: 'YOUR_PROJECT_ID_HERE',
+
+  // Your Google Apps Script Editor URL (optional, for debugging)
+  // Format: https://script.google.com/home/projects/YOUR_SCRIPT_ID/edit
+  // Find this by opening your script in the Apps Script editor and copying the URL
+  APPS_SCRIPT_EDITOR_URL: '',
 };
 
 // Expose globally depending on environment

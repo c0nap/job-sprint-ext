@@ -5,6 +5,7 @@ const DEFAULT_CONFIG = {
   APPS_SCRIPT_ENDPOINT: '',
   SPREADSHEET_ID: '',
   PROJECT_ID: '',
+  APPS_SCRIPT_EDITOR_URL: '',
   ENABLE_MANUAL_ENTRY: true,
   TARGET_SHEET_NAME: 'Job Applications',
   // Mouse tracking settings
@@ -93,6 +94,7 @@ async function loadSettings() {
       'APPS_SCRIPT_ENDPOINT',
       'SPREADSHEET_ID',
       'PROJECT_ID',
+      'APPS_SCRIPT_EDITOR_URL',
       'ENABLE_MANUAL_ENTRY',
       'TARGET_SHEET_NAME',
       'clipboardMacros',
@@ -113,6 +115,7 @@ async function loadSettings() {
     document.getElementById('appsScriptEndpoint').value = result.APPS_SCRIPT_ENDPOINT || '';
     document.getElementById('spreadsheetId').value = result.SPREADSHEET_ID || '';
     document.getElementById('projectId').value = result.PROJECT_ID || '';
+    document.getElementById('appsScriptEditorUrl').value = result.APPS_SCRIPT_EDITOR_URL || '';
     document.getElementById('targetSheetName').value = result.TARGET_SHEET_NAME || 'Job Applications';
     document.getElementById('enableManualEntry').checked =
       result.ENABLE_MANUAL_ENTRY !== undefined ? result.ENABLE_MANUAL_ENTRY : true;
@@ -413,6 +416,7 @@ async function saveSettings() {
     APPS_SCRIPT_ENDPOINT: document.getElementById('appsScriptEndpoint').value.trim(),
     SPREADSHEET_ID: document.getElementById('spreadsheetId').value.trim(),
     PROJECT_ID: document.getElementById('projectId').value.trim(),
+    APPS_SCRIPT_EDITOR_URL: document.getElementById('appsScriptEditorUrl').value.trim(),
     ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked,
     TARGET_SHEET_NAME: document.getElementById('targetSheetName').value.trim() || 'Job Applications',
     // Mouse tracking settings

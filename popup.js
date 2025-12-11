@@ -1369,14 +1369,13 @@ async function generateModalErrorMessage(errorMsg) {
   });
 
   const spreadsheetId = config.SPREADSHEET_ID || '';
-  const projectId = config.PROJECT_ID || '';
-  const endpoint = config.APPS_SCRIPT_ENDPOINT || '';
+  const appsScriptEditorUrl = config.APPS_SCRIPT_EDITOR_URL || '';
 
   let errorHtml = `<strong>✗ Submission Failed</strong>`;
   errorHtml += `<div style="margin-top: 8px;">${errorMsg}</div>`;
 
   // Add helpful links for debugging
-  if (spreadsheetId || projectId || endpoint) {
+  if (spreadsheetId || appsScriptEditorUrl) {
     errorHtml += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #f5c6cb;">`;
     errorHtml += `<strong>Quick Links for Debugging:</strong><br>`;
 
@@ -1385,16 +1384,8 @@ async function generateModalErrorMessage(errorMsg) {
       errorHtml += `• <a href="${sheetUrl}" target="_blank">Open Spreadsheet</a><br>`;
     }
 
-    if (projectId) {
-      const gasUrl = `https://script.google.com/home/projects/${projectId}/edit`;
-      errorHtml += `• <a href="${gasUrl}" target="_blank">Open Apps Script Editor</a><br>`;
-    } else if (endpoint) {
-      // Try to infer project ID from endpoint URL
-      // Format: https://script.google.com/macros/s/{deploymentId}/exec
-      const scriptMatch = endpoint.match(/script\.google\.com\/macros\/s\/([^\/]+)/);
-      if (scriptMatch) {
-        errorHtml += `• <a href="${endpoint}" target="_blank">Apps Script Endpoint</a><br>`;
-      }
+    if (appsScriptEditorUrl) {
+      errorHtml += `• <a href="${appsScriptEditorUrl}" target="_blank">Open Apps Script Editor</a><br>`;
     }
 
     errorHtml += `</div>`;

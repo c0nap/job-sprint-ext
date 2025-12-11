@@ -2822,13 +2822,13 @@ function createTrackingOverlay() {
         </div>
       </div>
       <button id="jobsprint-exit-btn" style="
-        background: rgba(220, 53, 69, 0.9);
-        border: none;
-        color: white;
-        font-size: 16px;
+        background: #dc3545 !important;
+        border: none !important;
+        color: white !important;
+        font-size: 18px;
         font-weight: bold;
-        width: 22px;
-        height: 22px;
+        width: 24px;
+        height: 24px;
         border-radius: 4px;
         cursor: pointer;
         display: flex;
@@ -2838,6 +2838,7 @@ function createTrackingOverlay() {
         line-height: 1;
         transition: all 0.2s ease;
         margin-left: 4px;
+        flex-shrink: 0;
       " title="Exit tracking mode (ESC)">×</button>
     </div>
   `;
@@ -2866,10 +2867,11 @@ function createTrackingOverlay() {
         }
       }
       #jobsprint-exit-btn:hover {
-        background: rgba(220, 53, 69, 1) !important;
+        background: #c82333 !important;
         transform: scale(1.1);
       }
       #jobsprint-exit-btn:active {
+        background: #bd2130 !important;
         transform: scale(0.95);
       }
     `;
