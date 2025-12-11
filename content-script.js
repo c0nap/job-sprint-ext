@@ -5,6 +5,10 @@
 
 console.log('JobSprint Content Script loaded');
 
+// Track popup connection for cleanup on disconnect
+let popupPort = null;
+let popupAliveCheckInterval = null;
+
 /**
  * Message listener for commands from popup and service worker
  * Handles: pasteText, extractJobData, startAutofill
@@ -17,6 +21,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Content Script received message:', message);
 
   switch (message.action) {
+    case 'popupOpened':
+      // Popup has opened - establish connection and start monitoring
+      console.log('[ContentScript] Popup opened notification received');
+      handlePopupOpened();
+      sendResponse({ success: true });
+      return false; // Synchronous response
+
     case 'pasteText':
       // Paste clipboard macro to active input field
       pasteTextToActiveField(message.text);
@@ -822,7 +833,8 @@ let mouseTrackingSettings = {
 let modeColors = {
   words: { solid: '#2ecc71', transparent: 'rgba(46, 204, 113, 0.1)', bg: 'rgba(46, 204, 113, 0.95)' },
   smart: { solid: '#3498db', transparent: 'rgba(52, 152, 219, 0.1)', bg: 'rgba(52, 152, 219, 0.95)' },
-  chars: { solid: '#9b59b6', transparent: 'rgba(155, 89, 182, 0.1)', bg: 'rgba(155, 89, 182, 0.95)' }
+  chars: { solid: '#9b59b6', transparent: 'rgba(155, 89, 182, 0.1)', bg: 'rgba(155, 89, 182, 0.95)' },
+  disabled: { solid: '#6c757d', transparent: 'rgba(108, 117, 125, 0.1)', bg: 'rgba(108, 117, 125, 0.95)' }
 };
 
 /**
@@ -840,7 +852,8 @@ async function loadMouseTrackingSettings() {
       'SMART_MODE_STRENGTH',
       'WORD_MODE_COLOR',
       'SENTENCE_MODE_COLOR',
-      'CHAR_MODE_COLOR'
+      'CHAR_MODE_COLOR',
+      'DISABLED_MODE_COLOR'
     ]);
 
     mouseTrackingSettings = {
@@ -857,6 +870,7 @@ async function loadMouseTrackingSettings() {
     const wordColor = result.WORD_MODE_COLOR || '#2ecc71';
     const smartColor = result.SENTENCE_MODE_COLOR || '#3498db';
     const charColor = result.CHAR_MODE_COLOR || '#9b59b6';
+    const disabledColor = result.DISABLED_MODE_COLOR || '#6c757d';
 
     modeColors = {
       words: {
@@ -873,6 +887,11 @@ async function loadMouseTrackingSettings() {
         solid: charColor,
         transparent: hexToRgba(charColor, 0.1),
         bg: hexToRgba(charColor, 0.95)
+      },
+      disabled: {
+        solid: disabledColor,
+        transparent: hexToRgba(disabledColor, 0.1),
+        bg: hexToRgba(disabledColor, 0.95)
       }
     };
 
@@ -1106,10 +1125,22 @@ function handleMouseMove(event) {
   // Use the current mode (either from button or modifier key)
   const mode = currentModifierMode;
 
+  // If mode is disabled, don't highlight anything
+  if (mode === 'disabled') {
+    removeHighlight();
+    return;
+  }
+
   // Get element under cursor
   let element = document.elementFromPoint(event.clientX, event.clientY);
 
   if (!element || element === mouseTrackingOverlay) return;
+
+  // Exclude the tracking overlay and its children from highlighting
+  if (element.id === 'jobsprint-tracking-overlay' ||
+      element.closest('#jobsprint-tracking-overlay')) {
+    return;
+  }
 
   // If we hit a highlight mark, get the actual element
   if (element.classList && element.classList.contains('jobsprint-text-highlight')) {
@@ -2616,6 +2647,11 @@ function getModeColors(mode) {
         solid: modeColors.words.solid,
         transparent: modeColors.words.transparent
       };
+    case 'disabled':
+      return {
+        solid: modeColors.disabled.solid,
+        transparent: modeColors.disabled.transparent
+      };
     default:
       return {
         solid: '#FF6B6B',              // Red (default)
@@ -2788,24 +2824,52 @@ function createTrackingOverlay() {
     ${positionCSS}
     background: rgba(255, 107, 107, 0.95);
     color: white;
-    padding: 8px 12px;
+    padding: 8px 12px 8px 12px;
     border-radius: 6px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 13px;
     font-weight: 600;
     z-index: 999998;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    pointer-events: none;
+    pointer-events: auto;
     animation: slideInFromRight 0.3s ease-out;
   `;
 
   overlay.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 6px;">
-      <span style="font-size: 14px;">🎯</span>
-      <span id="jobsprint-tracking-title" style="font-size: 11px; font-weight: 500;">Mouse Text Mirror</span>
-    </div>
-    <div id="jobsprint-tracking-mode" style="font-size: 9px; opacity: 0.75; line-height: 1.3; margin-top: 3px;">
-      ↑↓ adjust • Alt+Arrows move • ESC cancel
+    <div style="display: flex; align-items: flex-start; gap: 6px; position: relative;">
+      <div style="flex: 1;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="font-size: 14px;">🎯</span>
+          <span id="jobsprint-tracking-title" style="font-size: 11px; font-weight: 500;">Mouse Text Mirror</span>
+        </div>
+        <div id="jobsprint-tracking-mode" style="font-size: 9px; opacity: 0.75; line-height: 1.3; margin-top: 3px;">
+          ↑↓ adjust • Alt+Arrows move • ESC cancel
+        </div>
+      </div>
+      <button id="jobsprint-exit-btn" style="
+        background-color: rgb(220, 53, 69) !important;
+        background: rgb(220, 53, 69) !important;
+        border: none !important;
+        color: rgb(255, 255, 255) !important;
+        font-size: 20px !important;
+        font-weight: bold !important;
+        width: 26px !important;
+        height: 26px !important;
+        border-radius: 4px !important;
+        cursor: pointer !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        margin-left: 4px !important;
+        line-height: 1 !important;
+        transition: all 0.2s ease !important;
+        flex-shrink: 0 !important;
+        pointer-events: auto !important;
+        outline: none !important;
+        box-shadow: none !important;
+      " title="Exit tracking mode (ESC)">×</button>
     </div>
   `;
 
@@ -2832,12 +2896,72 @@ function createTrackingOverlay() {
           box-shadow: 0 4px 20px rgba(255, 107, 107, 0.6);
         }
       }
+      #jobsprint-exit-btn:hover {
+        background-color: rgb(200, 35, 51) !important;
+        background: rgb(200, 35, 51) !important;
+        transform: scale(1.1) !important;
+      }
+      #jobsprint-exit-btn:active {
+        background-color: rgb(189, 33, 48) !important;
+        background: rgb(189, 33, 48) !important;
+        transform: scale(0.95) !important;
+      }
     `;
     document.head.appendChild(style);
   }
 
   document.body.appendChild(overlay);
   mouseTrackingOverlay = overlay;
+
+  // Add event listener for exit button
+  const exitBtn = overlay.querySelector('#jobsprint-exit-btn');
+  if (exitBtn) {
+    console.log('[Overlay] Exit button found, attaching event listeners');
+
+    // Handler function for exit button
+    const handleExitButton = (e) => {
+      console.log('[Overlay] Exit button triggered! Event type:', e.type);
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      // Set mode to disabled BEFORE stopping tracking
+      currentModifierMode = 'disabled';
+      console.log('[Overlay] Mode set to disabled in content script');
+
+      // DIRECTLY save disabled mode to storage (don't rely on popup)
+      console.log('[Overlay] Saving disabled mode directly to storage...');
+      chrome.storage.local.get(['jobsprint_ui_state'], (result) => {
+        const state = result.jobsprint_ui_state || {};
+        state.currentMode = 'disabled';
+        state.timestamp = Date.now();
+        chrome.storage.local.set({ jobsprint_ui_state: state }, () => {
+          console.log('[Overlay] Disabled mode saved to storage:', state);
+        });
+      });
+
+      // Also notify popup about mode change (for UI update if popup is still open)
+      console.log('[Overlay] Notifying popup of mode change...');
+      notifyPopupModeChange('disabled');
+
+      // Stop mouse tracking completely
+      console.log('[Overlay] Calling stopMouseTracking...');
+      stopMouseTracking();
+
+      // Additional cleanup to ensure all highlights are removed
+      removeHighlight();
+      removeTrackingOverlay();
+
+      console.log('[Overlay] Exit button handler complete - mode is now disabled');
+    };
+
+    // Add multiple event types to ensure we catch the interaction
+    exitBtn.addEventListener('mousedown', handleExitButton, true);
+    exitBtn.addEventListener('click', handleExitButton, true);
+    console.log('[Overlay] Event listeners attached (mousedown + click)');
+  } else {
+    console.error('[Overlay] Exit button NOT found!');
+  }
 
   // Note: Mode buttons removed from overlay - they're only in the popup now
   // This keeps the overlay minimal and non-redundant
@@ -2893,6 +3017,9 @@ function updateOverlayMode(mode) {
       break;
     case 'words':
       bgColor = modeColors.words.bg;
+      break;
+    case 'disabled':
+      bgColor = modeColors.disabled.bg;
       break;
     default:
       bgColor = 'rgba(255, 107, 107, 0.95)'; // Red for default
@@ -2982,4 +3109,65 @@ function notifyPopupModeChange(mode) {
       console.warn('[MouseTracking] Extension context error during mode change notification:', error);
     }
   }
+}
+
+// ============ POPUP CONNECTION & CLEANUP ============
+
+/**
+ * Handle popup opened notification
+ * Sets up monitoring to detect when popup closes and cleanup overlays
+ */
+function handlePopupOpened() {
+  console.log('[PopupConnection] Popup opened, setting up connection');
+
+  // Clear any existing interval
+  if (popupAliveCheckInterval) {
+    clearInterval(popupAliveCheckInterval);
+    popupAliveCheckInterval = null;
+  }
+
+  // Periodically check if popup is still alive by testing runtime.id
+  popupAliveCheckInterval = setInterval(() => {
+    // Try to send a ping message to check if popup is still alive
+    chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
+      if (chrome.runtime.lastError) {
+        // Popup is closed or context invalidated
+        console.log('[PopupConnection] Popup appears to be closed, cleaning up');
+        handlePopupClosed();
+      }
+    });
+  }, 500); // Check every 500ms
+}
+
+/**
+ * Handle popup closed event
+ * Cleans up all overlays and highlights when popup is closed
+ */
+function handlePopupClosed() {
+  console.log('[PopupConnection] Popup closed, cleaning up overlays');
+
+  // Clear the alive check interval
+  if (popupAliveCheckInterval) {
+    clearInterval(popupAliveCheckInterval);
+    popupAliveCheckInterval = null;
+  }
+
+  // Add a short delay before cleanup to allow any in-progress clicks (like X button) to complete
+  // This prevents race condition where clicking X button triggers popup close before click handler executes
+  setTimeout(() => {
+    console.log('[PopupConnection] Executing delayed cleanup');
+
+    // Stop mouse tracking if active (this removes overlay and highlights)
+    if (mouseTrackingActive) {
+      stopMouseTracking();
+    }
+
+    // Clear any remaining highlights
+    removeHighlight();
+
+    // Remove any approval UI overlays from autofill
+    removeApprovalUI();
+
+    console.log('[PopupConnection] Cleanup complete');
+  }, 500); // 500ms delay to allow click handlers to complete
 }

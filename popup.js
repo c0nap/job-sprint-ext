@@ -4,6 +4,9 @@
  * Features: Clipboard macros, job data extraction, autofill
  */
 
+// Connection port for detecting popup closure
+let contentScriptPort = null;
+
 // Initialize all popup features when DOM is ready
 document.addEventListener('DOMContentLoaded', async () => {
   initializeDebugConsole();
@@ -24,7 +27,75 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Restore UI state from last session
   restoreUIState();
+
+  // Establish connection with content script for cleanup on popup close
+  initializeContentScriptConnection();
+
+  // Save extended UI state periodically to ensure it's captured before close
+  setInterval(saveExtendedUIState, 1000);
 });
+
+// Listen for ping messages from content script (used to detect popup alive)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'ping') {
+    sendResponse({ alive: true });
+    return false; // Synchronous response
+  }
+});
+
+/**
+ * Initialize connection with content script to detect popup closure
+ * Sends keepalive messages to maintain connection and cleanup on disconnect
+ */
+async function initializeContentScriptConnection() {
+  try {
+    const sourceTab = await getSourceTab();
+    if (!sourceTab) {
+      log('[Connection] No source tab found, skipping connection init');
+      return;
+    }
+
+    // Send a message to content script to establish connection
+    chrome.tabs.sendMessage(
+      sourceTab.id,
+      { action: 'popupOpened' },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          log('[Connection] Could not connect to content script:', chrome.runtime.lastError.message);
+        } else {
+          log('[Connection] Connected to content script');
+        }
+      }
+    );
+  } catch (error) {
+    log('[Connection] Error initializing connection:', error.message);
+  }
+}
+
+/**
+ * Save extended UI state including mouse tracking and modal state
+ */
+function saveExtendedUIState() {
+  // Get the modal state
+  const modal = document.getElementById('manualEntryModal');
+  const isModalOpen = modal && modal.style.display === 'flex';
+
+  // Save tracking state
+  const state = {
+    currentFolder,
+    navigationPath,
+    timestamp: Date.now(),
+    // Extended state for restoration
+    isModalOpen: isModalOpen,
+    currentMode: currentMode  // Mode for mouse tracking
+  };
+
+  chrome.storage.local.set({ jobsprint_ui_state: state }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('Failed to save extended UI state:', chrome.runtime.lastError);
+    }
+  });
+}
 
 // ============ DEBUG CONSOLE ============
 
@@ -435,6 +506,7 @@ function saveUIState() {
 /**
  * Restore UI state from chrome.storage.local
  * Reopens the last viewed folder if user was browsing clipboard macros
+ * Also restores modal state and mouse tracking mode if they were active
  */
 function restoreUIState() {
   chrome.storage.local.get(['jobsprint_ui_state'], (result) => {
@@ -451,6 +523,12 @@ function restoreUIState() {
     if (age > 5 * 60 * 1000) {
       chrome.storage.local.remove('jobsprint_ui_state');
       return;
+    }
+
+    // Restore mouse tracking mode if it was saved
+    if (state.currentMode) {
+      currentMode = state.currentMode;
+      log(`[UI] Restoring mouse tracking mode: ${currentMode}`);
     }
 
     // Restore folder view if user was in a folder
@@ -506,6 +584,10 @@ function restoreUIState() {
         );
       }, 100);
     }
+
+    // Note: We don't automatically reopen the modal because the form state
+    // is preserved by the browser, so the user's data is still there.
+    // When they focus a field again, mouse tracking will start automatically.
   });
 }
 
@@ -1236,25 +1318,80 @@ function logJobData(button, statusDiv, jobData) {
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Job data to submit
+ * @param {boolean} fromModal - Whether this submission is from the manual entry modal
  */
-function submitJobData(button, statusDiv, jobData) {
+function submitJobData(button, statusDiv, jobData, fromModal = false) {
   log('[Extract] Submitting job data to service worker...');
   showStatus(statusDiv, 'info', 'ℹ Logging to Google Sheets...');
 
   chrome.runtime.sendMessage(
     { action: 'logJobData', data: jobData },
-    (logResponse) => {
+    async (logResponse) => {
       if (logResponse?.success) {
         log('[Extract] Job data logged successfully');
         showStatus(statusDiv, 'success', '✓ Job data logged successfully!');
+
+        // Close modal if submission was from modal
+        if (fromModal) {
+          hideManualEntryModal();
+        }
       } else {
         const errorMsg = logResponse?.error || 'Unknown error occurred';
         logError(`[Extract] Failed to log: ${errorMsg}`);
-        showStatus(statusDiv, 'error', `✗ Failed to log data: ${errorMsg}`);
+
+        // If submission failed from modal, keep modal open and show error there
+        if (fromModal) {
+          const errorContainer = document.getElementById('manualEntryError');
+          if (errorContainer) {
+            errorContainer.innerHTML = await generateModalErrorMessage(errorMsg);
+            errorContainer.style.display = 'block';
+          }
+        } else {
+          showStatus(statusDiv, 'error', `✗ Failed to log data: ${errorMsg}`);
+        }
       }
       resetExtractButton(button);
     }
   );
+}
+
+/**
+ * Generate error message with links for modal display
+ * @param {string} errorMsg - Error message from submission
+ * @returns {Promise<string>} HTML error message with links
+ */
+async function generateModalErrorMessage(errorMsg) {
+  // Get configuration to create links
+  const config = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: 'getConfig' }, (response) => {
+      resolve(response?.config || {});
+    });
+  });
+
+  const spreadsheetId = config.SPREADSHEET_ID || '';
+  const appsScriptEditorUrl = config.APPS_SCRIPT_EDITOR_URL || '';
+
+  let errorHtml = `<strong>✗ Submission Failed</strong>`;
+  errorHtml += `<div style="margin-top: 8px;">${errorMsg}</div>`;
+
+  // Add helpful links for debugging
+  if (spreadsheetId || appsScriptEditorUrl) {
+    errorHtml += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #f5c6cb;">`;
+    errorHtml += `<strong>Quick Links for Debugging:</strong><br>`;
+
+    if (spreadsheetId) {
+      const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+      errorHtml += `• <a href="${sheetUrl}" target="_blank">Open Spreadsheet</a><br>`;
+    }
+
+    if (appsScriptEditorUrl) {
+      errorHtml += `• <a href="${appsScriptEditorUrl}" target="_blank">Open Apps Script Editor</a><br>`;
+    }
+
+    errorHtml += `</div>`;
+  }
+
+  return errorHtml;
 }
 
 /**
@@ -1557,6 +1694,13 @@ function showManualEntryModal(button, statusDiv, jobData) {
   const modal = document.getElementById('manualEntryModal');
   if (!modal) return;
 
+  // Clear any previous error message
+  const errorContainer = document.getElementById('manualEntryError');
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+    errorContainer.innerHTML = '';
+  }
+
   // Store references for later use
   modal.dataset.button = button.id;
   modal.dataset.status = statusDiv.id;
@@ -1624,6 +1768,13 @@ function handleManualEntrySubmit() {
   const button = document.getElementById(modal.dataset.button);
   const statusDiv = document.getElementById(modal.dataset.status);
 
+  // Clear any previous error message
+  const errorContainer = document.getElementById('manualEntryError');
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+    errorContainer.innerHTML = '';
+  }
+
   // Get form values
   const manualData = {
     title: document.getElementById('manualJobTitle').value.trim(),
@@ -1647,11 +1798,8 @@ function handleManualEntrySubmit() {
     ...manualData
   };
 
-  // Hide modal
-  hideManualEntryModal();
-
-  // Submit the data
-  submitJobData(button, statusDiv, finalData);
+  // Submit the data (modal will stay open on error, close on success)
+  submitJobData(button, statusDiv, finalData, true);
 }
 
 // ============ UTILITY FUNCTIONS ============
@@ -1846,6 +1994,10 @@ function initializeMouseTracking() {
       if (currentActiveFieldElement) {
         updateFieldBorderColor(currentActiveFieldElement, message.mode);
       }
+
+      // Immediately save the mode change to storage
+      // This ensures disabled mode (from X button) is persisted before popup closes
+      saveExtendedUIState();
 
       sendResponse({ success: true });
       return true;

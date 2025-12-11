@@ -5,6 +5,7 @@ const DEFAULT_CONFIG = {
   APPS_SCRIPT_ENDPOINT: '',
   SPREADSHEET_ID: '',
   PROJECT_ID: '',
+  APPS_SCRIPT_EDITOR_URL: '',
   ENABLE_MANUAL_ENTRY: true,
   TARGET_SHEET_NAME: 'Job Applications',
   // Mouse tracking settings
@@ -13,7 +14,9 @@ const DEFAULT_CONFIG = {
   WORD_MODIFIER: 'shift',          // Modifier for word extraction
   OVERLAY_MOVE_MODIFIER: 'alt',   // Modifier for moving overlay
   OVERLAY_MOVE_STEP: 20,           // Pixels to move overlay per keypress
-  SMART_MODE_STRENGTH: 2           // Smart mode aggressiveness (1-5, default: 2)
+  SMART_MODE_STRENGTH: 2,          // Smart mode aggressiveness (1-5, default: 2)
+  // Mode colors
+  DISABLED_MODE_COLOR: '#6c757d'   // Grey color for disabled mode
 };
 
 // Default clipboard macros (nested structure)
@@ -93,6 +96,7 @@ async function loadSettings() {
       'APPS_SCRIPT_ENDPOINT',
       'SPREADSHEET_ID',
       'PROJECT_ID',
+      'APPS_SCRIPT_EDITOR_URL',
       'ENABLE_MANUAL_ENTRY',
       'TARGET_SHEET_NAME',
       'clipboardMacros',
@@ -106,13 +110,15 @@ async function loadSettings() {
       'SMART_MODE_STRENGTH',
       'WORD_MODE_COLOR',
       'SENTENCE_MODE_COLOR',
-      'CHAR_MODE_COLOR'
+      'CHAR_MODE_COLOR',
+      'DISABLED_MODE_COLOR'
     ]);
 
     // Populate form fields
     document.getElementById('appsScriptEndpoint').value = result.APPS_SCRIPT_ENDPOINT || '';
     document.getElementById('spreadsheetId').value = result.SPREADSHEET_ID || '';
     document.getElementById('projectId').value = result.PROJECT_ID || '';
+    document.getElementById('appsScriptEditorUrl').value = result.APPS_SCRIPT_EDITOR_URL || '';
     document.getElementById('targetSheetName').value = result.TARGET_SHEET_NAME || 'Job Applications';
     document.getElementById('enableManualEntry').checked =
       result.ENABLE_MANUAL_ENTRY !== undefined ? result.ENABLE_MANUAL_ENTRY : true;
@@ -139,6 +145,7 @@ async function loadSettings() {
     document.getElementById('wordModeColor').value = result.WORD_MODE_COLOR || '#2ecc71';
     document.getElementById('sentenceModeColor').value = result.SENTENCE_MODE_COLOR || '#3498db';
     document.getElementById('charModeColor').value = result.CHAR_MODE_COLOR || '#9b59b6';
+    document.getElementById('disabledModeColor').value = result.DISABLED_MODE_COLOR || '#6c757d';
 
     // Populate clipboard macro folders
     const macros = result.clipboardMacros || DEFAULT_MACROS;
@@ -413,6 +420,7 @@ async function saveSettings() {
     APPS_SCRIPT_ENDPOINT: document.getElementById('appsScriptEndpoint').value.trim(),
     SPREADSHEET_ID: document.getElementById('spreadsheetId').value.trim(),
     PROJECT_ID: document.getElementById('projectId').value.trim(),
+    APPS_SCRIPT_EDITOR_URL: document.getElementById('appsScriptEditorUrl').value.trim(),
     ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked,
     TARGET_SHEET_NAME: document.getElementById('targetSheetName').value.trim() || 'Job Applications',
     // Mouse tracking settings
@@ -425,7 +433,8 @@ async function saveSettings() {
     // Mode colors
     WORD_MODE_COLOR: document.getElementById('wordModeColor').value,
     SENTENCE_MODE_COLOR: document.getElementById('sentenceModeColor').value,
-    CHAR_MODE_COLOR: document.getElementById('charModeColor').value
+    CHAR_MODE_COLOR: document.getElementById('charModeColor').value,
+    DISABLED_MODE_COLOR: document.getElementById('disabledModeColor').value
   };
 
   // Get and validate clipboard macros
