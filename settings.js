@@ -14,7 +14,9 @@ const DEFAULT_CONFIG = {
   WORD_MODIFIER: 'shift',          // Modifier for word extraction
   OVERLAY_MOVE_MODIFIER: 'alt',   // Modifier for moving overlay
   OVERLAY_MOVE_STEP: 20,           // Pixels to move overlay per keypress
-  SMART_MODE_STRENGTH: 2           // Smart mode aggressiveness (1-5, default: 2)
+  SMART_MODE_STRENGTH: 2,          // Smart mode aggressiveness (1-5, default: 2)
+  // Mode colors
+  DISABLED_MODE_COLOR: '#6c757d'   // Grey color for disabled mode
 };
 
 // Default clipboard macros (nested structure)
@@ -108,7 +110,8 @@ async function loadSettings() {
       'SMART_MODE_STRENGTH',
       'WORD_MODE_COLOR',
       'SENTENCE_MODE_COLOR',
-      'CHAR_MODE_COLOR'
+      'CHAR_MODE_COLOR',
+      'DISABLED_MODE_COLOR'
     ]);
 
     // Populate form fields
@@ -142,6 +145,7 @@ async function loadSettings() {
     document.getElementById('wordModeColor').value = result.WORD_MODE_COLOR || '#2ecc71';
     document.getElementById('sentenceModeColor').value = result.SENTENCE_MODE_COLOR || '#3498db';
     document.getElementById('charModeColor').value = result.CHAR_MODE_COLOR || '#9b59b6';
+    document.getElementById('disabledModeColor').value = result.DISABLED_MODE_COLOR || '#6c757d';
 
     // Populate clipboard macro folders
     const macros = result.clipboardMacros || DEFAULT_MACROS;
@@ -429,7 +433,8 @@ async function saveSettings() {
     // Mode colors
     WORD_MODE_COLOR: document.getElementById('wordModeColor').value,
     SENTENCE_MODE_COLOR: document.getElementById('sentenceModeColor').value,
-    CHAR_MODE_COLOR: document.getElementById('charModeColor').value
+    CHAR_MODE_COLOR: document.getElementById('charModeColor').value,
+    DISABLED_MODE_COLOR: document.getElementById('disabledModeColor').value
   };
 
   // Get and validate clipboard macros

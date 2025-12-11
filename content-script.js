@@ -833,7 +833,8 @@ let mouseTrackingSettings = {
 let modeColors = {
   words: { solid: '#2ecc71', transparent: 'rgba(46, 204, 113, 0.1)', bg: 'rgba(46, 204, 113, 0.95)' },
   smart: { solid: '#3498db', transparent: 'rgba(52, 152, 219, 0.1)', bg: 'rgba(52, 152, 219, 0.95)' },
-  chars: { solid: '#9b59b6', transparent: 'rgba(155, 89, 182, 0.1)', bg: 'rgba(155, 89, 182, 0.95)' }
+  chars: { solid: '#9b59b6', transparent: 'rgba(155, 89, 182, 0.1)', bg: 'rgba(155, 89, 182, 0.95)' },
+  disabled: { solid: '#6c757d', transparent: 'rgba(108, 117, 125, 0.1)', bg: 'rgba(108, 117, 125, 0.95)' }
 };
 
 /**
@@ -851,7 +852,8 @@ async function loadMouseTrackingSettings() {
       'SMART_MODE_STRENGTH',
       'WORD_MODE_COLOR',
       'SENTENCE_MODE_COLOR',
-      'CHAR_MODE_COLOR'
+      'CHAR_MODE_COLOR',
+      'DISABLED_MODE_COLOR'
     ]);
 
     mouseTrackingSettings = {
@@ -868,6 +870,7 @@ async function loadMouseTrackingSettings() {
     const wordColor = result.WORD_MODE_COLOR || '#2ecc71';
     const smartColor = result.SENTENCE_MODE_COLOR || '#3498db';
     const charColor = result.CHAR_MODE_COLOR || '#9b59b6';
+    const disabledColor = result.DISABLED_MODE_COLOR || '#6c757d';
 
     modeColors = {
       words: {
@@ -884,6 +887,11 @@ async function loadMouseTrackingSettings() {
         solid: charColor,
         transparent: hexToRgba(charColor, 0.1),
         bg: hexToRgba(charColor, 0.95)
+      },
+      disabled: {
+        solid: disabledColor,
+        transparent: hexToRgba(disabledColor, 0.1),
+        bg: hexToRgba(disabledColor, 0.95)
       }
     };
 
@@ -1121,6 +1129,12 @@ function handleMouseMove(event) {
   let element = document.elementFromPoint(event.clientX, event.clientY);
 
   if (!element || element === mouseTrackingOverlay) return;
+
+  // Exclude the tracking overlay and its children from highlighting
+  if (element.id === 'jobsprint-tracking-overlay' ||
+      element.closest('#jobsprint-tracking-overlay')) {
+    return;
+  }
 
   // If we hit a highlight mark, get the actual element
   if (element.classList && element.classList.contains('jobsprint-text-highlight')) {
@@ -2822,23 +2836,28 @@ function createTrackingOverlay() {
         </div>
       </div>
       <button id="jobsprint-exit-btn" style="
-        background: #dc3545 !important;
+        background-color: rgb(220, 53, 69) !important;
+        background: rgb(220, 53, 69) !important;
         border: none !important;
-        color: white !important;
-        font-size: 18px;
-        font-weight: bold;
-        width: 24px;
-        height: 24px;
-        border-radius: 4px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
-        line-height: 1;
-        transition: all 0.2s ease;
-        margin-left: 4px;
-        flex-shrink: 0;
+        color: rgb(255, 255, 255) !important;
+        font-size: 20px !important;
+        font-weight: bold !important;
+        width: 26px !important;
+        height: 26px !important;
+        border-radius: 4px !important;
+        cursor: pointer !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        margin-left: 4px !important;
+        line-height: 1 !important;
+        transition: all 0.2s ease !important;
+        flex-shrink: 0 !important;
+        pointer-events: auto !important;
+        outline: none !important;
+        box-shadow: none !important;
       " title="Exit tracking mode (ESC)">×</button>
     </div>
   `;
@@ -2867,12 +2886,14 @@ function createTrackingOverlay() {
         }
       }
       #jobsprint-exit-btn:hover {
-        background: #c82333 !important;
-        transform: scale(1.1);
+        background-color: rgb(200, 35, 51) !important;
+        background: rgb(200, 35, 51) !important;
+        transform: scale(1.1) !important;
       }
       #jobsprint-exit-btn:active {
-        background: #bd2130 !important;
-        transform: scale(0.95);
+        background-color: rgb(189, 33, 48) !important;
+        background: rgb(189, 33, 48) !important;
+        transform: scale(0.95) !important;
       }
     `;
     document.head.appendChild(style);
@@ -2884,12 +2905,24 @@ function createTrackingOverlay() {
   // Add event listener for exit button
   const exitBtn = overlay.querySelector('#jobsprint-exit-btn');
   if (exitBtn) {
+    console.log('[Overlay] Exit button found, attaching click listener');
     exitBtn.addEventListener('click', (e) => {
+      console.log('[Overlay] Exit button CLICKED!');
       e.preventDefault();
       e.stopPropagation();
-      console.log('[Overlay] Exit button clicked - stopping mouse tracking');
+
+      // Stop mouse tracking completely
+      console.log('[Overlay] Calling stopMouseTracking...');
       stopMouseTracking();
-    });
+
+      // Additional cleanup to ensure all highlights are removed
+      removeHighlight();
+      removeTrackingOverlay();
+
+      console.log('[Overlay] Exit button handler complete');
+    }, true); // Use capture phase
+  } else {
+    console.error('[Overlay] Exit button NOT found!');
   }
 
   // Note: Mode buttons removed from overlay - they're only in the popup now
