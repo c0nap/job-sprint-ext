@@ -2916,17 +2916,32 @@ function createTrackingOverlay() {
   // Add event listener for exit button
   const exitBtn = overlay.querySelector('#jobsprint-exit-btn');
   if (exitBtn) {
-    console.log('[Overlay] Exit button found, attaching click listener');
-    exitBtn.addEventListener('click', (e) => {
-      console.log('[Overlay] Exit button CLICKED!');
+    console.log('[Overlay] Exit button found, attaching event listeners');
+
+    // Handler function for exit button
+    const handleExitButton = (e) => {
+      console.log('[Overlay] Exit button triggered! Event type:', e.type);
       e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
 
       // Set mode to disabled BEFORE stopping tracking
       currentModifierMode = 'disabled';
-      console.log('[Overlay] Mode set to disabled');
+      console.log('[Overlay] Mode set to disabled in content script');
 
-      // Notify popup about mode change so it gets saved
+      // DIRECTLY save disabled mode to storage (don't rely on popup)
+      console.log('[Overlay] Saving disabled mode directly to storage...');
+      chrome.storage.local.get(['jobsprint_ui_state'], (result) => {
+        const state = result.jobsprint_ui_state || {};
+        state.currentMode = 'disabled';
+        state.timestamp = Date.now();
+        chrome.storage.local.set({ jobsprint_ui_state: state }, () => {
+          console.log('[Overlay] Disabled mode saved to storage:', state);
+        });
+      });
+
+      // Also notify popup about mode change (for UI update if popup is still open)
+      console.log('[Overlay] Notifying popup of mode change...');
       notifyPopupModeChange('disabled');
 
       // Stop mouse tracking completely
@@ -2938,7 +2953,12 @@ function createTrackingOverlay() {
       removeTrackingOverlay();
 
       console.log('[Overlay] Exit button handler complete - mode is now disabled');
-    }, true); // Use capture phase
+    };
+
+    // Add multiple event types to ensure we catch the interaction
+    exitBtn.addEventListener('mousedown', handleExitButton, true);
+    exitBtn.addEventListener('click', handleExitButton, true);
+    console.log('[Overlay] Event listeners attached (mousedown + click)');
   } else {
     console.error('[Overlay] Exit button NOT found!');
   }
