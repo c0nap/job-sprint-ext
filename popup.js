@@ -2067,10 +2067,20 @@ async function startMouseTrackingForField(fieldId) {
     return;
   }
 
+  // If mode is disabled, reset to default (smart) when starting tracking
+  // Disabled is only a temporary state when X button is clicked, not a real extraction mode
+  let modeToUse = currentMode;
+  if (currentMode === 'disabled') {
+    modeToUse = 'smart';
+    currentMode = 'smart';
+    updateModeButtonStates('smart');
+    log('[MouseTracking] Mode was disabled, resetting to smart');
+  }
+
   // Send message to content script to start tracking with current mode
   chrome.tabs.sendMessage(
     sourceTab.id,
-    { action: 'startMouseTracking', fieldId: fieldId, mode: currentMode },
+    { action: 'startMouseTracking', fieldId: fieldId, mode: modeToUse },
     (response) => {
       if (chrome.runtime.lastError) {
         logError(`[MouseTracking] Error: ${chrome.runtime.lastError.message}`);
