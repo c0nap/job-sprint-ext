@@ -2911,6 +2911,13 @@ function createTrackingOverlay() {
       e.preventDefault();
       e.stopPropagation();
 
+      // Set mode to disabled BEFORE stopping tracking
+      currentModifierMode = 'disabled';
+      console.log('[Overlay] Mode set to disabled');
+
+      // Notify popup about mode change so it gets saved
+      notifyPopupModeChange('disabled');
+
       // Stop mouse tracking completely
       console.log('[Overlay] Calling stopMouseTracking...');
       stopMouseTracking();
@@ -2919,7 +2926,7 @@ function createTrackingOverlay() {
       removeHighlight();
       removeTrackingOverlay();
 
-      console.log('[Overlay] Exit button handler complete');
+      console.log('[Overlay] Exit button handler complete - mode is now disabled');
     }, true); // Use capture phase
   } else {
     console.error('[Overlay] Exit button NOT found!');
