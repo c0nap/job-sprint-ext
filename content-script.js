@@ -3132,16 +3132,22 @@ function handlePopupClosed() {
     popupAliveCheckInterval = null;
   }
 
-  // Stop mouse tracking if active (this removes overlay and highlights)
-  if (mouseTrackingActive) {
-    stopMouseTracking();
-  }
+  // Add a short delay before cleanup to allow any in-progress clicks (like X button) to complete
+  // This prevents race condition where clicking X button triggers popup close before click handler executes
+  setTimeout(() => {
+    console.log('[PopupConnection] Executing delayed cleanup');
 
-  // Clear any remaining highlights
-  removeHighlight();
+    // Stop mouse tracking if active (this removes overlay and highlights)
+    if (mouseTrackingActive) {
+      stopMouseTracking();
+    }
 
-  // Remove any approval UI overlays from autofill
-  removeApprovalUI();
+    // Clear any remaining highlights
+    removeHighlight();
 
-  console.log('[PopupConnection] Cleanup complete');
+    // Remove any approval UI overlays from autofill
+    removeApprovalUI();
+
+    console.log('[PopupConnection] Cleanup complete');
+  }, 500); // 500ms delay to allow click handlers to complete
 }
