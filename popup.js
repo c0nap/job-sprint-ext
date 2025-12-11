@@ -1995,6 +1995,10 @@ function initializeMouseTracking() {
         updateFieldBorderColor(currentActiveFieldElement, message.mode);
       }
 
+      // Immediately save the mode change to storage
+      // This ensures disabled mode (from X button) is persisted before popup closes
+      saveExtendedUIState();
+
       sendResponse({ success: true });
       return true;
     }
