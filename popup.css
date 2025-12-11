@@ -560,6 +560,34 @@ footer a:hover {
   color: #856404;
 }
 
+.modal-error {
+  margin-bottom: 20px;
+  padding: 16px;
+  background-color: #f8d7da;
+  border: 2px solid #f5c6cb;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #721c24;
+  line-height: 1.6;
+}
+
+.modal-error strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #721c24;
+}
+
+.modal-error a {
+  color: #0056b3;
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.modal-error a:hover {
+  color: #004085;
+}
+
 .form-field {
   margin-bottom: 16px;
 }
