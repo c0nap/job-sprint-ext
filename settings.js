@@ -41,6 +41,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   setupFolderHandlers();
   setupCloseLink();
+
+  // Load and display Q&A database
+  await loadQADatabase();
 });
 
 // Setup close settings link
@@ -184,6 +187,9 @@ function setupEventListeners() {
 
   const importFileInput = document.getElementById('importFileInput');
   if (importFileInput) importFileInput.addEventListener('change', handleImportFile);
+
+  // Q&A Database event listeners
+  setupQAEventListeners();
 }
 
 // Setup folder expand/collapse and JSON validation
@@ -953,6 +959,12 @@ function renderQAList(searchTerm = '') {
       exact: '<span style="background: #e67e22; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600;">EXACT</span>'
     }[typeLabel];
 
+    const optionsHtml = entry.availableOptions && entry.availableOptions.length > 0
+      ? `<div style="color: #666; font-size: 12px; margin-top: 4px; padding: 6px; background: #fff3cd; border-radius: 4px;">
+           <strong>Options:</strong> ${entry.availableOptions.map(opt => escapeHtml(opt)).join(', ')}
+         </div>`
+      : '';
+
     return `
       <div style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-bottom: 10px; background: #fafafa;">
         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
@@ -963,7 +975,8 @@ function renderQAList(searchTerm = '') {
             <div style="color: #666; font-size: 13px; margin-bottom: 6px;">
               <strong>Answer:</strong> ${escapeHtml(entry.answer)}
             </div>
-            <div style="display: flex; gap: 8px; align-items: center;">
+            ${optionsHtml}
+            <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
               ${typeBadge}
               ${entry.timestamp ? `<span style="color: #999; font-size: 11px;">Added: ${new Date(entry.timestamp).toLocaleDateString()}</span>` : ''}
             </div>
