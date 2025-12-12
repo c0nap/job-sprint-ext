@@ -3,6 +3,8 @@
  * Automatically records user's answers to form questions for building the QA database
  */
 
+console.log('JobSprint Record Mode script loaded');
+
 // ============ RECORD MODE STATE ============
 
 let recordModeActive = false;
@@ -564,38 +566,51 @@ function notifyRecordStatus(status, count) {
 // ============ MESSAGE LISTENER ============
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  switch (message.action) {
-    case 'startRecordMode':
-      startRecordMode();
-      sendResponse({ success: true });
-      break;
+  console.log('Record mode received message:', message.action);
 
-    case 'stopRecordMode':
-      stopRecordMode().then(() => {
-        sendResponse({ success: true, count: recordedQAPairs.length });
-      });
-      return true; // Async response
+  try {
+    switch (message.action) {
+      case 'startRecordMode':
+        startRecordMode();
+        sendResponse({ success: true });
+        return false; // Synchronous response
 
-    case 'pauseRecordMode':
-      pauseRecordMode();
-      sendResponse({ success: true });
-      break;
+      case 'stopRecordMode':
+        stopRecordMode().then(() => {
+          sendResponse({ success: true, count: recordedQAPairs.length });
+        }).catch((error) => {
+          console.error('Error stopping record mode:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+        return true; // Async response
 
-    case 'resumeRecordMode':
-      resumeRecordMode();
-      sendResponse({ success: true });
-      break;
+      case 'pauseRecordMode':
+        pauseRecordMode();
+        sendResponse({ success: true });
+        return false; // Synchronous response
 
-    case 'getRecordStatus':
-      sendResponse({
-        success: true,
-        active: recordModeActive,
-        count: recordedQAPairs.length
-      });
-      break;
+      case 'resumeRecordMode':
+        resumeRecordMode();
+        sendResponse({ success: true });
+        return false; // Synchronous response
+
+      case 'getRecordStatus':
+        sendResponse({
+          success: true,
+          active: recordModeActive,
+          count: recordedQAPairs.length
+        });
+        return false; // Synchronous response
+
+      default:
+        // Not a record mode message, ignore
+        return false;
+    }
+  } catch (error) {
+    console.error('Error in record mode message handler:', error);
+    sendResponse({ success: false, error: error.message });
+    return false;
   }
-
-  return false;
 });
 
 // Export for testing
