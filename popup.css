@@ -696,12 +696,14 @@ footer a:hover {
 
 .console-output {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: scroll;
+  overflow-x: hidden;
   padding: 8px 12px;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 11px;
   line-height: 1.4;
   min-height: 30px;
+  max-height: 100%;
 }
 
 .console-line {
