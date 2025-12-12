@@ -614,9 +614,11 @@ function showApprovalUI(input, question, answer, onApprove, onReject) {
  */
 function injectJobSprintStyles() {
   if (document.getElementById('jobsprint-modal-styles')) {
+    console.log('[Styles] JobSprint styles already injected');
     return; // Already injected
   }
 
+  console.log('[Styles] Injecting JobSprint styles...');
   const style = document.createElement('style');
   style.id = 'jobsprint-modal-styles';
   style.textContent = `
@@ -781,6 +783,20 @@ function injectJobSprintStyles() {
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
       pointer-events: auto;
       animation: slideInFromRight 0.3s ease-out;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #jobsprint-tracking-title {
+      font-weight: 600;
+      margin-right: 4px;
+    }
+
+    #jobsprint-tracking-mode {
+      font-size: 11px;
+      opacity: 0.9;
+      margin-left: auto;
     }
 
     @keyframes slideInFromRight {
@@ -827,7 +843,12 @@ function injectJobSprintStyles() {
     }
   `;
 
-  document.head.appendChild(style);
+  try {
+    document.head.appendChild(style);
+    console.log('[Styles] JobSprint styles successfully injected');
+  } catch (error) {
+    console.error('[Styles] Error injecting styles:', error);
+  }
 }
 
 /**
@@ -2980,6 +3001,7 @@ function updateModeButtonStates() {
  * Create visual overlay to indicate tracking mode is active (CSP-compliant)
  */
 function createTrackingOverlay() {
+  console.log('[Overlay] createTrackingOverlay() called');
   removeTrackingOverlay();
 
   injectJobSprintStyles(); // Ensure styles are injected
@@ -3024,8 +3046,20 @@ function createTrackingOverlay() {
   overlay.appendChild(mode);
   overlay.appendChild(exitBtn);
 
-  document.body.appendChild(overlay);
-  mouseTrackingOverlay = overlay;
+  // Ensure document.body exists before appending
+  if (!document.body) {
+    console.error('[Overlay] document.body does not exist! Cannot create overlay.');
+    return;
+  }
+
+  try {
+    document.body.appendChild(overlay);
+    mouseTrackingOverlay = overlay;
+    console.log('[Overlay] Overlay successfully appended to document.body');
+  } catch (error) {
+    console.error('[Overlay] Error appending overlay to document.body:', error);
+    return;
+  }
 
   // Add event listener for exit button
   if (exitBtn) {
