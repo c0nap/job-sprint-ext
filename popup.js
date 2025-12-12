@@ -211,10 +211,15 @@ function appendToConsole(entry) {
 
   consoleOutput.appendChild(logLine);
 
-  // Force scroll to bottom after DOM update
-  requestAnimationFrame(() => {
+  // Force scroll to bottom - multiple attempts to ensure it works
+  const scrollToBottom = () => {
     consoleOutput.scrollTop = consoleOutput.scrollHeight;
-  });
+  };
+
+  scrollToBottom(); // Immediate
+  requestAnimationFrame(scrollToBottom); // After paint
+  setTimeout(scrollToBottom, 0); // After current task
+  setTimeout(scrollToBottom, 10); // Backup
 }
 
 /**
