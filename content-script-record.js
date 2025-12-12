@@ -631,11 +631,18 @@ async function handleInputChange(input) {
 
   // Extract question
   const question = extractQuestionForInput(input);
-  if (!question || question.length < 3) {
-    logRecord('warn', 'Could not extract question for input', {
+
+  // Validate question quality (not just "Yes"/"No" and reasonable length)
+  const isValidQuestion = question &&
+    question.length >= 5 &&
+    !['yes', 'no', 'true', 'false'].includes(question.toLowerCase().trim());
+
+  if (!isValidQuestion) {
+    logRecord('warn', 'Could not extract valid question for input', {
       type: input.type,
       name: input.name,
-      id: input.id
+      id: input.id,
+      extractedQuestion: question
     });
     return;
   }
