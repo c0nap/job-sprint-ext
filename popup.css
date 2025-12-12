@@ -713,6 +713,11 @@ footer a:hover {
   color: #d4d4d4;
 }
 
+.console-warn {
+  color: #dcdcaa;
+  font-weight: 500;
+}
+
 .console-error {
   color: #f48771;
   font-weight: 500;
