@@ -560,6 +560,34 @@ footer a:hover {
   color: #856404;
 }
 
+.modal-error {
+  margin-bottom: 20px;
+  padding: 16px;
+  background-color: #f8d7da;
+  border: 2px solid #f5c6cb;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #721c24;
+  line-height: 1.6;
+}
+
+.modal-error strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #721c24;
+}
+
+.modal-error a {
+  color: #0056b3;
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.modal-error a:hover {
+  color: #004085;
+}
+
 .form-field {
   margin-bottom: 16px;
 }
@@ -572,7 +600,9 @@ footer a:hover {
   font-size: 14px;
 }
 
-.form-field input {
+.form-field input,
+.form-field textarea,
+.form-field select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid #cbd5e0;
@@ -581,7 +611,9 @@ footer a:hover {
   font-family: inherit;
 }
 
-.form-field input:focus {
+.form-field input:focus,
+.form-field textarea:focus,
+.form-field select:focus {
   outline: none;
   border-color: #007bff;
   box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
@@ -590,6 +622,11 @@ footer a:hover {
 .form-field input[readonly] {
   background-color: #f5f5f5;
   cursor: not-allowed;
+}
+
+.form-field textarea {
+  resize: vertical;
+  min-height: 80px;
 }
 
 .modal-actions {

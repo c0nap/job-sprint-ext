@@ -4,20 +4,98 @@
  * Features: Clipboard macros, job data extraction, autofill
  */
 
+// Connection port for detecting popup closure
+let contentScriptPort = null;
+
 // Initialize all popup features when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   initializeDebugConsole();
   log('JobSprint Popup loaded');
+
+  // Load mode colors early
+  await loadModeColors();
+
+  // Apply colors to mode buttons after loading
+  applyModeColorsToButtons();
 
   initializeClipboardMacros();
   initializeExtraction();
   initializeAutofill();
   initializeSettings();
   initializeManualEntryModal();
+  initializeMouseTracking();
 
   // Restore UI state from last session
   restoreUIState();
+
+  // Establish connection with content script for cleanup on popup close
+  initializeContentScriptConnection();
+
+  // Save extended UI state periodically to ensure it's captured before close
+  setInterval(saveExtendedUIState, 1000);
 });
+
+// Listen for ping messages from content script (used to detect popup alive)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'ping') {
+    sendResponse({ alive: true });
+    return false; // Synchronous response
+  }
+});
+
+/**
+ * Initialize connection with content script to detect popup closure
+ * Sends keepalive messages to maintain connection and cleanup on disconnect
+ */
+async function initializeContentScriptConnection() {
+  try {
+    const sourceTab = await getSourceTab();
+    if (!sourceTab) {
+      log('[Connection] No source tab found, skipping connection init');
+      return;
+    }
+
+    // Send a message to content script to establish connection
+    chrome.tabs.sendMessage(
+      sourceTab.id,
+      { action: 'popupOpened' },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          log('[Connection] Could not connect to content script:', chrome.runtime.lastError.message);
+        } else {
+          log('[Connection] Connected to content script');
+        }
+      }
+    );
+  } catch (error) {
+    log('[Connection] Error initializing connection:', error.message);
+  }
+}
+
+/**
+ * Save extended UI state including mouse tracking and modal state
+ */
+function saveExtendedUIState() {
+  // Get the modal state
+  const modal = document.getElementById('manualEntryModal');
+  const isModalOpen = modal && modal.style.display === 'flex';
+
+  // Save tracking state
+  const state = {
+    currentFolder,
+    navigationPath,
+    timestamp: Date.now(),
+    // Extended state for restoration
+    isModalOpen: isModalOpen,
+    currentMode: currentMode  // Mode for mouse tracking
+  };
+
+  chrome.storage.local.set({ jobsprint_ui_state: state }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('Failed to save extended UI state:', chrome.runtime.lastError);
+    }
+  });
+}
 
 // ============ DEBUG CONSOLE ============
 
@@ -428,6 +506,7 @@ function saveUIState() {
 /**
  * Restore UI state from chrome.storage.local
  * Reopens the last viewed folder if user was browsing clipboard macros
+ * Also restores modal state and mouse tracking mode if they were active
  */
 function restoreUIState() {
   chrome.storage.local.get(['jobsprint_ui_state'], (result) => {
@@ -444,6 +523,12 @@ function restoreUIState() {
     if (age > 5 * 60 * 1000) {
       chrome.storage.local.remove('jobsprint_ui_state');
       return;
+    }
+
+    // Restore mouse tracking mode if it was saved
+    if (state.currentMode) {
+      currentMode = state.currentMode;
+      log(`[UI] Restoring mouse tracking mode: ${currentMode}`);
     }
 
     // Restore folder view if user was in a folder
@@ -499,6 +584,10 @@ function restoreUIState() {
         );
       }, 100);
     }
+
+    // Note: We don't automatically reopen the modal because the form state
+    // is preserved by the browser, so the user's data is still there.
+    // When they focus a field again, mouse tracking will start automatically.
   });
 }
 
@@ -1046,6 +1135,7 @@ const EXTRACT_COOLDOWN_MS = 2000; // 2 seconds
  */
 function initializeExtraction() {
   const extractBtn = document.getElementById('extractBtn');
+  const manualEntryBtn = document.getElementById('manualEntryBtn');
   const statusDiv = document.getElementById('extractionStatus');
 
   if (!extractBtn || !statusDiv) return;
@@ -1053,6 +1143,12 @@ function initializeExtraction() {
   extractBtn.addEventListener('click', () => {
     handleExtractClick(extractBtn, statusDiv);
   });
+
+  if (manualEntryBtn) {
+    manualEntryBtn.addEventListener('click', () => {
+      handleManualEntryClick(manualEntryBtn, statusDiv);
+    });
+  }
 }
 
 /**
@@ -1144,6 +1240,51 @@ async function handleExtractClick(button, statusDiv) {
 }
 
 /**
+ * Handle manual entry button click
+ * Opens the manual entry modal directly without automatic extraction
+ * @param {HTMLButtonElement} button - Manual entry button element
+ * @param {HTMLElement} statusDiv - Status message display element
+ */
+async function handleManualEntryClick(button, statusDiv) {
+  log('[ManualEntry] Manual entry button clicked');
+
+  // Get the source tab
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    logError('[ManualEntry] No source tab found');
+    showStatus(statusDiv, 'error', '✗ No active tab found. Please reopen the popup from the job page.');
+    return;
+  }
+
+  log(`[ManualEntry] Source tab found: ${activeTab.url}`);
+
+  // Check if tab URL is accessible
+  if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+    logError(`[ManualEntry] Invalid tab URL: ${activeTab.url}`);
+    showStatus(statusDiv, 'error', '✗ Cannot use this page. Chrome extension pages and settings are not supported.');
+    return;
+  }
+
+  // Create minimal job data with just the URL
+  const jobData = {
+    url: activeTab.url,
+    title: '',
+    company: '',
+    location: '',
+    role: '',
+    tailor: '',
+    description: '',
+    compensation: '',
+    pay: '',
+    source: ''
+  };
+
+  // Show manual entry modal
+  showManualEntryModal(button, statusDiv, jobData);
+  clearStatus(statusDiv);
+}
+
+/**
  * Log extracted job data via service worker
  * Checks if manual entry is needed before logging
  * @param {HTMLButtonElement} button - Extract button element
@@ -1177,25 +1318,80 @@ function logJobData(button, statusDiv, jobData) {
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Job data to submit
+ * @param {boolean} fromModal - Whether this submission is from the manual entry modal
  */
-function submitJobData(button, statusDiv, jobData) {
+function submitJobData(button, statusDiv, jobData, fromModal = false) {
   log('[Extract] Submitting job data to service worker...');
   showStatus(statusDiv, 'info', 'ℹ Logging to Google Sheets...');
 
   chrome.runtime.sendMessage(
     { action: 'logJobData', data: jobData },
-    (logResponse) => {
+    async (logResponse) => {
       if (logResponse?.success) {
         log('[Extract] Job data logged successfully');
         showStatus(statusDiv, 'success', '✓ Job data logged successfully!');
+
+        // Close modal if submission was from modal
+        if (fromModal) {
+          hideManualEntryModal();
+        }
       } else {
         const errorMsg = logResponse?.error || 'Unknown error occurred';
         logError(`[Extract] Failed to log: ${errorMsg}`);
-        showStatus(statusDiv, 'error', `✗ Failed to log data: ${errorMsg}`);
+
+        // If submission failed from modal, keep modal open and show error there
+        if (fromModal) {
+          const errorContainer = document.getElementById('manualEntryError');
+          if (errorContainer) {
+            errorContainer.innerHTML = await generateModalErrorMessage(errorMsg);
+            errorContainer.style.display = 'block';
+          }
+        } else {
+          showStatus(statusDiv, 'error', `✗ Failed to log data: ${errorMsg}`);
+        }
       }
       resetExtractButton(button);
     }
   );
+}
+
+/**
+ * Generate error message with links for modal display
+ * @param {string} errorMsg - Error message from submission
+ * @returns {Promise<string>} HTML error message with links
+ */
+async function generateModalErrorMessage(errorMsg) {
+  // Get configuration to create links
+  const config = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: 'getConfig' }, (response) => {
+      resolve(response?.config || {});
+    });
+  });
+
+  const spreadsheetId = config.SPREADSHEET_ID || '';
+  const appsScriptEditorUrl = config.APPS_SCRIPT_EDITOR_URL || '';
+
+  let errorHtml = `<strong>✗ Submission Failed</strong>`;
+  errorHtml += `<div style="margin-top: 8px;">${errorMsg}</div>`;
+
+  // Add helpful links for debugging
+  if (spreadsheetId || appsScriptEditorUrl) {
+    errorHtml += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #f5c6cb;">`;
+    errorHtml += `<strong>Quick Links for Debugging:</strong><br>`;
+
+    if (spreadsheetId) {
+      const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+      errorHtml += `• <a href="${sheetUrl}" target="_blank">Open Spreadsheet</a><br>`;
+    }
+
+    if (appsScriptEditorUrl) {
+      errorHtml += `• <a href="${appsScriptEditorUrl}" target="_blank">Open Apps Script Editor</a><br>`;
+    }
+
+    errorHtml += `</div>`;
+  }
+
+  return errorHtml;
 }
 
 /**
@@ -1226,11 +1422,16 @@ function handleExtractError(button, statusDiv, message) {
 
 /**
  * Reset extract button to default state
- * @param {HTMLButtonElement} button - Extract button element
+ * @param {HTMLButtonElement} button - Extract or manual entry button element
  */
 function resetExtractButton(button) {
   button.disabled = false;
-  button.textContent = 'Extract & Log Job Data';
+  // Reset to appropriate text based on button ID
+  if (button.id === 'manualEntryBtn') {
+    button.textContent = 'Manual Entry';
+  } else {
+    button.textContent = 'Extract & Log Job Data';
+  }
 }
 
 // ============ AUTOFILL ============
@@ -1374,11 +1575,118 @@ function initializeManualEntryModal() {
     e.preventDefault();
     handleManualEntrySubmit();
   });
+
+  // Add mouse tracking to manual entry fields
+  setupFieldMouseTracking();
+
+  // Add mode selector button handlers
+  setupModeSelectorButtons();
+}
+
+/**
+ * Setup mode selector buttons
+ * Allows user to manually select extraction mode via UI buttons
+ * Now activates on mouseover for instant feedback
+ */
+function setupModeSelectorButtons() {
+  const modeButtons = document.querySelectorAll('.mode-btn');
+
+  modeButtons.forEach(button => {
+    button.addEventListener('mouseenter', async () => {
+      const mode = button.getAttribute('data-mode');
+      log(`[ModeSelector] Manually selected mode: ${mode}`);
+
+      // Update the global current mode
+      currentMode = mode;
+
+      // Update button states
+      updateModeButtonStates(mode);
+
+      // Update the active field's border color to match mode
+      if (currentActiveFieldElement) {
+        updateFieldBorderColor(currentActiveFieldElement, mode);
+      }
+
+      // Send mode change to content script
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'changeExtractionMode', mode: mode },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[ModeSelector] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+    });
+  });
+}
+
+/**
+ * Setup mouse tracking for manual entry form fields
+ * When a field is focused, mouse tracking is activated on the source page
+ */
+function setupFieldMouseTracking() {
+  // Fields that support mouse tracking
+  const trackableFields = [
+    'manualJobTitle',
+    'manualCompany',
+    'manualLocation',
+    'manualNotes',
+    'manualCompensation',
+    'manualPay'
+  ];
+
+  log(`[MouseTracking] Setting up field tracking for ${trackableFields.length} fields`);
+
+  trackableFields.forEach(fieldId => {
+    const field = document.getElementById(fieldId);
+    if (!field) {
+      logError(`[MouseTracking] Field not found: ${fieldId}`);
+      return;
+    }
+
+    log(`[MouseTracking] Field found and listener added: ${fieldId}`);
+
+    // Start tracking on focus
+    field.addEventListener('focus', () => {
+      log(`[Field] Focused: ${fieldId}`);
+      currentActiveFieldElement = field; // Store the active field
+      startMouseTrackingForField(fieldId);
+
+      // Add visual indicator that tracking is active with current mode color
+      // Use the persisted currentMode instead of defaulting to 'words'
+      updateFieldBorderColor(field, currentMode);
+
+      // Also update button states to match current mode
+      updateModeButtonStates(currentMode);
+    });
+
+    // Stop tracking on blur
+    field.addEventListener('blur', () => {
+      log(`[Field] Blurred: ${fieldId}`);
+
+      // Small delay to allow click to register
+      setTimeout(() => {
+        if (currentlyFocusedField === fieldId) {
+          stopMouseTracking();
+        }
+      }, 100);
+
+      // Remove visual indicator
+      field.style.borderColor = '';
+      field.style.borderWidth = '';
+      field.style.boxShadow = '';
+      currentActiveFieldElement = null; // Clear the stored field
+    });
+  });
 }
 
 /**
  * Show manual entry modal with pre-filled data
- * @param {HTMLButtonElement} button - Extract button element
+ * @param {HTMLButtonElement} button - Extract or manual entry button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Extracted job data to pre-fill
  */
@@ -1386,9 +1694,30 @@ function showManualEntryModal(button, statusDiv, jobData) {
   const modal = document.getElementById('manualEntryModal');
   if (!modal) return;
 
+  // Clear any previous error message
+  const errorContainer = document.getElementById('manualEntryError');
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+    errorContainer.innerHTML = '';
+  }
+
   // Store references for later use
-  modal.dataset.button = 'extractBtn';
-  modal.dataset.status = 'extractionStatus';
+  modal.dataset.button = button.id;
+  modal.dataset.status = statusDiv.id;
+
+  // Update modal title and info based on the source button
+  const modalTitle = document.getElementById('modalTitle');
+  const modalInfo = document.getElementById('modalInfo');
+
+  if (button.id === 'manualEntryBtn') {
+    // Manual entry was requested directly
+    modalTitle.textContent = 'Add Job Details';
+    modalInfo.textContent = 'Please fill in the job details below:';
+  } else {
+    // Auto-extraction happened but data is missing
+    modalTitle.textContent = 'Review Job Data';
+    modalInfo.textContent = 'Some job details couldn\'t be extracted automatically. Please review and fill in the missing information:';
+  }
 
   // Pre-fill form fields with extracted data
   document.getElementById('manualJobTitle').value = jobData.title || '';
@@ -1408,6 +1737,9 @@ function showManualEntryModal(button, statusDiv, jobData) {
   // Show the modal
   modal.style.display = 'flex';
 
+  // Apply mode colors to buttons (in case they weren't applied yet or settings changed)
+  applyModeColorsToButtons();
+
   // Reset button state
   resetExtractButton(button);
 }
@@ -1421,6 +1753,9 @@ function hideManualEntryModal() {
 
   modal.style.display = 'none';
 
+  // Stop any active mouse tracking
+  stopMouseTracking();
+
   // Clear form
   document.getElementById('manualEntryForm').reset();
 }
@@ -1432,6 +1767,13 @@ function handleManualEntrySubmit() {
   const modal = document.getElementById('manualEntryModal');
   const button = document.getElementById(modal.dataset.button);
   const statusDiv = document.getElementById(modal.dataset.status);
+
+  // Clear any previous error message
+  const errorContainer = document.getElementById('manualEntryError');
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+    errorContainer.innerHTML = '';
+  }
 
   // Get form values
   const manualData = {
@@ -1456,11 +1798,8 @@ function handleManualEntrySubmit() {
     ...manualData
   };
 
-  // Hide modal
-  hideManualEntryModal();
-
-  // Submit the data
-  submitJobData(button, statusDiv, finalData);
+  // Submit the data (modal will stay open on error, close on success)
+  submitJobData(button, statusDiv, finalData, true);
 }
 
 // ============ UTILITY FUNCTIONS ============
@@ -1511,4 +1850,387 @@ function showError(message) {
  */
 function showSuccess(message) {
   log(`✓ ${message}`);
+}
+
+// ============ INTERACTIVE MOUSE TRACKING ============
+
+// Track currently focused field for mouse tracking
+let currentlyFocusedField = null;
+let currentActiveFieldElement = null; // Track the actual field DOM element
+let currentMode = 'smart'; // Track the current mode globally (persists across fields)
+
+// Mode colors (loaded from storage)
+let popupModeColors = {
+  words: '#2ecc71',
+  smart: '#3498db',
+  chars: '#9b59b6'
+};
+
+/**
+ * Load mode colors from chrome storage
+ */
+async function loadModeColors() {
+  try {
+    const result = await chrome.storage.sync.get([
+      'WORD_MODE_COLOR',
+      'SENTENCE_MODE_COLOR',
+      'CHAR_MODE_COLOR'
+    ]);
+
+    popupModeColors = {
+      words: result.WORD_MODE_COLOR || '#2ecc71',
+      smart: result.SENTENCE_MODE_COLOR || '#3498db',
+      chars: result.CHAR_MODE_COLOR || '#9b59b6'
+    };
+
+    log('[Popup] Mode colors loaded:', popupModeColors);
+  } catch (error) {
+    logError('[Popup] Error loading mode colors:', error);
+  }
+}
+
+/**
+ * Get border color for a specific mode
+ * @param {string} mode - Mode name: 'words', 'smart', 'chars'
+ * @returns {string} Border color for the mode
+ */
+function getModeBorderColor(mode) {
+  switch (mode) {
+    case 'smart':
+      return popupModeColors.smart;
+    case 'chars':
+      return popupModeColors.chars;
+    case 'words':
+      return popupModeColors.words;
+    default:
+      return '#FF6B6B'; // Red (default)
+  }
+}
+
+/**
+ * Apply loaded mode colors to mode buttons
+ * Updates button border and background colors to match settings
+ */
+function applyModeColorsToButtons() {
+  const modeButtons = document.querySelectorAll('.mode-btn');
+
+  modeButtons.forEach(btn => {
+    const mode = btn.getAttribute('data-mode');
+    const color = getModeBorderColor(mode);
+
+    // Update border color
+    btn.style.borderColor = color;
+
+    // If this is the active mode (smart is default), apply background color
+    if (mode === currentMode) {
+      btn.style.backgroundColor = color;
+      btn.style.color = 'white';
+    } else {
+      btn.style.backgroundColor = '#fff';
+      btn.style.color = color;
+    }
+  });
+
+  log('[Popup] Mode button colors applied:', popupModeColors);
+}
+
+/**
+ * Update mode button states to reflect current mode
+ * @param {string} mode - Mode name
+ */
+function updateModeButtonStates(mode) {
+  const modeButtons = document.querySelectorAll('.mode-btn');
+  modeButtons.forEach(btn => {
+    const btnMode = btn.getAttribute('data-mode');
+    const color = getModeBorderColor(btnMode);
+
+    // Always update border color to match settings
+    btn.style.borderColor = color;
+
+    if (btnMode === mode) {
+      // Selected state - use loaded color
+      btn.style.backgroundColor = color;
+      btn.style.color = '#fff';
+    } else {
+      // Unselected state - white background with colored text
+      btn.style.backgroundColor = '#fff';
+      btn.style.color = color;
+    }
+  });
+}
+
+/**
+ * Update field border color based on mode
+ * @param {HTMLElement} field - Field element to update
+ * @param {string} mode - Mode name
+ */
+function updateFieldBorderColor(field, mode) {
+  const color = getModeBorderColor(mode);
+  field.style.borderColor = color;
+  field.style.borderWidth = '2px';
+  field.style.boxShadow = `0 0 0 1px ${color}`;
+}
+
+/**
+ * Initialize mouse tracking message listener
+ * Listens for text extracted from page elements during mouse tracking
+ */
+function initializeMouseTracking() {
+  // Listen for messages from content script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'mouseHoverText') {
+      handleMouseHoverText(message.fieldId, message.text, message.confirmed);
+      sendResponse({ success: true });
+      return true;
+    }
+
+    // Listen for mode changes from content script (when using Shift/Ctrl modifiers)
+    if (message.action === 'modeChanged') {
+      log(`[ModeSync] Mode changed to: ${message.mode}`);
+      currentMode = message.mode;
+      updateModeButtonStates(message.mode);
+
+      // Also update active field border if there is one
+      if (currentActiveFieldElement) {
+        updateFieldBorderColor(currentActiveFieldElement, message.mode);
+      }
+
+      // Immediately save the mode change to storage
+      // This ensures disabled mode (from X button) is persisted before popup closes
+      saveExtendedUIState();
+
+      sendResponse({ success: true });
+      return true;
+    }
+  });
+
+  log('[MouseTracking] Listener initialized');
+}
+
+/**
+ * Handle text received from mouse hover on page
+ * @param {string} fieldId - ID of the field to fill
+ * @param {string} text - Text extracted from hovered element
+ * @param {boolean} confirmed - Whether user clicked to confirm
+ */
+function handleMouseHoverText(fieldId, text, confirmed) {
+  const field = document.getElementById(fieldId);
+
+  if (!field) {
+    logError(`[MouseTracking] Field not found: ${fieldId}`);
+    return;
+  }
+
+  // Update field value
+  field.value = text;
+
+  // Show visual feedback
+  if (confirmed) {
+    log(`[MouseTracking] Auto-filled ${fieldId}: ${text.substring(0, 50)}...`);
+
+    // Flash field to indicate successful fill
+    flashFieldSuccess(field);
+
+    // Clear focus to allow selecting next field
+    currentlyFocusedField = null;
+  } else {
+    // Just preview, don't log
+    // Add preview styling
+    field.style.backgroundColor = '#fff9e6';
+  }
+}
+
+/**
+ * Flash field with success color
+ * @param {HTMLElement} field - Field to flash
+ */
+function flashFieldSuccess(field) {
+  const originalBg = field.style.backgroundColor;
+
+  field.style.backgroundColor = '#d4edda';
+  field.style.transition = 'background-color 0.3s';
+
+  setTimeout(() => {
+    field.style.backgroundColor = originalBg;
+  }, 1000);
+}
+
+/**
+ * Start mouse tracking for a specific field
+ * @param {string} fieldId - ID of the field to track for
+ */
+async function startMouseTrackingForField(fieldId) {
+  log(`[MouseTracking] Starting tracking for field: ${fieldId}`);
+
+  currentlyFocusedField = fieldId;
+
+  // Get source tab
+  const sourceTab = await getSourceTab();
+  if (!sourceTab) {
+    logError('[MouseTracking] No source tab found');
+    return;
+  }
+
+  // Send message to content script to start tracking with current mode
+  chrome.tabs.sendMessage(
+    sourceTab.id,
+    { action: 'startMouseTracking', fieldId: fieldId, mode: currentMode },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        logError(`[MouseTracking] Error: ${chrome.runtime.lastError.message}`);
+      } else {
+        log('[MouseTracking] Tracking started on page');
+      }
+    }
+  );
+
+  // Start keyboard event relay (popup captures keys and forwards to content script)
+  startKeyboardRelay();
+}
+
+/**
+ * Stop mouse tracking
+ */
+async function stopMouseTracking() {
+  if (!currentlyFocusedField) return;
+
+  log('[MouseTracking] Stopping tracking');
+
+  // Get source tab
+  const sourceTab = await getSourceTab();
+  if (!sourceTab) return;
+
+  // Send message to content script to stop tracking
+  chrome.tabs.sendMessage(
+    sourceTab.id,
+    { action: 'stopMouseTracking' },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        logError(`[MouseTracking] Error: ${chrome.runtime.lastError.message}`);
+      }
+    }
+  );
+
+  // Stop keyboard event relay
+  stopKeyboardRelay();
+
+  currentlyFocusedField = null;
+}
+
+// Keyboard relay state
+let keyboardRelayActive = false;
+let keyboardRelayHandler = null;
+
+/**
+ * Start keyboard event relay from popup to content script
+ * Captures keyboard events in popup and forwards them to content script
+ */
+function startKeyboardRelay() {
+  if (keyboardRelayActive) return;
+
+  log('[KeyboardRelay] Starting keyboard event relay');
+
+  keyboardRelayHandler = async (event) => {
+    // Only relay specific keys that are used for mouse tracking
+    const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key);
+    const isEscape = event.key === 'Escape';
+    const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key);
+    const hasModifier = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
+
+    // Relay if it's an arrow key, escape, modifier key press, or if modifiers are active
+    if (isArrowKey || isEscape || isModifierKey || hasModifier) {
+      log(`[KeyboardRelay] Relaying key: ${event.key}, modifiers: Shift=${event.shiftKey}, Ctrl=${event.ctrlKey}, Alt=${event.altKey}`);
+
+      // Get source tab
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      // Create a serializable representation of the keyboard event
+      const keyEventData = {
+        key: event.key,
+        code: event.code,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        type: event.type // 'keydown' or 'keyup'
+      };
+
+      // Send to content script
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'relayKeyboardEvent', event: keyEventData },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[KeyboardRelay] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+
+      // For arrow keys WITHOUT Shift/Ctrl modifiers, prevent default to allow granularity adjustment
+      // When Shift/Ctrl are held, allow default behavior (cursor movement) but still relay for text mirroring
+      if (isArrowKey && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+      }
+      // For escape, always prevent default
+      if (isEscape) {
+        event.preventDefault();
+      }
+    }
+  };
+
+  // Also relay keyup events for modifiers
+  keyboardRelayHandlerUp = async (event) => {
+    const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key);
+
+    if (isModifierKey) {
+      log(`[KeyboardRelay] Relaying keyup: ${event.key}`);
+
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      const keyEventData = {
+        key: event.key,
+        code: event.code,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        type: 'keyup'
+      };
+
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'relayKeyboardEvent', event: keyEventData },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[KeyboardRelay] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+    }
+  };
+
+  // Add event listeners to document (both keydown and keyup)
+  document.addEventListener('keydown', keyboardRelayHandler, true);
+  document.addEventListener('keyup', keyboardRelayHandlerUp, true);
+  keyboardRelayActive = true;
+
+  log('[KeyboardRelay] Keyboard relay active (keydown + keyup)');
+}
+
+/**
+ * Stop keyboard event relay
+ */
+function stopKeyboardRelay() {
+  if (!keyboardRelayActive) return;
+
+  log('[KeyboardRelay] Stopping keyboard event relay');
+
+  if (keyboardRelayHandler) {
+    document.removeEventListener('keydown', keyboardRelayHandler, true);
+    keyboardRelayHandler = null;
+  }
+
+  keyboardRelayActive = false;
 }
