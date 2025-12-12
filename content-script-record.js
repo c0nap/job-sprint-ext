@@ -148,7 +148,15 @@ function attachInputListeners(input) {
 
   // For checkboxes and radio buttons, use click event (more reliable)
   if (input.type === 'checkbox' || input.type === 'radio') {
-    const clickHandler = (e) => handleInputChangeDebounced(e.target);
+    const clickHandler = (e) => {
+      logRecord('info', `${input.type} clicked`, {
+        id: e.target.id,
+        name: e.target.name,
+        checked: e.target.checked,
+        value: e.target.value
+      });
+      handleInputChangeDebounced(e.target);
+    };
     input.addEventListener('click', clickHandler);
     handlers.push({ event: 'click', handler: clickHandler });
     logRecord('info', `Attached click listener to ${input.type}`, { id: input.id, name: input.name });
@@ -590,11 +598,26 @@ async function handleFileInput(input) {
  * Handle input value change - capture Q&A pair
  */
 async function handleInputChange(input) {
-  if (!recordModeActive) return;
+  if (!recordModeActive) {
+    logRecord('warn', 'Input changed but record mode not active');
+    return;
+  }
 
   // Skip if input is empty
   const value = getInputValue(input);
+  logRecord('info', 'Getting input value', {
+    type: input.type,
+    id: input.id,
+    value: value,
+    checked: input.checked
+  });
+
   if (!value || value.trim().length === 0) {
+    logRecord('warn', 'Skipping input - no value', {
+      type: input.type,
+      id: input.id,
+      rawValue: value
+    });
     return;
   }
 
