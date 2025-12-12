@@ -698,18 +698,22 @@ footer a:hover {
   flex: 1;
   overflow-y: scroll;
   overflow-x: hidden;
-  padding: 8px 12px;
-  padding-bottom: 20px;
+  padding: 8px 12px 60px 12px;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 11px;
   line-height: 1.4;
   min-height: 30px;
   max-height: 100%;
+  box-sizing: border-box;
 }
 
 .console-line {
-  margin-bottom: 2px;
+  margin-bottom: 3px;
   word-wrap: break-word;
+}
+
+.console-line:last-child {
+  margin-bottom: 30px;
 }
 
 .console-log {

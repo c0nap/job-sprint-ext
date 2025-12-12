@@ -230,22 +230,30 @@ function monitorCustomControls() {
     logRecord('info', `Found ${customCount} custom controls (role="radio"/"checkbox"/"button")`);
   }
 
-  // Also look for common custom control patterns (buttons/divs that change classes)
-  const clickableElements = document.querySelectorAll('button:not([type="submit"]):not([type="button"]), [class*="option"], [class*="choice"], [class*="button"]');
+  // Also look for common custom control patterns (but be selective to avoid false positives)
+  // Only look for elements that are likely to be form controls, not containers
+  const clickableElements = document.querySelectorAll('button:not([type="submit"]):not([type="button"]), [class*="radio-option"], [class*="checkbox-option"], [class*="choice-button"]');
 
   clickableElements.forEach(element => {
     // Skip if already monitored or if it's a submit button
     if (monitoredInputs.has(element)) return;
     if (element.type === 'submit' || element.type === 'button') return;
 
-    // Look for patterns that indicate it's a form control
+    // Only monitor if it's a button or has tabindex (interactive)
+    const isInteractive =
+      element.tagName === 'BUTTON' ||
+      element.hasAttribute('tabindex') ||
+      element.hasAttribute('role');
+
+    if (!isInteractive) return;
+
+    // Look for patterns that indicate it's a form control (be more specific)
     const classList = element.className.toLowerCase();
     const isFormControl =
-      classList.includes('radio') ||
-      classList.includes('checkbox') ||
-      classList.includes('option') ||
-      classList.includes('choice') ||
-      classList.includes('toggle');
+      (classList.includes('radio') && (classList.includes('option') || classList.includes('button'))) ||
+      (classList.includes('checkbox') && (classList.includes('option') || classList.includes('button'))) ||
+      (classList.includes('choice') && classList.includes('button')) ||
+      classList.includes('toggle-button');
 
     if (isFormControl) {
       const clickHandler = () => handleCustomControlClick(element);
