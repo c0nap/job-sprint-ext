@@ -24,6 +24,11 @@ function logRecord(level, message, data = null) {
   }).catch(() => {});
 }
 
+// Send initialization message to popup debug console
+setTimeout(() => {
+  logRecord('info', 'Record Mode script initialized');
+}, 100);
+
 // ============ RECORD MODE CONTROL ============
 
 /**
@@ -1073,8 +1078,6 @@ function notifyRecordStatus(status, count) {
 // ============ MESSAGE LISTENER ============
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('[Record Mode] Received message:', message);
-
   // Handle record mode messages
   if (!message || !message.action) {
     return false; // Not our message
@@ -1083,13 +1086,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   try {
     switch (message.action) {
       case 'startRecordMode':
-        console.log('[Record Mode] Starting record mode...');
+        logRecord('info', 'Received startRecordMode message');
         try {
           startRecordMode();
-          console.log('[Record Mode] Record mode started successfully');
           sendResponse({ success: true });
         } catch (error) {
-          console.error('[Record Mode] Error in startRecordMode:', error);
+          logRecord('error', 'Error starting record mode', { error: error.message });
           sendResponse({ success: false, error: error.message });
         }
         return false; // Synchronous response
