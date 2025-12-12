@@ -7,6 +7,9 @@
 // Connection port for detecting popup closure
 let contentScriptPort = null;
 
+// Job data schema (loaded from storage)
+let jobDataSchema = null;
+
 // Initialize all popup features when DOM is ready
 document.addEventListener('DOMContentLoaded', async () => {
   initializeDebugConsole();
@@ -1545,6 +1548,178 @@ function initializeSettings() {
 /**
  * Initialize manual data entry modal event listeners
  */
+// ============ DYNAMIC SCHEMA FUNCTIONS ============
+
+/**
+ * Load job data schema from storage
+ * Falls back to default schema if not found
+ */
+async function loadJobDataSchema() {
+  try {
+    const result = await chrome.storage.sync.get(['JOB_DATA_SCHEMA']);
+    if (result.JOB_DATA_SCHEMA && result.JOB_DATA_SCHEMA.columns) {
+      jobDataSchema = result.JOB_DATA_SCHEMA;
+      log('[Schema] Loaded custom schema with ' + jobDataSchema.columns.length + ' columns');
+    } else {
+      // Use default schema from settings.js DEFAULT_SCHEMA
+      jobDataSchema = await getDefaultSchema();
+      log('[Schema] Using default schema with ' + jobDataSchema.columns.length + ' columns');
+    }
+
+    // Generate form fields from schema
+    generateDynamicFormFields();
+  } catch (error) {
+    logError('[Schema] Error loading schema: ' + error.message);
+    // Use fallback minimal schema
+    jobDataSchema = { columns: [] };
+    generateDynamicFormFields();
+  }
+}
+
+/**
+ * Get default schema (matches DEFAULT_SCHEMA in settings.js)
+ */
+async function getDefaultSchema() {
+  return {
+    columns: [
+      { id: 'company', label: 'Employer', type: 'text', placeholder: 'e.g., Google', tooltip: 'Company or organization name', required: false, readonly: false },
+      { id: 'title', label: 'Job Title', type: 'text', placeholder: 'e.g., Software Engineer', tooltip: 'Position or role title', required: false, readonly: false },
+      { id: 'location', label: 'Location', type: 'text', placeholder: 'e.g., San Francisco, CA', tooltip: 'Job location', required: false, readonly: false },
+      { id: 'role', label: 'Role', type: 'select', placeholder: '', tooltip: 'Job role category', required: false, readonly: false, options: ['CODE', 'DSCI', 'STAT', 'R&D'] },
+      { id: 'tailor', label: 'Tailor', type: 'select', placeholder: 'Same as Role', tooltip: 'Custom role tailoring', required: false, readonly: false, options: ['CODE', 'DSCI', 'STAT', 'R&D'] },
+      { id: 'description', label: 'Notes', type: 'textarea', placeholder: 'Additional notes or job description', tooltip: 'Job description or notes', required: false, readonly: false },
+      { id: 'compensation', label: 'Compensation', type: 'text', placeholder: 'e.g., $65.00 - $75.00 / hour', tooltip: 'Salary range', required: false, readonly: false },
+      { id: 'pay', label: 'Pay', type: 'text', placeholder: 'e.g., $70.00', tooltip: 'Specific pay amount', required: false, readonly: false },
+      { id: 'url', label: 'Portal Link', type: 'url', placeholder: 'https://...', tooltip: 'Job posting URL', required: false, readonly: true },
+      { id: 'source', label: 'Board', type: 'select', placeholder: 'Auto-detect from URL', tooltip: 'Job board or source', required: false, readonly: false, options: ['Indeed', 'Handshake', 'Symplicity', 'Google', 'LinkedIn', 'Website', 'Other'] }
+    ]
+  };
+}
+
+/**
+ * Generate dynamic form fields from schema
+ */
+function generateDynamicFormFields() {
+  const container = document.getElementById('dynamicFormFields');
+  if (!container) {
+    logError('[Schema] Dynamic form container not found');
+    return;
+  }
+
+  container.innerHTML = '';
+
+  if (!jobDataSchema || !jobDataSchema.columns || jobDataSchema.columns.length === 0) {
+    container.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">No form fields configured. Please configure the schema in Settings.</p>';
+    return;
+  }
+
+  jobDataSchema.columns.forEach(column => {
+    const fieldDiv = document.createElement('div');
+    fieldDiv.className = 'form-field';
+
+    const label = document.createElement('label');
+    label.setAttribute('for', `manual_${column.id}`);
+    label.textContent = column.label + (column.required ? ' *' : '');
+    if (column.tooltip) {
+      label.title = column.tooltip;
+    }
+
+    let inputElement;
+
+    switch (column.type) {
+      case 'textarea':
+        inputElement = document.createElement('textarea');
+        inputElement.rows = 3;
+        break;
+
+      case 'select':
+        inputElement = document.createElement('select');
+        // Add empty option if placeholder exists
+        if (column.placeholder) {
+          const emptyOption = document.createElement('option');
+          emptyOption.value = '';
+          emptyOption.textContent = column.placeholder;
+          inputElement.appendChild(emptyOption);
+        }
+        // Add options
+        if (column.options && Array.isArray(column.options)) {
+          column.options.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt;
+            inputElement.appendChild(option);
+          });
+        }
+        break;
+
+      default:
+        inputElement = document.createElement('input');
+        inputElement.type = column.type || 'text';
+    }
+
+    inputElement.id = `manual_${column.id}`;
+    inputElement.setAttribute('data-field-id', column.id);
+    if (column.placeholder) {
+      inputElement.placeholder = column.placeholder;
+    }
+    if (column.required) {
+      inputElement.required = true;
+    }
+    if (column.readonly) {
+      inputElement.readOnly = true;
+    }
+
+    fieldDiv.appendChild(label);
+    fieldDiv.appendChild(inputElement);
+    container.appendChild(fieldDiv);
+  });
+
+  log('[Schema] Generated ' + jobDataSchema.columns.length + ' form fields');
+
+  // Re-setup mouse tracking for new fields
+  setupFieldMouseTracking();
+}
+
+/**
+ * Populate dynamic form fields with job data
+ * @param {Object} jobData - Job data to populate into form
+ */
+function populateDynamicFormFields(jobData) {
+  if (!jobData || !jobDataSchema || !jobDataSchema.columns) {
+    return;
+  }
+
+  jobDataSchema.columns.forEach(column => {
+    const field = document.getElementById(`manual_${column.id}`);
+    if (field && jobData[column.id] !== undefined) {
+      field.value = jobData[column.id] || '';
+    }
+  });
+}
+
+/**
+ * Collect form values from dynamic fields
+ * @returns {Object} Object with field values keyed by field ID
+ */
+function collectDynamicFormValues() {
+  const values = {};
+
+  if (!jobDataSchema || !jobDataSchema.columns) {
+    return values;
+  }
+
+  jobDataSchema.columns.forEach(column => {
+    const field = document.getElementById(`manual_${column.id}`);
+    if (field) {
+      values[column.id] = field.value.trim();
+    }
+  });
+
+  return values;
+}
+
+// ============ MANUAL ENTRY MODAL ============
+
 function initializeManualEntryModal() {
   const modal = document.getElementById('manualEntryModal');
   const closeBtn = document.getElementById('closeModal');
@@ -1552,6 +1727,9 @@ function initializeManualEntryModal() {
   const form = document.getElementById('manualEntryForm');
 
   if (!modal || !closeBtn || !cancelBtn || !form) return;
+
+  // Load schema and generate form fields
+  loadJobDataSchema();
 
   // Close modal on X button
   closeBtn.addEventListener('click', () => {
@@ -1575,9 +1753,6 @@ function initializeManualEntryModal() {
     e.preventDefault();
     handleManualEntrySubmit();
   });
-
-  // Add mouse tracking to manual entry fields
-  setupFieldMouseTracking();
 
   // Add mode selector button handlers
   setupModeSelectorButtons();
@@ -1627,27 +1802,20 @@ function setupModeSelectorButtons() {
 /**
  * Setup mouse tracking for manual entry form fields
  * When a field is focused, mouse tracking is activated on the source page
+ * Now works dynamically with schema-defined fields
  */
 function setupFieldMouseTracking() {
-  // Fields that support mouse tracking
-  const trackableFields = [
-    'manualJobTitle',
-    'manualCompany',
-    'manualLocation',
-    'manualNotes',
-    'manualCompensation',
-    'manualPay'
-  ];
+  // Get all dynamically generated fields
+  const dynamicFields = document.querySelectorAll('#dynamicFormFields input, #dynamicFormFields textarea');
 
-  log(`[MouseTracking] Setting up field tracking for ${trackableFields.length} fields`);
+  log(`[MouseTracking] Setting up field tracking for ${dynamicFields.length} dynamic fields`);
 
-  trackableFields.forEach(fieldId => {
-    const field = document.getElementById(fieldId);
+  dynamicFields.forEach(field => {
     if (!field) {
-      logError(`[MouseTracking] Field not found: ${fieldId}`);
       return;
     }
 
+    const fieldId = field.getAttribute('data-field-id') || field.id;
     log(`[MouseTracking] Field found and listener added: ${fieldId}`);
 
     // Start tracking on focus
@@ -1719,17 +1887,8 @@ function showManualEntryModal(button, statusDiv, jobData) {
     modalInfo.textContent = 'Some job details couldn\'t be extracted automatically. Please review and fill in the missing information:';
   }
 
-  // Pre-fill form fields with extracted data
-  document.getElementById('manualJobTitle').value = jobData.title || '';
-  document.getElementById('manualCompany').value = jobData.company || '';
-  document.getElementById('manualLocation').value = jobData.location || '';
-  document.getElementById('manualUrl').value = jobData.url || '';
-  document.getElementById('manualRole').value = jobData.role || '';
-  document.getElementById('manualTailor').value = jobData.tailor || '';
-  document.getElementById('manualNotes').value = jobData.description || '';
-  document.getElementById('manualCompensation').value = jobData.compensation || '';
-  document.getElementById('manualPay').value = jobData.pay || '';
-  document.getElementById('manualBoard').value = jobData.source || '';
+  // Pre-fill form fields with extracted data (dynamic based on schema)
+  populateDynamicFormFields(jobData);
 
   // Store the full job data for later
   modal.dataset.jobData = JSON.stringify(jobData);
@@ -1775,19 +1934,8 @@ function handleManualEntrySubmit() {
     errorContainer.innerHTML = '';
   }
 
-  // Get form values
-  const manualData = {
-    title: document.getElementById('manualJobTitle').value.trim(),
-    company: document.getElementById('manualCompany').value.trim(),
-    location: document.getElementById('manualLocation').value.trim(),
-    url: document.getElementById('manualUrl').value.trim(),
-    role: document.getElementById('manualRole').value.trim(),
-    tailor: document.getElementById('manualTailor').value.trim(),
-    description: document.getElementById('manualNotes').value.trim(),
-    compensation: document.getElementById('manualCompensation').value.trim(),
-    pay: document.getElementById('manualPay').value.trim(),
-    source: document.getElementById('manualBoard').value.trim()
-  };
+  // Get form values (dynamic based on schema)
+  const manualData = collectDynamicFormValues();
 
   // Get original job data to preserve other fields
   const originalData = JSON.parse(modal.dataset.jobData || '{}');

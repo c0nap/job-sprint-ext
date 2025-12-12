@@ -127,76 +127,8 @@
         <div id="manualEntryError" class="modal-error" style="display: none;"></div>
 
         <form id="manualEntryForm">
-          <div class="form-field">
-            <label for="manualCompany">Employer</label>
-            <input type="text" id="manualCompany" placeholder="e.g., Google">
-          </div>
-
-          <div class="form-field">
-            <label for="manualJobTitle">Job Title</label>
-            <input type="text" id="manualJobTitle" placeholder="e.g., Software Engineer">
-          </div>
-
-          <div class="form-field">
-            <label for="manualLocation">Location</label>
-            <input type="text" id="manualLocation" placeholder="e.g., San Francisco, CA">
-          </div>
-
-          <div class="form-field">
-            <label for="manualRole">Role</label>
-            <select id="manualRole">
-              <option value="">Auto-detect from title</option>
-              <option value="CODE">CODE</option>
-              <option value="DSCI">DSCI</option>
-              <option value="STAT">STAT</option>
-              <option value="R&D">R&D</option>
-            </select>
-          </div>
-
-          <div class="form-field">
-            <label for="manualTailor">Tailor</label>
-            <select id="manualTailor">
-              <option value="">Same as Role</option>
-              <option value="CODE">CODE</option>
-              <option value="DSCI">DSCI</option>
-              <option value="STAT">STAT</option>
-              <option value="R&D">R&D</option>
-            </select>
-          </div>
-
-          <div class="form-field">
-            <label for="manualNotes">Notes</label>
-            <textarea id="manualNotes" rows="3" placeholder="Additional notes or job description"></textarea>
-          </div>
-
-          <div class="form-field">
-            <label for="manualCompensation">Compensation</label>
-            <input type="text" id="manualCompensation" placeholder="e.g., $65.00 - $75.00 / hour">
-          </div>
-
-          <div class="form-field">
-            <label for="manualPay">Pay</label>
-            <input type="text" id="manualPay" placeholder="e.g., $70.00">
-          </div>
-
-          <div class="form-field">
-            <label for="manualUrl">Portal Link</label>
-            <input type="url" id="manualUrl" placeholder="https://..." readonly>
-          </div>
-
-          <div class="form-field">
-            <label for="manualBoard">Board</label>
-            <select id="manualBoard">
-              <option value="">Auto-detect from URL</option>
-              <option value="Indeed">Indeed</option>
-              <option value="Handshake">Handshake</option>
-              <option value="Symplicity">Symplicity</option>
-              <option value="Google">Google</option>
-              <option value="LinkedIn">LinkedIn</option>
-              <option value="Website">Website</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
+          <!-- Form fields will be dynamically generated based on schema -->
+          <div id="dynamicFormFields"></div>
 
           <div class="modal-actions">
             <button type="submit" class="btn-submit">Submit Job Data</button>
