@@ -33,6 +33,34 @@
  * Missing job fields (title, company, location, etc.) are filled with defaults like "(No company)".
  * This allows capturing whatever data is available from each page.
  *
+ * FLEXIBLE SCHEMA:
+ * This script now supports flexible, user-defined schemas. The extension sends job data
+ * with custom field names defined in the schema editor. This script will:
+ * - Dynamically create column headers based on incoming data
+ * - Handle any column names in any order
+ * - Fill missing columns with empty values
+ * - Preserve existing columns in the sheet
+ * - Maintain backward compatibility with fixed 13-column format
+ *
+ * SCHEMA MAPPING:
+ * The extension uses these internal field IDs (customizable via Settings > Schema Editor):
+ * - company → Employer column
+ * - title → Job Title column
+ * - location → Location column
+ * - url → Portal Link column
+ * - source → Board column
+ * - role → Role column
+ * - tailor → Tailor column
+ * - description → Notes column
+ * - compensation → Compensation column
+ * - pay → Pay column
+ * + any custom fields you add (e.g., "remote", "team_size", "tech_stack")
+ *
+ * The script automatically adds these system columns:
+ * - Status (always "No response")
+ * - Applied (auto-filled with current date)
+ * - Decision (empty for user to fill later)
+ *
  * See GOOGLE_APPS_SCRIPT_SETUP.md for detailed instructions.
  */
 
@@ -235,6 +263,176 @@ function validateJobData(data) {
 }
 
 /**
+ * Get or create headers dynamically based on job data
+ * Handles flexible schema - preserves existing headers and adds new ones as needed
+ * @param {Sheet} sheet - Google Sheet object
+ * @param {Object} jobData - Job data being logged
+ * @param {boolean} isNewSheet - Whether this is a newly created sheet
+ * @returns {Array<string>} Array of header names
+ */
+function getOrCreateHeaders(sheet, jobData, isNewSheet) {
+  // Define standard column mapping (field ID → display label)
+  var fieldLabelMap = {
+    'company': 'Employer',
+    'title': 'Job Title',
+    'location': 'Location',
+    'url': 'Portal Link',
+    'source': 'Board',
+    'role': 'Role',
+    'tailor': 'Tailor',
+    'description': 'Notes',
+    'compensation': 'Compensation',
+    'pay': 'Pay'
+  };
+
+  // System columns that are always added
+  var systemColumns = ['Status', 'Applied', 'Decision'];
+
+  if (isNewSheet) {
+    // New sheet: create default headers based on standard fields + any custom fields
+    var headers = [];
+
+    // Add standard columns that exist in jobData
+    for (var fieldId in fieldLabelMap) {
+      if (jobData.hasOwnProperty(fieldId) || fieldId === 'company' || fieldId === 'title') {
+        // Always include company and title, even if empty
+        headers.push(fieldLabelMap[fieldId]);
+      }
+    }
+
+    // Add system columns
+    headers = headers.concat(systemColumns);
+
+    // Add any custom fields not in the standard mapping
+    for (var key in jobData) {
+      if (jobData.hasOwnProperty(key) &&
+          !fieldLabelMap.hasOwnProperty(key) &&
+          key !== 'timestamp' && key !== 'targetSheetName') {
+        // Custom field - use field ID as label (capitalize first letter)
+        var customLabel = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
+        if (headers.indexOf(customLabel) === -1) {
+          headers.push(customLabel);
+        }
+      }
+    }
+
+    // Write headers to sheet
+    sheet.appendRow(headers);
+
+    // Format header row
+    var headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setFontWeight('bold');
+    headerRange.setBackground('#4285f4');
+    headerRange.setFontColor('#ffffff');
+    sheet.setFrozenRows(1);
+
+    return headers;
+  } else {
+    // Existing sheet: get current headers
+    var lastCol = sheet.getLastColumn();
+    if (lastCol === 0) {
+      // Sheet exists but no headers - treat as new
+      return getOrCreateHeaders(sheet, jobData, true);
+    }
+
+    var headerRange = sheet.getRange(1, 1, 1, lastCol);
+    var headers = headerRange.getValues()[0];
+
+    // Check if any new columns need to be added
+    var newColumns = [];
+
+    // Check standard fields
+    for (var fieldId in fieldLabelMap) {
+      if (jobData.hasOwnProperty(fieldId)) {
+        var label = fieldLabelMap[fieldId];
+        if (headers.indexOf(label) === -1) {
+          newColumns.push(label);
+        }
+      }
+    }
+
+    // Check custom fields
+    for (var key in jobData) {
+      if (jobData.hasOwnProperty(key) &&
+          !fieldLabelMap.hasOwnProperty(key) &&
+          key !== 'timestamp' && key !== 'targetSheetName') {
+        var customLabel = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
+        if (headers.indexOf(customLabel) === -1 && newColumns.indexOf(customLabel) === -1) {
+          newColumns.push(customLabel);
+        }
+      }
+    }
+
+    // Add new columns if needed
+    if (newColumns.length > 0) {
+      var newHeaderRange = sheet.getRange(1, headers.length + 1, 1, newColumns.length);
+      newHeaderRange.setValues([newColumns]);
+      newHeaderRange.setFontWeight('bold');
+      newHeaderRange.setBackground('#4285f4');
+      newHeaderRange.setFontColor('#ffffff');
+      headers = headers.concat(newColumns);
+    }
+
+    return headers;
+  }
+}
+
+/**
+ * Create row data array matching header order
+ * @param {Array<string>} headers - Sheet headers
+ * @param {Object} jobData - Job data
+ * @param {Object} fieldLabelMap - Mapping of field IDs to labels
+ * @returns {Array} Row data in correct column order
+ */
+function createRowData(headers, jobData, fieldLabelMap) {
+  var rowData = [];
+  var appliedDate = formatAppliedDate(jobData.timestamp);
+
+  // Reverse lookup map (label → field ID)
+  var labelFieldMap = {};
+  for (var fieldId in fieldLabelMap) {
+    labelFieldMap[fieldLabelMap[fieldId]] = fieldId;
+  }
+
+  for (var i = 0; i < headers.length; i++) {
+    var header = headers[i];
+
+    // Handle system columns
+    if (header === 'Status') {
+      rowData.push('No response');
+    } else if (header === 'Applied') {
+      rowData.push(appliedDate);
+    } else if (header === 'Decision') {
+      rowData.push('');
+    }
+    // Handle standard fields
+    else if (labelFieldMap.hasOwnProperty(header)) {
+      var fieldId = labelFieldMap[header];
+      var value = jobData[fieldId] || '';
+
+      // Special handling for inferred values
+      if (fieldId === 'source' && !value) {
+        value = inferBoard(jobData.url, jobData.source);
+      } else if (fieldId === 'role' && !value) {
+        value = inferRole(jobData.title);
+      } else if (fieldId === 'tailor' && !value) {
+        value = jobData.role || inferRole(jobData.title);
+      }
+
+      rowData.push(value);
+    }
+    // Handle custom fields
+    else {
+      // Convert label back to field ID (lowercase, replace spaces with underscores)
+      var customFieldId = header.toLowerCase().replace(/ /g, '_');
+      rowData.push(jobData[customFieldId] || jobData[header] || '');
+    }
+  }
+
+  return rowData;
+}
+
+/**
  * Logs job data to the Google Sheet
  * @param {Object} jobData - Validated job data (title, company, location, url, etc.)
  * @param {Object} config - Server-side configuration from Script Properties
@@ -266,6 +464,7 @@ function logJobToSheet(jobData, config, requestId) {
 
     // Get or create the target sheet
     sheet = spreadsheet.getSheetByName(sheetName);
+    var isNewSheet = false;
     if (!sheet) {
       console.info({
         message: 'JobSprint: Creating new sheet',
@@ -274,73 +473,50 @@ function logJobToSheet(jobData, config, requestId) {
       });
 
       sheet = spreadsheet.insertSheet(sheetName);
-
-      // Add header row if this is a new sheet (new schema)
-      sheet.appendRow([
-        'Employer',
-        'Status',
-        'Job Title',
-        'Location',
-        'Applied',
-        'Decision',
-        'Role',
-        'Tailor',
-        'Notes',
-        'Compensation',
-        'Pay',
-        'Portal Link',
-        'Board'
-      ]);
-
-      // Format header row (bold, frozen)
-      var headerRange = sheet.getRange('A1:M1');
-      headerRange.setFontWeight('bold');
-      headerRange.setBackground('#4285f4');
-      headerRange.setFontColor('#ffffff');
-      sheet.setFrozenRows(1);
+      isNewSheet = true;
     }
 
-    // Infer Board from URL or source (use user-provided if available)
-    var board = jobData.source || inferBoard(jobData.url, jobData.source);
+    // Get or create headers dynamically based on job data
+    var headers = getOrCreateHeaders(sheet, jobData, isNewSheet);
 
-    // Format the Applied date as MM/DD/YYYY
-    var appliedDate = formatAppliedDate(jobData.timestamp);
+    console.log({
+      message: 'JobSprint: Headers determined',
+      requestId: requestId,
+      headerCount: headers.length,
+      headers: headers
+    });
 
-    // Infer role from title (use user-provided if available)
-    var role = jobData.role || inferRole(jobData.title);
+    // Create row data dynamically based on headers
+    var fieldLabelMap = {
+      'company': 'Employer',
+      'title': 'Job Title',
+      'location': 'Location',
+      'url': 'Portal Link',
+      'source': 'Board',
+      'role': 'Role',
+      'tailor': 'Tailor',
+      'description': 'Notes',
+      'compensation': 'Compensation',
+      'pay': 'Pay'
+    };
 
-    // Use tailor if provided, otherwise use role
-    var tailor = jobData.tailor || role;
-
-    // Prepare the row data with new schema - use defaults for missing/empty fields
-    var rowData = [
-      jobData.company || '',                    // Employer
-      'No response',                             // Status (always "No response")
-      jobData.title || '',                       // Job Title
-      jobData.location || '',                    // Location
-      appliedDate,                               // Applied (date only)
-      '',                                        // Decision (empty)
-      role,                                      // Role (user-provided or inferred from title)
-      tailor,                                    // Tailor (user-provided or same as Role)
-      jobData.description || '',                 // Notes (description if available)
-      jobData.compensation || '',                // Compensation (user-provided or empty)
-      jobData.pay || '',                         // Pay (user-provided or empty)
-      jobData.url || '',                         // Portal Link
-      board                                      // Board (user-provided or inferred from URL/source)
-    ];
+    var rowData = createRowData(headers, jobData, fieldLabelMap);
 
     console.log({
       message: 'JobSprint: Appending row to sheet',
       requestId: requestId,
       sheetName: sheet.getName(),
-      currentRowCount: sheet.getLastRow()
+      currentRowCount: sheet.getLastRow(),
+      columnCount: rowData.length
     });
 
     // Append the data to the sheet
     sheet.appendRow(rowData);
 
-    // Auto-resize columns for better readability
-    sheet.autoResizeColumns(1, 13);
+    // Auto-resize columns for better readability (all columns)
+    if (headers.length > 0) {
+      sheet.autoResizeColumns(1, headers.length);
+    }
 
     console.info({
       message: 'JobSprint: Job logged to sheet successfully',
