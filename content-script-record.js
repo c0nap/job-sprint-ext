@@ -1073,13 +1073,25 @@ function notifyRecordStatus(status, count) {
 // ============ MESSAGE LISTENER ============
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Record mode received message:', message.action);
+  console.log('[Record Mode] Received message:', message);
+
+  // Handle record mode messages
+  if (!message || !message.action) {
+    return false; // Not our message
+  }
 
   try {
     switch (message.action) {
       case 'startRecordMode':
-        startRecordMode();
-        sendResponse({ success: true });
+        console.log('[Record Mode] Starting record mode...');
+        try {
+          startRecordMode();
+          console.log('[Record Mode] Record mode started successfully');
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error('[Record Mode] Error in startRecordMode:', error);
+          sendResponse({ success: false, error: error.message });
+        }
         return false; // Synchronous response
 
       case 'stopRecordMode':
