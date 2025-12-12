@@ -157,6 +157,47 @@ function logError(message) {
 }
 
 /**
+ * Add a log entry to debug console with custom level
+ * @param {string} level - Log level (info, warn, error, success)
+ * @param {string} message - Log message
+ * @param {any} data - Optional data to log
+ */
+function addConsoleLog(level, message, data) {
+  const timestamp = new Date().toLocaleTimeString();
+
+  // Map level to console type
+  const typeMap = {
+    'info': 'log',
+    'success': 'log',
+    'warn': 'warn',
+    'error': 'error'
+  };
+  const type = typeMap[level] || 'log';
+
+  // Format message with data if provided
+  let fullMessage = message;
+  if (data) {
+    try {
+      fullMessage += ' ' + JSON.stringify(data);
+    } catch (e) {
+      fullMessage += ' [data]';
+    }
+  }
+
+  const logEntry = { timestamp, message: fullMessage, type };
+
+  debugLogs.push(logEntry);
+  if (debugLogs.length > MAX_LOGS) {
+    debugLogs.shift();
+  }
+
+  // Always try to append if console is enabled
+  if (debugConsoleEnabled) {
+    appendToConsole(logEntry);
+  }
+}
+
+/**
  * Append log entry to console UI
  * @param {Object} entry - Log entry
  */
