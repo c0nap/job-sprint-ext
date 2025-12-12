@@ -15,6 +15,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Update autofill status display
     updateAutofillStatus(message.state, message.progress);
     sendResponse({ success: true });
+  } else if (message.action === 'recordLog') {
+    // Add record mode log to debug console
+    const { log } = message;
+    addConsoleLog(log.level, `[Record] ${log.message}`, log.data);
+    sendResponse({ success: true });
+  } else if (message.action === 'recordStatusChange') {
+    // Update record mode status display
+    updateRecordStatus(message.status, message.count);
+    sendResponse({ success: true });
   }
   return false; // Synchronous
 });
@@ -1257,13 +1266,170 @@ function resetExtractButton(button) {
  */
 function initializeAutofill() {
   const autofillBtn = document.getElementById('autofillBtn');
+  const recordBtn = document.getElementById('recordBtn');
+  const stopRecordBtn = document.getElementById('stopRecordBtn');
   const statusDiv = document.getElementById('autofillStatus');
+  const playbackModeBtn = document.getElementById('playbackModeBtn');
+  const recordModeBtn = document.getElementById('recordModeBtn');
 
   if (!autofillBtn || !statusDiv) return;
 
+  // Mode toggle handlers
+  playbackModeBtn?.addEventListener('click', () => {
+    switchToPlaybackMode();
+  });
+
+  recordModeBtn?.addEventListener('click', () => {
+    switchToRecordMode();
+  });
+
+  // Playback mode button
   autofillBtn.addEventListener('click', () => {
     handleAutofillClick(autofillBtn, statusDiv);
   });
+
+  // Record mode buttons
+  recordBtn?.addEventListener('click', () => {
+    handleRecordClick(recordBtn, stopRecordBtn, statusDiv);
+  });
+
+  stopRecordBtn?.addEventListener('click', () => {
+    handleStopRecordClick(recordBtn, stopRecordBtn, statusDiv);
+  });
+}
+
+/**
+ * Switch to Playback Mode
+ */
+function switchToPlaybackMode() {
+  // Update button states
+  document.getElementById('playbackModeBtn')?.classList.add('active');
+  document.getElementById('recordModeBtn')?.classList.remove('active');
+
+  // Show/hide descriptions
+  document.getElementById('playbackModeDesc').style.display = 'block';
+  document.getElementById('recordModeDesc').style.display = 'none';
+
+  // Show/hide action buttons
+  document.getElementById('playbackActions').style.display = 'block';
+  document.getElementById('recordActions').style.display = 'none';
+
+  // Clear status
+  const statusDiv = document.getElementById('autofillStatus');
+  if (statusDiv) statusDiv.textContent = '';
+}
+
+/**
+ * Switch to Record Mode
+ */
+function switchToRecordMode() {
+  // Update button states
+  document.getElementById('recordModeBtn')?.classList.add('active');
+  document.getElementById('playbackModeBtn')?.classList.remove('active');
+
+  // Show/hide descriptions
+  document.getElementById('recordModeDesc').style.display = 'block';
+  document.getElementById('playbackModeDesc').style.display = 'none';
+
+  // Show/hide action buttons
+  document.getElementById('recordActions').style.display = 'block';
+  document.getElementById('playbackActions').style.display = 'none';
+
+  // Clear status
+  const statusDiv = document.getElementById('autofillStatus');
+  if (statusDiv) statusDiv.textContent = '';
+}
+
+/**
+ * Handle Record button click
+ */
+async function handleRecordClick(recordBtn, stopBtn, statusDiv) {
+  setButtonLoading(recordBtn, 'Starting...');
+  showStatus(statusDiv, 'info', 'ℹ Starting record mode...');
+
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    showStatus(statusDiv, 'error', '✗ No active tab found');
+    resetButton(recordBtn, 'Start Recording');
+    return;
+  }
+
+  chrome.tabs.sendMessage(
+    activeTab.id,
+    { action: 'startRecordMode' },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        showStatus(statusDiv, 'error', `✗ ${chrome.runtime.lastError.message}`);
+        resetButton(recordBtn, 'Start Recording');
+        return;
+      }
+
+      if (response?.success) {
+        showStatus(statusDiv, 'success', '⏺ Recording... Fill out the form normally.');
+        recordBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+        addConsoleLog('success', 'Record mode started');
+      } else {
+        showStatus(statusDiv, 'error', '✗ Failed to start recording');
+        resetButton(recordBtn, 'Start Recording');
+      }
+    }
+  );
+}
+
+/**
+ * Handle Stop Record button click
+ */
+async function handleStopRecordClick(recordBtn, stopBtn, statusDiv) {
+  setButtonLoading(stopBtn, 'Saving...');
+  showStatus(statusDiv, 'info', 'ℹ Stopping and saving...');
+
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    showStatus(statusDiv, 'error', '✗ No active tab found');
+    return;
+  }
+
+  chrome.tabs.sendMessage(
+    activeTab.id,
+    { action: 'stopRecordMode' },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        showStatus(statusDiv, 'error', `✗ ${chrome.runtime.lastError.message}`);
+        return;
+      }
+
+      if (response?.success) {
+        const count = response.count || 0;
+        showStatus(statusDiv, 'success', `✓ Saved ${count} Q&A pair${count !== 1 ? 's' : ''}!`);
+        addConsoleLog('success', `Record mode stopped - saved ${count} Q&A pairs`);
+        stopBtn.style.display = 'none';
+        resetButton(recordBtn, 'Start Recording');
+        recordBtn.style.display = 'block';
+      } else {
+        showStatus(statusDiv, 'error', '✗ Failed to stop recording');
+      }
+    }
+  );
+}
+
+/**
+ * Update recording status from content script
+ */
+function updateRecordStatus(status, count) {
+  const statusDiv = document.getElementById('autofillStatus');
+  if (!statusDiv) return;
+
+  switch (status) {
+    case 'recording':
+      showStatus(statusDiv, 'info', `⏺ Recording: ${count} Q&A pair${count !== 1 ? 's' : ''} captured`);
+      break;
+    case 'paused':
+      showStatus(statusDiv, 'warn', `⏸ Recording paused: ${count} Q&A pair${count !== 1 ? 's' : ''}`);
+      break;
+    case 'stopped':
+      break; // Handled by handleStopRecordClick
+  }
 }
 
 /**
