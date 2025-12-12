@@ -105,6 +105,9 @@ function resumeRecordMode() {
 
 // ============ FORM MONITORING ============
 
+let mutationObserver = null;
+let debounceTimers = new Map();
+
 /**
  * Find all form inputs and attach listeners
  */
@@ -116,15 +119,177 @@ function monitorFormInputs() {
   inputs.forEach(input => {
     if (monitoredInputs.has(input)) return;
 
-    // Add change listener
-    const changeHandler = (e) => handleInputChange(e.target);
-    input.addEventListener('change', changeHandler);
-    input.addEventListener('blur', changeHandler);
-
-    // Store reference for cleanup
-    input._recordHandler = changeHandler;
-    monitoredInputs.add(input);
+    attachInputListeners(input);
   });
+
+  // Set up MutationObserver to detect dynamically added inputs
+  setupMutationObserver();
+}
+
+/**
+ * Attach event listeners to an input element
+ */
+function attachInputListeners(input) {
+  if (monitoredInputs.has(input)) return;
+
+  const handlers = [];
+
+  // For checkboxes and radio buttons, use click event (more reliable)
+  if (input.type === 'checkbox' || input.type === 'radio') {
+    const clickHandler = (e) => handleInputChangeDebounced(e.target);
+    input.addEventListener('click', clickHandler);
+    handlers.push({ event: 'click', handler: clickHandler });
+  }
+
+  // For file inputs, use change event
+  if (input.type === 'file') {
+    const fileHandler = (e) => handleFileInput(e.target);
+    input.addEventListener('change', fileHandler);
+    handlers.push({ event: 'change', handler: fileHandler });
+  }
+
+  // For all other inputs, use change and blur
+  const changeHandler = (e) => handleInputChangeDebounced(e.target);
+  input.addEventListener('change', changeHandler);
+  input.addEventListener('blur', changeHandler);
+  handlers.push({ event: 'change', handler: changeHandler });
+  handlers.push({ event: 'blur', handler: changeHandler });
+
+  // Store handlers for cleanup
+  input._recordHandlers = handlers;
+  monitoredInputs.add(input);
+}
+
+/**
+ * Setup MutationObserver to detect dynamically added form inputs
+ */
+function setupMutationObserver() {
+  if (mutationObserver) return;
+
+  mutationObserver = new MutationObserver((mutations) => {
+    if (!recordModeActive) return;
+
+    let newInputsFound = false;
+    mutations.forEach(mutation => {
+      mutation.addedNodes.forEach(node => {
+        if (node.nodeType === 1) { // Element node
+          // Check if the node itself is an input
+          if (isFormInput(node)) {
+            attachInputListeners(node);
+            newInputsFound = true;
+          }
+          // Check for inputs within the added node
+          if (node.querySelectorAll) {
+            const inputs = node.querySelectorAll('input, textarea, select');
+            inputs.forEach(input => {
+              if (isFormInput(input) && !monitoredInputs.has(input)) {
+                attachInputListeners(input);
+                newInputsFound = true;
+              }
+            });
+          }
+        }
+      });
+    });
+
+    if (newInputsFound) {
+      logRecord('info', 'Detected new form inputs, now monitoring them');
+    }
+  });
+
+  mutationObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+}
+
+/**
+ * Check if an element is a valid form input
+ */
+function isFormInput(element) {
+  const tagName = element.tagName;
+  if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(tagName)) return false;
+
+  // Skip hidden inputs
+  if (element.type === 'hidden' || element.style.display === 'none') return false;
+
+  // Skip buttons and submit inputs
+  if (element.type === 'submit' || element.type === 'button' || element.type === 'image') return false;
+
+  // Skip password inputs for security
+  if (element.type === 'password') return false;
+
+  return true;
+}
+
+/**
+ * Handle input change with debouncing to prevent duplicate captures
+ */
+function handleInputChangeDebounced(input) {
+  // Clear existing timer for this input
+  const existingTimer = debounceTimers.get(input);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  // Set new timer (300ms debounce)
+  const timer = setTimeout(() => {
+    handleInputChange(input);
+    debounceTimers.delete(input);
+  }, 300);
+
+  debounceTimers.set(input, timer);
+}
+
+/**
+ * Handle file input change
+ */
+function handleFileInput(input) {
+  if (!recordModeActive) return;
+
+  const files = input.files;
+  if (!files || files.length === 0) return;
+
+  // Extract question
+  const question = extractQuestionForInput(input);
+  if (!question || question.length < 3) {
+    logRecord('warn', 'Could not extract question for file input', {
+      name: input.name,
+      id: input.id
+    });
+    return;
+  }
+
+  // Create answer indicating file was uploaded
+  const fileNames = Array.from(files).map(f => f.name).join(', ');
+  const answer = files.length === 1
+    ? `File uploaded: ${fileNames}`
+    : `${files.length} files uploaded: ${fileNames}`;
+
+  // Create Q&A pair
+  const qaPair = {
+    question: question.trim(),
+    answer: answer,
+    type: 'text', // File uploads are text type
+    timestamp: Date.now(),
+    inputType: 'file'
+  };
+
+  // Check for duplicate
+  const existingIndex = recordedQAPairs.findIndex(
+    pair => pair.question === qaPair.question
+  );
+
+  if (existingIndex >= 0) {
+    recordedQAPairs[existingIndex] = qaPair;
+    logRecord('info', 'Updated file upload Q&A pair', qaPair);
+  } else {
+    recordedQAPairs.push(qaPair);
+    logRecord('success', 'Captured file upload Q&A pair', qaPair);
+  }
+
+  updateRecordingIndicator('recording', recordedQAPairs.length);
+  notifyRecordStatus('recording', recordedQAPairs.length);
 }
 
 /**
@@ -273,9 +438,34 @@ function extractQuestionForInput(input) {
     return cleanQuestionText(label.textContent);
   }
 
+  // Try aria-labelledby
+  const ariaLabelledBy = input.getAttribute('aria-labelledby');
+  if (ariaLabelledBy) {
+    const labelElement = document.getElementById(ariaLabelledBy);
+    if (labelElement) {
+      return cleanQuestionText(labelElement.textContent);
+    }
+  }
+
   // Try aria-label
   if (input.getAttribute('aria-label')) {
     return cleanQuestionText(input.getAttribute('aria-label'));
+  }
+
+  // For radio buttons, check if they're in a fieldset with a legend
+  if (input.type === 'radio') {
+    const fieldset = input.closest('fieldset');
+    if (fieldset) {
+      const legend = fieldset.querySelector('legend');
+      if (legend) {
+        return cleanQuestionText(legend.textContent);
+      }
+    }
+  }
+
+  // Try data-label attribute (some custom forms use this)
+  if (input.getAttribute('data-label')) {
+    return cleanQuestionText(input.getAttribute('data-label'));
   }
 
   // Try placeholder
@@ -283,32 +473,56 @@ function extractQuestionForInput(input) {
     return cleanQuestionText(input.placeholder);
   }
 
-  // Try name or id attribute
+  // Try title attribute
+  if (input.title && input.title.length > 5) {
+    return cleanQuestionText(input.title);
+  }
+
+  // Try previous sibling text (up to 3 siblings back)
+  let sibling = input.previousElementSibling;
+  let siblingCount = 0;
+  while (sibling && siblingCount < 3) {
+    const text = sibling.textContent?.trim();
+    if (text && text.length > 3 && text.length < 200) {
+      // Skip if it's just a single character or number
+      if (text.length > 2 && !/^\d+$/.test(text)) {
+        return cleanQuestionText(text);
+      }
+    }
+    sibling = sibling.previousElementSibling;
+    siblingCount++;
+  }
+
+  // Try parent element text (but exclude the input's own value)
+  const parent = input.parentElement;
+  if (parent) {
+    // Clone parent to remove the input and get just the label text
+    const parentClone = parent.cloneNode(true);
+    const inputsInClone = parentClone.querySelectorAll('input, textarea, select');
+    inputsInClone.forEach(inp => inp.remove());
+
+    const parentText = parentClone.textContent?.trim();
+    if (parentText && parentText.length > 3 && parentText.length < 200) {
+      return cleanQuestionText(parentText);
+    }
+  }
+
+  // Try closest heading (h1-h6) within reasonable distance
+  const closestHeading = input.closest('section, div')?.querySelector('h1, h2, h3, h4, h5, h6');
+  if (closestHeading) {
+    const headingText = closestHeading.textContent?.trim();
+    if (headingText && headingText.length > 3 && headingText.length < 200) {
+      return cleanQuestionText(headingText);
+    }
+  }
+
+  // Last resort: use name or id attribute
   if (input.name) {
     return cleanQuestionText(input.name.replace(/[_-]/g, ' '));
   }
 
   if (input.id) {
     return cleanQuestionText(input.id.replace(/[_-]/g, ' '));
-  }
-
-  // Try previous sibling text
-  let sibling = input.previousElementSibling;
-  while (sibling) {
-    const text = sibling.textContent?.trim();
-    if (text && text.length > 3 && text.length < 200) {
-      return cleanQuestionText(text);
-    }
-    sibling = sibling.previousElementSibling;
-  }
-
-  // Try parent element text
-  const parent = input.parentElement;
-  if (parent) {
-    const parentText = parent.textContent?.trim();
-    if (parentText && parentText.length > 3 && parentText.length < 200) {
-      return cleanQuestionText(parentText);
-    }
   }
 
   return '';
@@ -540,7 +754,15 @@ function showSaveNotification(newCount, updatedCount) {
  */
 function cleanupMonitoring() {
   monitoredInputs.forEach(input => {
-    if (input._recordHandler) {
+    // Handle new handler structure
+    if (input._recordHandlers) {
+      input._recordHandlers.forEach(({ event, handler }) => {
+        input.removeEventListener(event, handler);
+      });
+      delete input._recordHandlers;
+    }
+    // Handle old handler structure (backwards compatibility)
+    else if (input._recordHandler) {
       input.removeEventListener('change', input._recordHandler);
       input.removeEventListener('blur', input._recordHandler);
       delete input._recordHandler;
@@ -548,6 +770,16 @@ function cleanupMonitoring() {
   });
 
   monitoredInputs.clear();
+
+  // Clear debounce timers
+  debounceTimers.forEach(timer => clearTimeout(timer));
+  debounceTimers.clear();
+
+  // Disconnect MutationObserver
+  if (mutationObserver) {
+    mutationObserver.disconnect();
+    mutationObserver = null;
+  }
 }
 
 // ============ STATUS UPDATES ============
