@@ -1422,8 +1422,8 @@ async function handleRecordClick(recordBtn, stopBtn, statusDiv) {
  * Handle Stop Record button click
  */
 async function handleStopRecordClick(recordBtn, stopBtn, statusDiv) {
-  setButtonLoading(stopBtn, 'Saving...');
-  showStatus(statusDiv, 'info', 'ℹ Stopping and saving...');
+  setButtonLoading(stopBtn, 'Stopping...');
+  showStatus(statusDiv, 'info', 'ℹ Stopping recording...');
 
   const activeTab = await getSourceTab();
   if (!activeTab) {
@@ -1442,8 +1442,8 @@ async function handleStopRecordClick(recordBtn, stopBtn, statusDiv) {
 
       if (response?.success) {
         const count = response.count || 0;
-        showStatus(statusDiv, 'success', `✓ Saved ${count} Q&A pair${count !== 1 ? 's' : ''}!`);
-        addConsoleLog('success', `Record mode stopped - saved ${count} Q&A pairs`);
+        showStatus(statusDiv, 'success', `✓ Recording stopped. ${count} Q&A pair${count !== 1 ? 's' : ''} saved.`);
+        addConsoleLog('success', `Record mode stopped - ${count} Q&A pairs saved to database`);
         stopBtn.style.display = 'none';
         resetButton(recordBtn, 'Start Recording');
         recordBtn.style.display = 'block';
@@ -1459,17 +1459,32 @@ async function handleStopRecordClick(recordBtn, stopBtn, statusDiv) {
  */
 function updateRecordStatus(status, count) {
   const statusDiv = document.getElementById('autofillStatus');
+  const recordBtn = document.getElementById('recordBtn');
+  const stopBtn = document.getElementById('stopRecordBtn');
+
   if (!statusDiv) return;
 
   switch (status) {
     case 'recording':
       showStatus(statusDiv, 'info', `⏺ Recording: ${count} Q&A pair${count !== 1 ? 's' : ''} captured`);
+      // Sync button states
+      if (recordBtn && stopBtn) {
+        recordBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+      }
       break;
     case 'paused':
       showStatus(statusDiv, 'warn', `⏸ Recording paused: ${count} Q&A pair${count !== 1 ? 's' : ''}`);
       break;
     case 'stopped':
-      break; // Handled by handleStopRecordClick
+      // Sync button states when stopped from page indicator
+      if (recordBtn && stopBtn) {
+        stopBtn.style.display = 'none';
+        resetButton(recordBtn, 'Start Recording');
+        recordBtn.style.display = 'block';
+      }
+      showStatus(statusDiv, 'success', `✓ Recording stopped. ${count} Q&A pair${count !== 1 ? 's' : ''} saved.`);
+      break;
   }
 }
 
