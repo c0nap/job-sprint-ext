@@ -888,6 +888,29 @@ function extractQuestionForInput(input) {
     }
   }
 
+  // For radio buttons: try grandparent/great-grandparent text as last resort before name/id
+  if (input.type === 'radio') {
+    let ancestor = input.parentElement?.parentElement;
+    let depth = 0;
+    while (ancestor && depth < 3) {
+      const ancestorClone = ancestor.cloneNode(true);
+      // Remove all form controls to get just the question text
+      const formControls = ancestorClone.querySelectorAll('input, textarea, select, button, label[for]');
+      formControls.forEach(ctrl => ctrl.remove());
+
+      const ancestorText = ancestorClone.textContent?.trim();
+      if (ancestorText && ancestorText.length >= 10 && ancestorText.length < 300) {
+        // Skip if it's just "Yes" or "No"
+        if (!['yes', 'no', 'true', 'false'].includes(ancestorText.toLowerCase())) {
+          logRecord('info', 'Found question via radio ancestor text', { question: ancestorText, depth });
+          return cleanQuestionText(ancestorText);
+        }
+      }
+      ancestor = ancestor.parentElement;
+      depth++;
+    }
+  }
+
   // Last resort: use name or id attribute
   if (input.name) {
     return cleanQuestionText(input.name.replace(/[_-]/g, ' '));
