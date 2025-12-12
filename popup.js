@@ -1391,7 +1391,7 @@ async function handleRecordClick(recordBtn, stopBtn, statusDiv) {
   const activeTab = await getSourceTab();
   if (!activeTab) {
     showStatus(statusDiv, 'error', '✗ No active tab found');
-    resetButton(recordBtn, 'Start Recording');
+    resetRecordButton(recordBtn);
     return;
   }
 
@@ -1401,7 +1401,7 @@ async function handleRecordClick(recordBtn, stopBtn, statusDiv) {
     (response) => {
       if (chrome.runtime.lastError) {
         showStatus(statusDiv, 'error', `✗ ${chrome.runtime.lastError.message}`);
-        resetButton(recordBtn, 'Start Recording');
+        resetRecordButton(recordBtn);
         return;
       }
 
@@ -1412,7 +1412,7 @@ async function handleRecordClick(recordBtn, stopBtn, statusDiv) {
         addConsoleLog('success', 'Record mode started');
       } else {
         showStatus(statusDiv, 'error', '✗ Failed to start recording');
-        resetButton(recordBtn, 'Start Recording');
+        resetRecordButton(recordBtn);
       }
     }
   );
@@ -1445,7 +1445,7 @@ async function handleStopRecordClick(recordBtn, stopBtn, statusDiv) {
         showStatus(statusDiv, 'success', `✓ Recording stopped. ${count} Q&A pair${count !== 1 ? 's' : ''} saved.`);
         addConsoleLog('success', `Record mode stopped - ${count} Q&A pairs saved to database`);
         stopBtn.style.display = 'none';
-        resetButton(recordBtn, 'Start Recording');
+        resetRecordButton(recordBtn);
         recordBtn.style.display = 'block';
       } else {
         showStatus(statusDiv, 'error', '✗ Failed to stop recording');
@@ -1480,7 +1480,7 @@ function updateRecordStatus(status, count) {
       // Sync button states when stopped from page indicator
       if (recordBtn && stopBtn) {
         stopBtn.style.display = 'none';
-        resetButton(recordBtn, 'Start Recording');
+        resetRecordButton(recordBtn);
         recordBtn.style.display = 'block';
       }
       showStatus(statusDiv, 'success', `✓ Recording stopped. ${count} Q&A pair${count !== 1 ? 's' : ''} saved.`);
@@ -1598,6 +1598,14 @@ function handleAutofillError(button, statusDiv, message) {
 function resetAutofillButton(button) {
   button.disabled = false;
   button.textContent = 'Start Autofill';
+}
+
+/**
+ * Reset record button to default state
+ */
+function resetRecordButton(button) {
+  button.disabled = false;
+  button.textContent = 'Start Recording';
 }
 
 // ============ SETTINGS ============
