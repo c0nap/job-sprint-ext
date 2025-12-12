@@ -124,6 +124,9 @@ function monitorFormInputs() {
 
   // Set up MutationObserver to detect dynamically added inputs
   setupMutationObserver();
+
+  // Set up listeners for custom controls (divs/buttons acting as radio/checkbox)
+  monitorCustomControls();
 }
 
 /**
@@ -139,25 +142,274 @@ function attachInputListeners(input) {
     const clickHandler = (e) => handleInputChangeDebounced(e.target);
     input.addEventListener('click', clickHandler);
     handlers.push({ event: 'click', handler: clickHandler });
+    logRecord('info', `Attached click listener to ${input.type}`, { id: input.id, name: input.name });
   }
 
-  // For file inputs, use change event
+  // For file inputs, use change event with NO debouncing
   if (input.type === 'file') {
-    const fileHandler = (e) => handleFileInput(e.target);
+    const fileHandler = (e) => {
+      logRecord('info', 'File input changed', { id: e.target.id, name: e.target.name });
+      handleFileInput(e.target);
+    };
     input.addEventListener('change', fileHandler);
     handlers.push({ event: 'change', handler: fileHandler });
+    logRecord('info', 'Attached file handler', { id: input.id, name: input.name });
   }
 
-  // For all other inputs, use change and blur
-  const changeHandler = (e) => handleInputChangeDebounced(e.target);
-  input.addEventListener('change', changeHandler);
-  input.addEventListener('blur', changeHandler);
-  handlers.push({ event: 'change', handler: changeHandler });
-  handlers.push({ event: 'blur', handler: changeHandler });
+  // For SELECT dropdowns, use change event with NO debouncing (immediate capture)
+  if (input.tagName === 'SELECT') {
+    const selectHandler = (e) => {
+      logRecord('info', 'Select changed', { id: e.target.id, name: e.target.name, value: e.target.value });
+      handleInputChange(e.target); // No debouncing for selects
+    };
+    input.addEventListener('change', selectHandler);
+    handlers.push({ event: 'change', handler: selectHandler });
+    logRecord('info', 'Attached select handler', { id: input.id, name: input.name });
+  }
+  // For other inputs (text, textarea, etc.), use change and blur with debouncing
+  else if (input.type !== 'file') {
+    const changeHandler = (e) => handleInputChangeDebounced(e.target);
+    input.addEventListener('change', changeHandler);
+    input.addEventListener('blur', changeHandler);
+    handlers.push({ event: 'change', handler: changeHandler });
+    handlers.push({ event: 'blur', handler: changeHandler });
+  }
 
   // Store handlers for cleanup
   input._recordHandlers = handlers;
   monitoredInputs.add(input);
+}
+
+/**
+ * Monitor custom controls (divs/buttons acting as radio/checkbox)
+ */
+function monitorCustomControls() {
+  // Find elements with role="radio" or role="checkbox"
+  const customControls = document.querySelectorAll('[role="radio"], [role="checkbox"], [role="button"]');
+
+  let customCount = 0;
+  customControls.forEach(control => {
+    // Skip if already monitored
+    if (monitoredInputs.has(control)) return;
+
+    // Skip if it's an actual input (we already handle those)
+    if (control.tagName === 'INPUT') return;
+
+    // Check if it looks like a form control
+    const ariaLabel = control.getAttribute('aria-label');
+    const ariaChecked = control.getAttribute('aria-checked');
+    const ariaPressed = control.getAttribute('aria-pressed');
+
+    if (ariaLabel || ariaChecked !== null || ariaPressed !== null) {
+      const clickHandler = () => handleCustomControlClick(control);
+      control.addEventListener('click', clickHandler);
+      control._recordHandlers = [{ event: 'click', handler: clickHandler }];
+      monitoredInputs.add(control);
+      customCount++;
+    }
+  });
+
+  if (customCount > 0) {
+    logRecord('info', `Found ${customCount} custom controls (role="radio"/"checkbox"/"button")`);
+  }
+
+  // Also look for common custom control patterns (buttons/divs that change classes)
+  const clickableElements = document.querySelectorAll('button:not([type="submit"]):not([type="button"]), [class*="option"], [class*="choice"], [class*="button"]');
+
+  clickableElements.forEach(element => {
+    // Skip if already monitored or if it's a submit button
+    if (monitoredInputs.has(element)) return;
+    if (element.type === 'submit' || element.type === 'button') return;
+
+    // Look for patterns that indicate it's a form control
+    const classList = element.className.toLowerCase();
+    const isFormControl =
+      classList.includes('radio') ||
+      classList.includes('checkbox') ||
+      classList.includes('option') ||
+      classList.includes('choice') ||
+      classList.includes('toggle');
+
+    if (isFormControl) {
+      const clickHandler = () => handleCustomControlClick(element);
+      element.addEventListener('click', clickHandler);
+      element._recordHandlers = [{ event: 'click', handler: clickHandler }];
+      monitoredInputs.add(element);
+      customCount++;
+    }
+  });
+}
+
+/**
+ * Handle clicks on custom controls (divs/buttons acting as form inputs)
+ */
+function handleCustomControlClick(element) {
+  if (!recordModeActive) return;
+
+  // Wait a bit for the element to update its state
+  setTimeout(() => {
+    const question = extractQuestionForCustomControl(element);
+    if (!question || question.length < 3) {
+      logRecord('warn', 'Could not extract question for custom control', {
+        tag: element.tagName,
+        class: element.className,
+        role: element.getAttribute('role')
+      });
+      return;
+    }
+
+    const answer = getCustomControlValue(element);
+    if (!answer) {
+      logRecord('warn', 'Could not extract value for custom control', {
+        tag: element.tagName,
+        class: element.className
+      });
+      return;
+    }
+
+    // Get available options by looking at sibling elements
+    const availableOptions = getCustomControlOptions(element);
+
+    const qaPair = {
+      question: question.trim(),
+      answer: answer.trim(),
+      type: availableOptions.length > 0 ? 'choice' : 'text',
+      timestamp: Date.now(),
+      inputType: 'custom-' + (element.getAttribute('role') || 'button'),
+      availableOptions: availableOptions.length > 0 ? availableOptions : undefined
+    };
+
+    // Check for duplicate
+    const existingIndex = recordedQAPairs.findIndex(
+      pair => pair.question === qaPair.question
+    );
+
+    if (existingIndex >= 0) {
+      recordedQAPairs[existingIndex] = qaPair;
+      logRecord('info', 'Updated custom control Q&A pair', qaPair);
+    } else {
+      recordedQAPairs.push(qaPair);
+      logRecord('success', 'Captured custom control Q&A pair', qaPair);
+    }
+
+    updateRecordingIndicator('recording', recordedQAPairs.length);
+    notifyRecordStatus('recording', recordedQAPairs.length);
+  }, 100); // Small delay to let the element update
+}
+
+/**
+ * Extract question from custom control
+ */
+function extractQuestionForCustomControl(element) {
+  // Try aria-label
+  if (element.getAttribute('aria-label')) {
+    return cleanQuestionText(element.getAttribute('aria-label'));
+  }
+
+  // Try aria-labelledby
+  const ariaLabelledBy = element.getAttribute('aria-labelledby');
+  if (ariaLabelledBy) {
+    const labelElement = document.getElementById(ariaLabelledBy);
+    if (labelElement) {
+      return cleanQuestionText(labelElement.textContent);
+    }
+  }
+
+  // Look for parent's label or heading
+  const parent = element.parentElement;
+  if (parent) {
+    // Check for fieldset legend
+    const fieldset = element.closest('fieldset');
+    if (fieldset) {
+      const legend = fieldset.querySelector('legend');
+      if (legend) {
+        return cleanQuestionText(legend.textContent);
+      }
+    }
+
+    // Check for heading in parent
+    const heading = parent.querySelector('h1, h2, h3, h4, h5, h6, label, [class*="question"], [class*="label"]');
+    if (heading && !heading.contains(element)) {
+      return cleanQuestionText(heading.textContent);
+    }
+  }
+
+  // Try siblings
+  let sibling = element.previousElementSibling;
+  while (sibling) {
+    const text = sibling.textContent?.trim();
+    if (text && text.length > 3 && text.length < 200 && !sibling.contains(element)) {
+      return cleanQuestionText(text);
+    }
+    sibling = sibling.previousElementSibling;
+  }
+
+  return '';
+}
+
+/**
+ * Get value from custom control
+ */
+function getCustomControlValue(element) {
+  // Check aria-checked
+  const ariaChecked = element.getAttribute('aria-checked');
+  if (ariaChecked === 'true') return element.textContent?.trim() || 'Yes';
+  if (ariaChecked === 'false') return 'No';
+
+  // Check aria-pressed
+  const ariaPressed = element.getAttribute('aria-pressed');
+  if (ariaPressed === 'true') return element.textContent?.trim() || 'Yes';
+
+  // Check if element has 'selected', 'active', or 'checked' class
+  const classList = element.className.toLowerCase();
+  if (classList.includes('selected') || classList.includes('active') || classList.includes('checked')) {
+    return element.textContent?.trim() || 'Yes';
+  }
+
+  // Check data attributes
+  const dataValue = element.getAttribute('data-value');
+  if (dataValue) return dataValue;
+
+  // Default to element's text content
+  return element.textContent?.trim() || '';
+}
+
+/**
+ * Get available options from custom control siblings
+ */
+function getCustomControlOptions(element) {
+  const options = [];
+  const parent = element.parentElement;
+
+  if (!parent) return options;
+
+  // Find sibling elements that look like options
+  const siblings = parent.children;
+  for (const sibling of siblings) {
+    // Skip if it's the same element
+    if (sibling === element) continue;
+
+    // Check if it looks like an option
+    const role = sibling.getAttribute('role');
+    const classList = sibling.className.toLowerCase();
+    const isOption =
+      role === 'radio' ||
+      role === 'checkbox' ||
+      role === 'button' ||
+      classList.includes('option') ||
+      classList.includes('choice') ||
+      classList.includes('radio') ||
+      classList.includes('checkbox');
+
+    if (isOption) {
+      const text = sibling.textContent?.trim();
+      if (text && text.length > 0 && text.length < 100) {
+        options.push(text);
+      }
+    }
+  }
+
+  return options;
 }
 
 /**
@@ -245,51 +497,78 @@ function handleInputChangeDebounced(input) {
  * Handle file input change
  */
 function handleFileInput(input) {
-  if (!recordModeActive) return;
-
-  const files = input.files;
-  if (!files || files.length === 0) return;
-
-  // Extract question
-  const question = extractQuestionForInput(input);
-  if (!question || question.length < 3) {
-    logRecord('warn', 'Could not extract question for file input', {
-      name: input.name,
-      id: input.id
-    });
+  if (!recordModeActive) {
+    logRecord('warn', 'File input changed but record mode not active');
     return;
   }
 
-  // Create answer indicating file was uploaded
-  const fileNames = Array.from(files).map(f => f.name).join(', ');
-  const answer = files.length === 1
-    ? `File uploaded: ${fileNames}`
-    : `${files.length} files uploaded: ${fileNames}`;
+  try {
+    const files = input.files;
+    logRecord('info', `File input handler called, files: ${files ? files.length : 'null'}`, {
+      hasFiles: !!files,
+      fileCount: files?.length || 0
+    });
 
-  // Create Q&A pair
-  const qaPair = {
-    question: question.trim(),
-    answer: answer,
-    type: 'text', // File uploads are text type
-    timestamp: Date.now(),
-    inputType: 'file'
-  };
+    if (!files || files.length === 0) {
+      logRecord('warn', 'No files selected in file input');
+      return;
+    }
 
-  // Check for duplicate
-  const existingIndex = recordedQAPairs.findIndex(
-    pair => pair.question === qaPair.question
-  );
+    // Extract question
+    const question = extractQuestionForInput(input);
+    logRecord('info', `Extracted question for file input: "${question}"`, {
+      name: input.name,
+      id: input.id
+    });
 
-  if (existingIndex >= 0) {
-    recordedQAPairs[existingIndex] = qaPair;
-    logRecord('info', 'Updated file upload Q&A pair', qaPair);
-  } else {
-    recordedQAPairs.push(qaPair);
-    logRecord('success', 'Captured file upload Q&A pair', qaPair);
+    if (!question || question.length < 3) {
+      logRecord('warn', 'Could not extract valid question for file input', {
+        question,
+        name: input.name,
+        id: input.id,
+        placeholder: input.placeholder,
+        labels: input.labels?.length || 0
+      });
+      return;
+    }
+
+    // Create answer indicating file was uploaded
+    const fileNames = Array.from(files).map(f => f.name).join(', ');
+    const answer = files.length === 1
+      ? `File uploaded: ${fileNames}`
+      : `${files.length} files uploaded: ${fileNames}`;
+
+    // Create Q&A pair
+    const qaPair = {
+      question: question.trim(),
+      answer: answer,
+      type: 'text', // File uploads are text type
+      timestamp: Date.now(),
+      inputType: 'file'
+    };
+
+    // Check for duplicate
+    const existingIndex = recordedQAPairs.findIndex(
+      pair => pair.question === qaPair.question
+    );
+
+    if (existingIndex >= 0) {
+      recordedQAPairs[existingIndex] = qaPair;
+      logRecord('info', 'Updated file upload Q&A pair', qaPair);
+    } else {
+      recordedQAPairs.push(qaPair);
+      logRecord('success', 'Captured file upload Q&A pair', qaPair);
+    }
+
+    updateRecordingIndicator('recording', recordedQAPairs.length);
+    notifyRecordStatus('recording', recordedQAPairs.length);
+
+  } catch (error) {
+    logRecord('error', 'Error in handleFileInput', {
+      error: error.message,
+      stack: error.stack
+    });
   }
-
-  updateRecordingIndicator('recording', recordedQAPairs.length);
-  notifyRecordStatus('recording', recordedQAPairs.length);
 }
 
 /**
