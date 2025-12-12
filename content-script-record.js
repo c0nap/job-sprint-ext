@@ -754,14 +754,52 @@ function getAvailableOptions(input) {
 function extractQuestionForInput(input) {
   logRecord('info', 'Attempting question extraction', { id: input.id, type: input.type, name: input.name });
 
-  // Try label element
+  // For radio buttons, try fieldset legend FIRST before individual labels
+  // (individual labels are usually just "Yes"/"No", not the actual question)
+  if (input.type === 'radio') {
+    const fieldset = input.closest('fieldset');
+    if (fieldset) {
+      const legend = fieldset.querySelector('legend');
+      if (legend) {
+        const question = cleanQuestionText(legend.textContent);
+        logRecord('info', 'Found question via fieldset legend', { question });
+        return question;
+      }
+    }
+
+    // Try to find a common parent with a question for all radios in the group
+    const radioGroup = document.querySelectorAll(`input[type="radio"][name="${input.name}"]`);
+    if (radioGroup.length > 0) {
+      const firstRadio = radioGroup[0];
+      const parent = firstRadio.closest('div, section, fieldset');
+      if (parent) {
+        // Look for a heading or label in the parent
+        const heading = parent.querySelector('h1, h2, h3, h4, h5, h6, label:not([for]), [class*="question"], [class*="label"]');
+        if (heading && !heading.contains(input)) {
+          const headingText = cleanQuestionText(heading.textContent);
+          // Skip if it's just "Yes" or "No"
+          if (headingText && headingText.length > 3 && !['yes', 'no'].includes(headingText.toLowerCase())) {
+            logRecord('info', 'Found question via radio group heading', { question: headingText });
+            return headingText;
+          }
+        }
+      }
+    }
+  }
+
+  // Try label element (but skip for radio if it's just "Yes"/"No")
   const label = input.labels?.[0] || document.querySelector(`label[for="${input.id}"]`);
   if (label) {
     const question = cleanQuestionText(label.textContent);
-    logRecord('info', 'Found question via label', { question });
-    return question;
+    // For radio buttons, skip if label is just "Yes"/"No" or other common radio labels
+    if (input.type === 'radio' && ['yes', 'no', 'true', 'false'].includes(question.toLowerCase())) {
+      logRecord('info', 'Skipping radio label (just Yes/No)', { label: question });
+    } else {
+      logRecord('info', 'Found question via label', { question });
+      return question;
+    }
   }
-  logRecord('info', 'No label found');
+  logRecord('info', 'No suitable label found');
 
   // Try aria-labelledby
   const ariaLabelledBy = input.getAttribute('aria-labelledby');
@@ -780,20 +818,6 @@ function extractQuestionForInput(input) {
     const question = cleanQuestionText(ariaLabel);
     logRecord('info', 'Found question via aria-label', { question });
     return question;
-  }
-
-  // For radio buttons, check if they're in a fieldset with a legend
-  if (input.type === 'radio') {
-    const fieldset = input.closest('fieldset');
-    if (fieldset) {
-      const legend = fieldset.querySelector('legend');
-      if (legend) {
-        const question = cleanQuestionText(legend.textContent);
-        logRecord('info', 'Found question via fieldset legend', { question });
-        return question;
-      }
-    }
-    logRecord('info', 'No fieldset/legend found for radio');
   }
 
   // Try data-label attribute (some custom forms use this)
