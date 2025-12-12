@@ -39,6 +39,9 @@ function startRecordMode() {
   recordedQAPairs = [];
   monitoredInputs.clear();
 
+  // Save recording state to storage (persists across page changes)
+  chrome.storage.local.set({ recordModeActive: true });
+
   logRecord('info', 'Record mode started - monitoring form interactions');
 
   // Find and monitor all form inputs
@@ -48,11 +51,11 @@ function startRecordMode() {
   showRecordingIndicator();
 
   // Send status update
-  notifyRecordStatus('recording', recordedQAPairs.length);
+  notifyRecordStatus('recording', 0);
 }
 
 /**
- * Stop recording mode and save collected QA pairs
+ * Stop recording mode (database already updated in real-time)
  */
 async function stopRecordMode() {
   if (!recordModeActive) {
@@ -60,16 +63,14 @@ async function stopRecordMode() {
     return;
   }
 
+  const finalCount = recordedQAPairs.length;
+
   recordModeActive = false;
 
-  logRecord('success', `Record mode stopped - captured ${recordedQAPairs.length} Q&A pairs`, {
-    pairs: recordedQAPairs
-  });
+  // Clear recording state from storage
+  await chrome.storage.local.set({ recordModeActive: false });
 
-  // Save to database
-  if (recordedQAPairs.length > 0) {
-    await saveRecordedQAPairs();
-  }
+  logRecord('success', `Record mode stopped - ${finalCount} Q&A pairs saved to database`);
 
   // Remove indicator
   removeRecordingIndicator();
@@ -78,7 +79,10 @@ async function stopRecordMode() {
   cleanupMonitoring();
 
   // Send status update
-  notifyRecordStatus('stopped', recordedQAPairs.length);
+  notifyRecordStatus('stopped', finalCount);
+
+  // Clear the in-memory array (database already has everything)
+  recordedQAPairs = [];
 }
 
 /**
@@ -247,7 +251,7 @@ function handleCustomControlClick(element) {
   if (!recordModeActive) return;
 
   // Wait a bit for the element to update its state
-  setTimeout(() => {
+  setTimeout(async () => {
     const question = extractQuestionForCustomControl(element);
     if (!question || question.length < 3) {
       logRecord('warn', 'Could not extract question for custom control', {
@@ -291,6 +295,9 @@ function handleCustomControlClick(element) {
       recordedQAPairs.push(qaPair);
       logRecord('success', 'Captured custom control Q&A pair', qaPair);
     }
+
+    // Save to database immediately (real-time save)
+    await saveQAPairToDatabase(qaPair, existingIndex >= 0);
 
     updateRecordingIndicator('recording', recordedQAPairs.length);
     notifyRecordStatus('recording', recordedQAPairs.length);
@@ -496,7 +503,7 @@ function handleInputChangeDebounced(input) {
 /**
  * Handle file input change
  */
-function handleFileInput(input) {
+async function handleFileInput(input) {
   if (!recordModeActive) {
     logRecord('warn', 'File input changed but record mode not active');
     return;
@@ -560,6 +567,9 @@ function handleFileInput(input) {
       logRecord('success', 'Captured file upload Q&A pair', qaPair);
     }
 
+    // Save to database immediately (real-time save)
+    await saveQAPairToDatabase(qaPair, existingIndex >= 0);
+
     updateRecordingIndicator('recording', recordedQAPairs.length);
     notifyRecordStatus('recording', recordedQAPairs.length);
 
@@ -574,7 +584,7 @@ function handleFileInput(input) {
 /**
  * Handle input value change - capture Q&A pair
  */
-function handleInputChange(input) {
+async function handleInputChange(input) {
   if (!recordModeActive) return;
 
   // Skip if input is empty
@@ -624,6 +634,9 @@ function handleInputChange(input) {
     recordedQAPairs.push(qaPair);
     logRecord('success', 'Captured Q&A pair', qaPair);
   }
+
+  // Save to database immediately (real-time save)
+  await saveQAPairToDatabase(qaPair, existingIndex >= 0);
 
   // Update indicator
   updateRecordingIndicator('recording', recordedQAPairs.length);
@@ -848,51 +861,34 @@ function findFormInputs() {
 // ============ DATABASE OPERATIONS ============
 
 /**
- * Save all recorded Q&A pairs to the database
+ * Save a single Q&A pair to the database immediately (real-time save)
  */
-async function saveRecordedQAPairs() {
-  if (recordedQAPairs.length === 0) {
-    logRecord('info', 'No Q&A pairs to save');
-    return;
-  }
-
+async function saveQAPairToDatabase(qaPair, isUpdate = false) {
   try {
     // Get existing database
     const result = await chrome.storage.local.get(['qaDatabase']);
     const database = result.qaDatabase || [];
 
-    let newCount = 0;
-    let updatedCount = 0;
+    // Check if question already exists
+    const existingIndex = database.findIndex(
+      pair => pair.question.toLowerCase().trim() === qaPair.question.toLowerCase().trim()
+    );
 
-    // Add or update each pair
-    recordedQAPairs.forEach(newPair => {
-      const existingIndex = database.findIndex(
-        pair => pair.question.toLowerCase().trim() === newPair.question.toLowerCase().trim()
-      );
+    if (existingIndex >= 0) {
+      // Update existing entry
+      database[existingIndex] = qaPair;
+      logRecord('info', 'Updated Q&A in database', { question: qaPair.question });
+    } else {
+      // Add new entry
+      database.push(qaPair);
+      logRecord('success', 'Added new Q&A to database', { question: qaPair.question });
+    }
 
-      if (existingIndex >= 0) {
-        // Update existing entry
-        database[existingIndex] = newPair;
-        updatedCount++;
-      } else {
-        // Add new entry
-        database.push(newPair);
-        newCount++;
-      }
-    });
-
-    // Save to storage
+    // Save to storage immediately
     await chrome.storage.local.set({ qaDatabase: database });
 
-    logRecord('success', `Saved to database: ${newCount} new, ${updatedCount} updated`, {
-      total: database.length
-    });
-
-    // Notify user
-    showSaveNotification(newCount, updatedCount);
-
   } catch (error) {
-    logRecord('error', 'Failed to save Q&A pairs', { error: error.message });
+    logRecord('error', 'Failed to save Q&A pair to database', { error: error.message });
   }
 }
 
@@ -928,7 +924,7 @@ function showRecordingIndicator() {
     <div style="width: 10px; height: 10px; background: white; border-radius: 50%; animation: pulse 1.5s infinite;"></div>
     <div>Recording: <span id="record-count">0</span> Q&A pairs</div>
     <button id="record-pause-btn" style="background: rgba(255,255,255,0.2); border: 1px solid white; color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">Pause</button>
-    <button id="record-stop-btn" style="background: white; border: none; color: #f44336; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">Stop & Save</button>
+    <button id="record-stop-btn" style="background: white; border: none; color: #f44336; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">Stop</button>
   `;
 
   // Add pulse animation
@@ -1123,6 +1119,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 });
+
+// ============ PAGE LOAD - RESTORE RECORDING STATE ============
+
+/**
+ * Check if recording was active before page navigation and restore it
+ */
+async function restoreRecordingState() {
+  try {
+    const result = await chrome.storage.local.get(['recordModeActive']);
+
+    if (result.recordModeActive === true) {
+      logRecord('info', 'Restoring recording state after page navigation');
+      startRecordMode();
+    }
+  } catch (error) {
+    console.error('Error restoring recording state:', error);
+  }
+}
+
+// Restore recording state when page loads
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', restoreRecordingState);
+} else {
+  restoreRecordingState();
+}
 
 // Export for testing
 if (typeof module !== 'undefined' && module.exports) {
