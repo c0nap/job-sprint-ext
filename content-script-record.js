@@ -752,24 +752,34 @@ function getAvailableOptions(input) {
  * Looks for labels, placeholders, aria-labels, and nearby headings
  */
 function extractQuestionForInput(input) {
+  logRecord('info', 'Attempting question extraction', { id: input.id, type: input.type, name: input.name });
+
   // Try label element
   const label = input.labels?.[0] || document.querySelector(`label[for="${input.id}"]`);
   if (label) {
-    return cleanQuestionText(label.textContent);
+    const question = cleanQuestionText(label.textContent);
+    logRecord('info', 'Found question via label', { question });
+    return question;
   }
+  logRecord('info', 'No label found');
 
   // Try aria-labelledby
   const ariaLabelledBy = input.getAttribute('aria-labelledby');
   if (ariaLabelledBy) {
     const labelElement = document.getElementById(ariaLabelledBy);
     if (labelElement) {
-      return cleanQuestionText(labelElement.textContent);
+      const question = cleanQuestionText(labelElement.textContent);
+      logRecord('info', 'Found question via aria-labelledby', { question });
+      return question;
     }
   }
 
   // Try aria-label
-  if (input.getAttribute('aria-label')) {
-    return cleanQuestionText(input.getAttribute('aria-label'));
+  const ariaLabel = input.getAttribute('aria-label');
+  if (ariaLabel) {
+    const question = cleanQuestionText(ariaLabel);
+    logRecord('info', 'Found question via aria-label', { question });
+    return question;
   }
 
   // For radio buttons, check if they're in a fieldset with a legend
@@ -778,9 +788,12 @@ function extractQuestionForInput(input) {
     if (fieldset) {
       const legend = fieldset.querySelector('legend');
       if (legend) {
-        return cleanQuestionText(legend.textContent);
+        const question = cleanQuestionText(legend.textContent);
+        logRecord('info', 'Found question via fieldset legend', { question });
+        return question;
       }
     }
+    logRecord('info', 'No fieldset/legend found for radio');
   }
 
   // Try data-label attribute (some custom forms use this)
