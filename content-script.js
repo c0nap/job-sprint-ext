@@ -470,16 +470,16 @@ function createActionButtons(onApprove, onReject) {
   const rejectBtn = document.createElement('button');
   rejectBtn.textContent = 'Skip';
   rejectBtn.style.cssText = 'padding: 10px 20px; border: 2px solid #ddd; background: white; color: #666; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;';
-  rejectBtn.onmouseover = () => { rejectBtn.style.background = '#f5f5f5'; rejectBtn.style.borderColor = '#999'; };
-  rejectBtn.onmouseout = () => { rejectBtn.style.background = 'white'; rejectBtn.style.borderColor = '#ddd'; };
-  rejectBtn.onclick = () => { removeApprovalUI(); onReject(); };
+  rejectBtn.addEventListener('mouseover', () => { rejectBtn.style.background = '#f5f5f5'; rejectBtn.style.borderColor = '#999'; });
+  rejectBtn.addEventListener('mouseout', () => { rejectBtn.style.background = 'white'; rejectBtn.style.borderColor = '#ddd'; });
+  rejectBtn.addEventListener('click', () => { removeApprovalUI(); onReject(); });
 
   const approveBtn = document.createElement('button');
   approveBtn.textContent = 'Apply Answer';
   approveBtn.style.cssText = 'padding: 10px 20px; border: none; background: #4CAF50; color: white; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;';
-  approveBtn.onmouseover = () => { approveBtn.style.background = '#45a049'; };
-  approveBtn.onmouseout = () => { approveBtn.style.background = '#4CAF50'; };
-  approveBtn.onclick = () => { removeApprovalUI(); onApprove(); };
+  approveBtn.addEventListener('mouseover', () => { approveBtn.style.background = '#45a049'; });
+  approveBtn.addEventListener('mouseout', () => { approveBtn.style.background = '#4CAF50'; });
+  approveBtn.addEventListener('click', () => { removeApprovalUI(); onApprove(); });
 
   return { approveBtn, rejectBtn };
 }
