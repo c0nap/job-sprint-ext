@@ -210,7 +210,11 @@ function appendToConsole(entry) {
   logLine.textContent = `[${entry.timestamp}] ${entry.message}`;
 
   consoleOutput.appendChild(logLine);
-  consoleOutput.scrollTop = consoleOutput.scrollHeight;
+
+  // Force scroll to bottom after DOM update
+  requestAnimationFrame(() => {
+    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+  });
 }
 
 /**
