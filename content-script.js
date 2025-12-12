@@ -609,18 +609,235 @@ function showApprovalUI(input, question, answer, onApprove, onReject) {
 }
 
 /**
+ * Inject CSS stylesheet for JobSprint modal (CSP-compliant)
+ * Only injects once, uses classes instead of inline styles
+ */
+function injectJobSprintStyles() {
+  if (document.getElementById('jobsprint-modal-styles')) {
+    return; // Already injected
+  }
+
+  const style = document.createElement('style');
+  style.id = 'jobsprint-modal-styles';
+  style.textContent = `
+    @keyframes slideIn {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    #jobsprint-approval-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 999999;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .jobsprint-modal {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      animation: slideIn 0.3s ease-out;
+    }
+
+    .jobsprint-modal-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .jobsprint-modal-icon {
+      width: 32px;
+      height: 32px;
+      background: #4CAF50;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 18px;
+      margin-right: 12px;
+    }
+
+    .jobsprint-modal-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .jobsprint-data-container {
+      margin-bottom: 12px;
+      padding: 12px;
+      background: #f5f5f5;
+      border-radius: 6px;
+    }
+
+    .jobsprint-data-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #666;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .jobsprint-data-text {
+      font-size: 14px;
+      color: #333;
+      line-height: 1.4;
+    }
+
+    .jobsprint-success-container {
+      margin-bottom: 20px;
+      padding: 12px;
+      background: #e8f5e9;
+      border-radius: 6px;
+      border-left: 3px solid #4CAF50;
+    }
+
+    .jobsprint-success-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #2e7d32;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .jobsprint-success-text {
+      font-size: 14px;
+      color: #1b5e20;
+      line-height: 1.4;
+    }
+
+    .jobsprint-button-container {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    .jobsprint-btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 2px solid;
+    }
+
+    .jobsprint-btn-reject {
+      border-color: #ddd;
+      background: white;
+      color: #666;
+    }
+
+    .jobsprint-btn-reject:hover {
+      background: #f5f5f5;
+      border-color: #999;
+    }
+
+    .jobsprint-btn-approve {
+      border: none;
+      background: #4CAF50;
+      color: white;
+    }
+
+    .jobsprint-btn-approve:hover {
+      background: #45a049;
+    }
+
+    /* Mouse tracking highlight styles */
+    .jobsprint-text-highlight {
+      background-color: var(--jobsprint-highlight-bg, #ffd700);
+      color: inherit;
+      padding: 2px 0;
+      border-radius: 2px;
+      box-shadow: 0 0 0 2px var(--jobsprint-highlight-shadow, #ffa500);
+      font-weight: inherit;
+      pointer-events: none;
+    }
+
+    #jobsprint-mouse-tracking-overlay {
+      position: fixed;
+      background: rgba(255, 107, 107, 0.95);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 999998;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      pointer-events: auto;
+      animation: slideInFromRight 0.3s ease-out;
+    }
+
+    @keyframes slideInFromRight {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); }
+      50% { box-shadow: 0 4px 20px rgba(255, 107, 107, 0.6); }
+    }
+
+    #jobsprint-exit-btn {
+      background: rgb(220, 53, 69);
+      border: none;
+      color: white;
+      font-size: 20px;
+      font-weight: bold;
+      width: 26px;
+      height: 26px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      margin: 0 0 0 4px;
+      line-height: 1;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+      pointer-events: auto;
+      outline: none;
+      box-shadow: none;
+    }
+
+    #jobsprint-exit-btn:hover {
+      background: rgb(200, 35, 51);
+      transform: scale(1.1);
+    }
+
+    #jobsprint-exit-btn:active {
+      background: rgb(189, 33, 48);
+      transform: scale(0.95);
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+/**
  * Create the overlay backdrop
  * @returns {HTMLElement} Overlay element
  */
 function createOverlay() {
+  injectJobSprintStyles(); // Ensure styles are injected
   const overlay = document.createElement('div');
   overlay.id = 'jobsprint-approval-overlay';
-  overlay.style.cssText = `
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.7); display: flex;
-    justify-content: center; align-items: center; z-index: 999999;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  `;
   return overlay;
 }
 
@@ -630,21 +847,7 @@ function createOverlay() {
  */
 function createModal() {
   const modal = document.createElement('div');
-  modal.style.cssText = `
-    background: white; border-radius: 12px; padding: 24px;
-    max-width: 500px; width: 90%;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    animation: slideIn 0.3s ease-out;
-  `;
-
-  // Add animation
-  if (!document.getElementById('jobsprint-modal-styles')) {
-    const style = document.createElement('style');
-    style.id = 'jobsprint-modal-styles';
-    style.textContent = `@keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`;
-    document.head.appendChild(style);
-  }
-
+  modal.className = 'jobsprint-modal';
   return modal;
 }
 
@@ -654,18 +857,14 @@ function createModal() {
  */
 function createModalHeader() {
   const header = document.createElement('div');
-  header.style.cssText = 'display: flex; align-items: center; margin-bottom: 16px;';
+  header.className = 'jobsprint-modal-header';
 
   const icon = document.createElement('div');
-  icon.style.cssText = `
-    width: 40px; height: 40px; background: #4CAF50; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    margin-right: 12px; font-size: 20px; color: white;
-  `;
+  icon.className = 'jobsprint-modal-icon';
   icon.textContent = '✓';
 
   const title = document.createElement('h3');
-  title.style.cssText = 'margin: 0; font-size: 18px; font-weight: 600; color: #333;';
+  title.className = 'jobsprint-modal-title';
   title.textContent = 'Autofill Suggestion';
 
   header.appendChild(icon);
@@ -680,14 +879,14 @@ function createModalHeader() {
  */
 function createQuestionDisplay(question) {
   const container = document.createElement('div');
-  container.style.cssText = 'margin-bottom: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px;';
+  container.className = 'jobsprint-data-container';
 
   const label = document.createElement('div');
-  label.style.cssText = 'font-size: 12px; font-weight: 600; color: #666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;';
+  label.className = 'jobsprint-data-label';
   label.textContent = 'Question';
 
   const text = document.createElement('div');
-  text.style.cssText = 'font-size: 14px; color: #333; line-height: 1.4;';
+  text.className = 'jobsprint-data-text';
   text.textContent = question;
 
   container.appendChild(label);
@@ -702,14 +901,14 @@ function createQuestionDisplay(question) {
  */
 function createAnswerDisplay(answer) {
   const container = document.createElement('div');
-  container.style.cssText = 'margin-bottom: 20px; padding: 12px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #4CAF50;';
+  container.className = 'jobsprint-success-container';
 
   const label = document.createElement('div');
-  label.style.cssText = 'font-size: 12px; font-weight: 600; color: #2e7d32; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;';
+  label.className = 'jobsprint-success-label';
   label.textContent = 'Suggested Answer';
 
   const text = document.createElement('div');
-  text.style.cssText = 'font-size: 15px; color: #1b5e20; font-weight: 500; line-height: 1.4;';
+  text.className = 'jobsprint-success-text';
   text.textContent = answer;
 
   container.appendChild(label);
@@ -726,16 +925,12 @@ function createAnswerDisplay(answer) {
 function createActionButtons(onApprove, onReject) {
   const rejectBtn = document.createElement('button');
   rejectBtn.textContent = 'Skip';
-  rejectBtn.style.cssText = 'padding: 10px 20px; border: 2px solid #ddd; background: white; color: #666; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;';
-  rejectBtn.addEventListener('mouseover', () => { rejectBtn.style.background = '#f5f5f5'; rejectBtn.style.borderColor = '#999'; });
-  rejectBtn.addEventListener('mouseout', () => { rejectBtn.style.background = 'white'; rejectBtn.style.borderColor = '#ddd'; });
+  rejectBtn.className = 'jobsprint-btn jobsprint-btn-reject';
   rejectBtn.addEventListener('click', () => { removeApprovalUI(); onReject(); });
 
   const approveBtn = document.createElement('button');
   approveBtn.textContent = 'Apply Answer';
-  approveBtn.style.cssText = 'padding: 10px 20px; border: none; background: #4CAF50; color: white; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;';
-  approveBtn.addEventListener('mouseover', () => { approveBtn.style.background = '#45a049'; });
-  approveBtn.addEventListener('mouseout', () => { approveBtn.style.background = '#4CAF50'; });
+  approveBtn.className = 'jobsprint-btn jobsprint-btn-approve';
   approveBtn.addEventListener('click', () => { removeApprovalUI(); onApprove(); });
 
   return { approveBtn, rejectBtn };
@@ -748,7 +943,7 @@ function createActionButtons(onApprove, onReject) {
  */
 function createButtonContainer(...buttons) {
   const container = document.createElement('div');
-  container.style.cssText = 'display: flex; gap: 12px; justify-content: flex-end;';
+  container.className = 'jobsprint-button-container';
   buttons.forEach(btn => container.appendChild(btn));
   return container;
 }
@@ -2501,18 +2696,11 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   const fragment = document.createDocumentFragment();
   if (before) fragment.appendChild(document.createTextNode(before));
 
-  // Create the <mark> element with mode-specific styling
+  // Create the <mark> element with mode-specific styling using CSS variables
   const mark = document.createElement('mark');
   mark.className = 'jobsprint-text-highlight';
-  mark.style.cssText = `
-    background-color: ${bgColor};
-    color: inherit;
-    padding: 2px 0;
-    border-radius: 2px;
-    box-shadow: 0 0 0 2px ${shadowColor};
-    font-weight: inherit;
-    pointer-events: none;
-  `;
+  mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
+  mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
   // CRITICAL: pointer-events: none prevents the mark from interfering with mouse tracking
   // WITHOUT THIS: mouse would constantly hit the mark itself, causing jitter/flicker
   mark.textContent = best.matchText;
@@ -2602,15 +2790,8 @@ function highlightFirstOccurrence(element, searchText, elementText, bgColor, sha
 
         const mark = document.createElement('mark');
         mark.className = 'jobsprint-text-highlight';
-        mark.style.cssText = `
-          background-color: ${bgColor};
-          color: inherit;
-          padding: 2px 0;
-          border-radius: 2px;
-          box-shadow: 0 0 0 2px ${shadowColor};
-          font-weight: inherit;
-          pointer-events: none;
-        `;
+        mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
+        mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
         mark.textContent = matchedText;
         fragment.appendChild(mark);
 
@@ -2796,125 +2977,57 @@ function updateModeButtonStates() {
 }
 
 /**
- * Create visual overlay to indicate tracking mode is active
+ * Create visual overlay to indicate tracking mode is active (CSP-compliant)
  */
 function createTrackingOverlay() {
   removeTrackingOverlay();
 
-  const overlay = document.createElement('div');
-  overlay.id = 'jobsprint-tracking-overlay';
+  injectJobSprintStyles(); // Ensure styles are injected
 
-  // Build position CSS based on stored position
-  let positionCSS = '';
+  const overlay = document.createElement('div');
+  overlay.id = 'jobsprint-mouse-tracking-overlay';
+
+  // Apply position using inline styles for dynamic positioning (this is allowed)
   if (overlayPosition.top !== null) {
-    positionCSS += `top: ${overlayPosition.top}px;`;
+    overlay.style.top = `${overlayPosition.top}px`;
   }
   if (overlayPosition.bottom !== null) {
-    positionCSS += `bottom: ${overlayPosition.bottom}px;`;
+    overlay.style.bottom = `${overlayPosition.bottom}px`;
   }
   if (overlayPosition.right !== null) {
-    positionCSS += `right: ${overlayPosition.right}px;`;
+    overlay.style.right = `${overlayPosition.right}px`;
   }
   if (overlayPosition.left !== null) {
-    positionCSS += `left: ${overlayPosition.left}px;`;
+    overlay.style.left = `${overlayPosition.left}px`;
   }
 
-  overlay.style.cssText = `
-    position: fixed;
-    ${positionCSS}
-    background: rgba(255, 107, 107, 0.95);
-    color: white;
-    padding: 8px 12px 8px 12px;
-    border-radius: 6px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 13px;
-    font-weight: 600;
-    z-index: 999998;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    pointer-events: auto;
-    animation: slideInFromRight 0.3s ease-out;
-  `;
+  // Create overlay content structure using DOM methods (no innerHTML)
+  const icon = document.createElement('span');
+  icon.textContent = '🎯';
 
-  overlay.innerHTML = `
-    <div style="display: flex; align-items: flex-start; gap: 6px; position: relative;">
-      <div style="flex: 1;">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 14px;">🎯</span>
-          <span id="jobsprint-tracking-title" style="font-size: 11px; font-weight: 500;">Mouse Text Mirror</span>
-        </div>
-        <div id="jobsprint-tracking-mode" style="font-size: 9px; opacity: 0.75; line-height: 1.3; margin-top: 3px;">
-          ↑↓ adjust • Alt+Arrows move • ESC cancel
-        </div>
-      </div>
-      <button id="jobsprint-exit-btn" style="
-        background-color: rgb(220, 53, 69) !important;
-        background: rgb(220, 53, 69) !important;
-        border: none !important;
-        color: rgb(255, 255, 255) !important;
-        font-size: 20px !important;
-        font-weight: bold !important;
-        width: 26px !important;
-        height: 26px !important;
-        border-radius: 4px !important;
-        cursor: pointer !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        margin-left: 4px !important;
-        line-height: 1 !important;
-        transition: all 0.2s ease !important;
-        flex-shrink: 0 !important;
-        pointer-events: auto !important;
-        outline: none !important;
-        box-shadow: none !important;
-      " title="Exit tracking mode (ESC)">×</button>
-    </div>
-  `;
+  const title = document.createElement('span');
+  title.id = 'jobsprint-tracking-title';
+  title.textContent = 'Mouse Text Mirror';
 
-  // Add animation
-  if (!document.getElementById('jobsprint-tracking-styles')) {
-    const style = document.createElement('style');
-    style.id = 'jobsprint-tracking-styles';
-    style.textContent = `
-      @keyframes slideInFromRight {
-        from {
-          transform: translateX(100%);
-          opacity: 0;
-        }
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
-      }
-      @keyframes pulseGlow {
-        0%, 100% {
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-        50% {
-          box-shadow: 0 4px 20px rgba(255, 107, 107, 0.6);
-        }
-      }
-      #jobsprint-exit-btn:hover {
-        background-color: rgb(200, 35, 51) !important;
-        background: rgb(200, 35, 51) !important;
-        transform: scale(1.1) !important;
-      }
-      #jobsprint-exit-btn:active {
-        background-color: rgb(189, 33, 48) !important;
-        background: rgb(189, 33, 48) !important;
-        transform: scale(0.95) !important;
-      }
-    `;
-    document.head.appendChild(style);
-  }
+  const mode = document.createElement('div');
+  mode.id = 'jobsprint-tracking-mode';
+  mode.textContent = '↑↓ adjust • Alt+Arrows move • ESC cancel';
+
+  const exitBtn = document.createElement('button');
+  exitBtn.id = 'jobsprint-exit-btn';
+  exitBtn.title = 'Exit tracking mode (ESC)';
+  exitBtn.textContent = '×';
+
+  // Assemble the overlay structure
+  overlay.appendChild(icon);
+  overlay.appendChild(title);
+  overlay.appendChild(mode);
+  overlay.appendChild(exitBtn);
 
   document.body.appendChild(overlay);
   mouseTrackingOverlay = overlay;
 
   // Add event listener for exit button
-  const exitBtn = overlay.querySelector('#jobsprint-exit-btn');
   if (exitBtn) {
     console.log('[Overlay] Exit button found, attaching event listeners');
 
