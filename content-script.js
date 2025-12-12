@@ -36,9 +36,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false; // Synchronous response
 
     default:
-      // Unknown action - return error
-      sendResponse({ success: false, error: `Unknown action: ${message.action}` });
-      return false; // Synchronous response
+      // Not handled by this script - let other listeners handle it
+      return false;
   }
 });
 
