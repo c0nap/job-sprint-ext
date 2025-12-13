@@ -2536,6 +2536,42 @@ function createTextHighlight(element, text) {
 }
 
 /**
+ * Create a floating highlight box at the mouse position
+ * This avoids all DOM manipulation and positioning issues on CSP-strict pages
+ * @param {string} text - Text to show in the highlight
+ * @param {number} x - Mouse X position
+ * @param {number} y - Mouse Y position
+ * @param {string} bgColor - Background color for the highlight
+ */
+function createFloatingHighlight(text, x, y, bgColor) {
+  // Remove any existing floating highlight
+  const existing = document.getElementById('jobsprint-floating-highlight');
+  if (existing) existing.remove();
+
+  // Create floating box
+  const box = document.createElement('div');
+  box.id = 'jobsprint-floating-highlight';
+  box.textContent = text;
+  box.style.cssText = `
+    position: fixed;
+    left: ${x + 10}px;
+    top: ${y - 25}px;
+    background: ${bgColor};
+    color: #000;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 999999;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    white-space: nowrap;
+  `;
+
+  document.body.appendChild(box);
+}
+
+/**
  * Highlight specific text within an element by wrapping it in a <mark> tag.
  *
  * ALGORITHM: Screen Coordinate Distance-Based Highlighting
@@ -2646,23 +2682,9 @@ function highlightTextInElement(element, searchText, mouseEvent, sourceNode = nu
 
         console.log('[Highlight] Found text at index', actualIndex, 'in source node');
 
-        // Create highlight at this exact position
-        const before = sourceNode.nodeValue.substring(0, actualIndex);
-        const after = sourceNode.nodeValue.substring(actualIndex + actualText.length);
-
-        const fragment = document.createDocumentFragment();
-        if (before) fragment.appendChild(document.createTextNode(before));
-
-        const mark = document.createElement('mark');
-        mark.className = 'jobsprint-text-highlight';
-        mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
-        mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
-        mark.textContent = actualText;
-        fragment.appendChild(mark);
-
-        if (after) fragment.appendChild(document.createTextNode(after));
-
-        sourceNode.parentNode.replaceChild(fragment, sourceNode);
+        // Create floating overlay at mouse position instead of inline mark
+        // This avoids all text shifting and offset issues!
+        createFloatingHighlight(actualText, mouseX, mouseY, bgColor);
         lastHighlightPosition = { x: mouseX, y: mouseY, text: actualText };
         return;
       }
@@ -2989,6 +3011,10 @@ function getModeColors(mode) {
  * CRITICAL: Always calls normalize() to prevent DOM fragmentation
  */
 function removeHighlight() {
+  // Remove floating highlight box
+  const floatingHighlight = document.getElementById('jobsprint-floating-highlight');
+  if (floatingHighlight) floatingHighlight.remove();
+
   if (lastHighlightedElement) {
     // Remove visual outline around element
     lastHighlightedElement.style.outline = '';
