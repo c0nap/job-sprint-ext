@@ -2618,48 +2618,54 @@ function highlightTextInElement(element, searchText, mouseEvent, sourceNode = nu
       const textNode = document.createTextNode(text);
       mark.parentNode.replaceChild(textNode, mark);
     });
-    element.normalize();
+    // DON'T normalize() yet - it would destroy sourceNode reference!
 
-    // Find searchText in sourceNode starting near sourceOffset
-    const nodeText = sourceNode.nodeValue || '';
-    const searchLen = cleanedSearchText.length;
+    // Verify sourceNode is still in the DOM
+    if (!sourceNode.parentNode) {
+      console.log('[Highlight] Source node no longer in DOM, falling back to search');
+      // Fall through to normal search path below
+    } else {
+      // Find searchText in sourceNode starting near sourceOffset
+      const nodeText = sourceNode.nodeValue || '';
+      const searchLen = cleanedSearchText.length;
 
-    // Search within a window around the offset
-    const windowStart = Math.max(0, sourceOffset - 50);
-    const windowEnd = Math.min(nodeText.length, sourceOffset + 50);
-    const windowText = nodeText.substring(windowStart, windowEnd);
+      // Search within a window around the offset
+      const windowStart = Math.max(0, sourceOffset - 50);
+      const windowEnd = Math.min(nodeText.length, sourceOffset + 50);
+      const windowText = nodeText.substring(windowStart, windowEnd);
 
-    // Try to find the search text in this window (case-insensitive, flexible whitespace)
-    const escapedText = cleanedSearchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const patternText = escapedText.replace(/\s+/g, '\\s+');
-    const regex = new RegExp(patternText, 'i');
-    const match = windowText.match(regex);
+      // Try to find the search text in this window (case-insensitive, flexible whitespace)
+      const escapedText = cleanedSearchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const patternText = escapedText.replace(/\s+/g, '\\s+');
+      const regex = new RegExp(patternText, 'i');
+      const match = windowText.match(regex);
 
-    if (match && match.index !== undefined) {
-      const actualIndex = windowStart + match.index;
-      const actualText = match[0];
+      if (match && match.index !== undefined) {
+        const actualIndex = windowStart + match.index;
+        const actualText = match[0];
 
-      console.log('[Highlight] Found text at index', actualIndex, 'in source node');
+        console.log('[Highlight] Found text at index', actualIndex, 'in source node');
 
-      // Create highlight at this exact position
-      const before = sourceNode.nodeValue.substring(0, actualIndex);
-      const after = sourceNode.nodeValue.substring(actualIndex + actualText.length);
+        // Create highlight at this exact position
+        const before = sourceNode.nodeValue.substring(0, actualIndex);
+        const after = sourceNode.nodeValue.substring(actualIndex + actualText.length);
 
-      const fragment = document.createDocumentFragment();
-      if (before) fragment.appendChild(document.createTextNode(before));
+        const fragment = document.createDocumentFragment();
+        if (before) fragment.appendChild(document.createTextNode(before));
 
-      const mark = document.createElement('mark');
-      mark.className = 'jobsprint-text-highlight';
-      mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
-      mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
-      mark.textContent = actualText;
-      fragment.appendChild(mark);
+        const mark = document.createElement('mark');
+        mark.className = 'jobsprint-text-highlight';
+        mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
+        mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
+        mark.textContent = actualText;
+        fragment.appendChild(mark);
 
-      if (after) fragment.appendChild(document.createTextNode(after));
+        if (after) fragment.appendChild(document.createTextNode(after));
 
-      sourceNode.parentNode.replaceChild(fragment, sourceNode);
-      lastHighlightPosition = { x: mouseX, y: mouseY, text: actualText };
-      return;
+        sourceNode.parentNode.replaceChild(fragment, sourceNode);
+        lastHighlightPosition = { x: mouseX, y: mouseY, text: actualText };
+        return;
+      }
     }
   }
 
