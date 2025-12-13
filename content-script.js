@@ -763,11 +763,17 @@ function injectJobSprintStyles() {
     .jobsprint-text-highlight {
       background-color: var(--jobsprint-highlight-bg, #ffd700);
       color: inherit;
-      padding: 2px 0;
-      border-radius: 2px;
-      box-shadow: 0 0 0 2px var(--jobsprint-highlight-shadow, #ffa500);
+      padding: 0;
+      margin: 0;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
       font-weight: inherit;
+      font-size: inherit;
+      line-height: inherit;
+      letter-spacing: inherit;
       pointer-events: none;
+      display: inline;
     }
 
     #jobsprint-mouse-tracking-overlay {
@@ -1827,6 +1833,7 @@ function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1
   // Try to find the word under cursor using Range API
   const range = document.caretRangeFromPoint(event.clientX, event.clientY);
   if (!range) {
+    console.log('[Extract] caretRangeFromPoint returned null - using fallback');
     // Fallback: return first N words
     const totalWords = wordsLeft + wordsRight + 1;
     return words.slice(0, totalWords).join(' ');
@@ -1835,11 +1842,13 @@ function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1
   // Get approximate position in text
   const textNode = range.startContainer;
   if (textNode.nodeType !== Node.TEXT_NODE) {
+    console.log('[Extract] Range not in text node, nodeType:', textNode.nodeType);
     const totalWords = wordsLeft + wordsRight + 1;
     return words.slice(0, totalWords).join(' ');
   }
 
   const offset = range.startOffset;
+  console.log('[Extract] Found text node:', textNode.nodeValue?.substring(0, 50), 'offset:', offset);
 
   // Calculate the actual position by walking through all text nodes before the cursor
   let targetPosition = 0;
@@ -2551,9 +2560,12 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   if (!elementText.includes(cleanedSearchText)) {
     // Text not in this element - only show outline, no text highlight
     // This is normal for smart mode which extracts from broader context
+    console.log('[Highlight] Text not found in element. Searched for:', cleanedSearchText.substring(0, 30));
     lastHighlightPosition = null;
     return;
   }
+
+  console.log('[Highlight] Highlighting text:', cleanedSearchText.substring(0, 30), 'in element:', element.tagName);
 
   // STEP 2: Get mode-specific colors for the highlight
   const colors = getModeColors(currentModifierMode);
@@ -2670,13 +2682,17 @@ function highlightTextInElement(element, searchText, mouseEvent) {
 
   // STEP 7: Handle edge case - no matches found
   if (candidates.length === 0) {
+    console.log('[Highlight] No text candidates found');
     lastHighlightPosition = null;
     return;
   }
 
+  console.log('[Highlight] Found', candidates.length, 'candidates');
+
   // STEP 8: Select the occurrence closest to the mouse cursor
   candidates.sort((a, b) => a.distance - b.distance);
   let best = candidates[0];
+  console.log('[Highlight] Best candidate distance:', best.distance.toFixed(1), 'px, text:', best.matchText.substring(0, 20));
 
   // STEP 9: Apply hysteresis to prevent jitter
   // PROBLEM: In char mode, there are often many identical characters very close together
