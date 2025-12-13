@@ -2607,6 +2607,62 @@ function highlightTextInElement(element, searchText, mouseEvent, sourceNode = nu
   const mouseX = mouseEvent.clientX;
   const mouseY = mouseEvent.clientY;
 
+  // FAST PATH: If we have exact source node + offset, highlight directly without searching
+  if (sourceNode && sourceOffset !== null && sourceNode.nodeType === Node.TEXT_NODE) {
+    console.log('[Highlight] Using direct offset highlighting at', sourceOffset);
+
+    // Remove existing highlights
+    const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
+    existingHighlights.forEach(mark => {
+      const text = mark.textContent;
+      const textNode = document.createTextNode(text);
+      mark.parentNode.replaceChild(textNode, mark);
+    });
+    element.normalize();
+
+    // Find searchText in sourceNode starting near sourceOffset
+    const nodeText = sourceNode.nodeValue || '';
+    const searchLen = cleanedSearchText.length;
+
+    // Search within a window around the offset
+    const windowStart = Math.max(0, sourceOffset - 50);
+    const windowEnd = Math.min(nodeText.length, sourceOffset + 50);
+    const windowText = nodeText.substring(windowStart, windowEnd);
+
+    // Try to find the search text in this window (case-insensitive, flexible whitespace)
+    const escapedText = cleanedSearchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patternText = escapedText.replace(/\s+/g, '\\s+');
+    const regex = new RegExp(patternText, 'i');
+    const match = windowText.match(regex);
+
+    if (match && match.index !== undefined) {
+      const actualIndex = windowStart + match.index;
+      const actualText = match[0];
+
+      console.log('[Highlight] Found text at index', actualIndex, 'in source node');
+
+      // Create highlight at this exact position
+      const before = sourceNode.nodeValue.substring(0, actualIndex);
+      const after = sourceNode.nodeValue.substring(actualIndex + actualText.length);
+
+      const fragment = document.createDocumentFragment();
+      if (before) fragment.appendChild(document.createTextNode(before));
+
+      const mark = document.createElement('mark');
+      mark.className = 'jobsprint-text-highlight';
+      mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
+      mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
+      mark.textContent = actualText;
+      fragment.appendChild(mark);
+
+      if (after) fragment.appendChild(document.createTextNode(after));
+
+      sourceNode.parentNode.replaceChild(fragment, sourceNode);
+      lastHighlightPosition = { x: mouseX, y: mouseY, text: actualText };
+      return;
+    }
+  }
+
   // STEP 4: Clean the DOM before searching
   // CRITICAL: Remove existing highlights first to prevent stale node references
   // When we later modify nodes, having old references causes failures
