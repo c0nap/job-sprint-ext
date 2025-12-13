@@ -2565,7 +2565,7 @@ function highlightTextInElement(element, searchText, mouseEvent) {
     return;
   }
 
-  console.log('[Highlight] Highlighting text:', cleanedSearchText.substring(0, 30), 'in element:', element.tagName);
+  console.log('[Highlight] Highlighting text:', cleanedSearchText.substring(0, 30), 'in element:', element.tagName, element.className);
 
   // STEP 2: Get mode-specific colors for the highlight
   const colors = getModeColors(currentModifierMode);
@@ -2687,12 +2687,12 @@ function highlightTextInElement(element, searchText, mouseEvent) {
     return;
   }
 
-  console.log('[Highlight] Found', candidates.length, 'candidates');
+  console.log('[Highlight] Found', candidates.length, 'candidates, Mouse at:', mouseX.toFixed(0), mouseY.toFixed(0));
 
   // STEP 8: Select the occurrence closest to the mouse cursor
   candidates.sort((a, b) => a.distance - b.distance);
   let best = candidates[0];
-  console.log('[Highlight] Best candidate distance:', best.distance.toFixed(1), 'px, text:', best.matchText.substring(0, 20));
+  console.log('[Highlight] Best candidate at:', best.centerX.toFixed(0), best.centerY.toFixed(0), 'distance:', best.distance.toFixed(1), 'px, text:', best.matchText.substring(0, 20));
 
   // STEP 9: Apply hysteresis to prevent jitter
   // PROBLEM: In char mode, there are often many identical characters very close together
