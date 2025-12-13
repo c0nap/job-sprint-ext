@@ -1370,11 +1370,13 @@ function handleMouseMove(event) {
   }
 
   // Extract text from element with appropriate scope
-  const text = extractTextFromElement(element, event, mode);
+  const extractionResult = extractTextFromElement(element, event, mode);
+  const text = typeof extractionResult === 'string' ? extractionResult : extractionResult.text;
+  const sourceNode = extractionResult.sourceNode || null;
 
   if (text && text.trim()) {
     // Highlight the element and the extracted text
-    highlightElement(element, text.trim(), event);
+    highlightElement(element, text.trim(), event, sourceNode);
 
     // Send text to extension popup
     sendTextToPopup(text.trim());
@@ -1884,7 +1886,10 @@ function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1
   const endIndex = Math.min(words.length, targetWordIndex + wordsRight + 1);
   const selectedWords = words.slice(startIndex, endIndex);
 
-  return selectedWords.join(' ');
+  return {
+    text: selectedWords.join(' '),
+    sourceNode: textNode  // Return the text node where extraction occurred
+  };
 }
 
 /**
@@ -1944,13 +1949,19 @@ function extractNearestChars(text, event, element, charsLeft = 1, charsRight = 1
   // Extract characters around the target position
   if (charsLeft === 0 && charsRight === 0) {
     // Just the character under cursor
-    return text.charAt(targetPosition) || text.charAt(0);
+    return {
+      text: text.charAt(targetPosition) || text.charAt(0),
+      sourceNode: textNode
+    };
   }
 
   const startIndex = Math.max(0, targetPosition - charsLeft);
   const endIndex = Math.min(text.length, targetPosition + charsRight + 1);
 
-  return text.substring(startIndex, endIndex);
+  return {
+    text: text.substring(startIndex, endIndex),
+    sourceNode: textNode
+  };
 }
 
 // ============ FIELD-SPECIFIC INTELLIGENT EXTRACTORS ============
@@ -2459,7 +2470,7 @@ function extractLargeTextBlock(element) {
  * @param {string} extractedText - The extracted text to highlight within the element (null for outline only)
  * @param {MouseEvent} mouseEvent - Mouse event for cursor position (used by position-based highlighting)
  */
-function highlightElement(element, extractedText = null, mouseEvent = null) {
+function highlightElement(element, extractedText = null, mouseEvent = null, sourceNode = null) {
   // Early exit: if already highlighting the same element with the same text, do nothing
   // This prevents unnecessary DOM manipulation and improves performance
   if (lastHighlightedElement === element && lastHighlightedText === extractedText) return;
@@ -2483,7 +2494,7 @@ function highlightElement(element, extractedText = null, mouseEvent = null) {
   // In smart mode, extractedText may be null if element doesn't contain the extracted text
   if (extractedText && extractedText.trim()) {
     try {
-      highlightTextInElement(element, extractedText.trim(), mouseEvent || lastMouseEvent);
+      highlightTextInElement(element, extractedText.trim(), mouseEvent || lastMouseEvent, sourceNode);
     } catch (error) {
       console.error('[MouseTracking] Error highlighting text:', error);
       // Fail gracefully - element outline will still be visible
@@ -2544,7 +2555,7 @@ function createTextHighlight(element, text) {
  * @param {string} searchText - Text to highlight (will be cleaned/normalized)
  * @param {MouseEvent} mouseEvent - Mouse event for cursor position (null for fallback to first occurrence)
  */
-function highlightTextInElement(element, searchText, mouseEvent) {
+function highlightTextInElement(element, searchText, mouseEvent, sourceNode = null) {
   // STEP 1: Verify the search text actually exists in this element
   // This is crucial for smart mode which may extract text from parent/sibling elements
   // We clone and clean to avoid false negatives from existing highlights or whitespace differences
@@ -2690,6 +2701,15 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   console.log('[Highlight] Found', candidates.length, 'candidates, Mouse at:', mouseX.toFixed(0), mouseY.toFixed(0));
 
   // STEP 8: Select the occurrence closest to the mouse cursor
+  // PRIORITY: If we have a sourceNode from extraction, strongly prefer candidates from that node
+  if (sourceNode) {
+    const sourceNodeCandidates = candidates.filter(c => c.node === sourceNode);
+    if (sourceNodeCandidates.length > 0) {
+      console.log('[Highlight] Found', sourceNodeCandidates.length, 'candidates in source node - prioritizing');
+      candidates = sourceNodeCandidates;
+    }
+  }
+
   candidates.sort((a, b) => a.distance - b.distance);
   let best = candidates[0];
   console.log('[Highlight] Best candidate at:', best.centerX.toFixed(0), best.centerY.toFixed(0), 'distance:', best.distance.toFixed(1), 'px, text:', best.matchText.substring(0, 20));
