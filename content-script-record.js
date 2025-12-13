@@ -816,14 +816,35 @@ function extractQuestionForInput(input) {
   }
   logRecord('info', 'No suitable label found');
 
-  // Try aria-labelledby
+  // Try aria-labelledby (check input and parent containers)
   const ariaLabelledBy = input.getAttribute('aria-labelledby');
   if (ariaLabelledBy) {
     const labelElement = document.getElementById(ariaLabelledBy);
     if (labelElement) {
       const question = cleanQuestionText(labelElement.textContent);
-      logRecord('info', 'Found question via aria-labelledby', { question });
-      return question;
+      // Skip if it's just a short label like "Yes"/"No"
+      if (question.length >= 5 && !['yes', 'no', 'true', 'false'].includes(question.toLowerCase())) {
+        logRecord('info', 'Found question via aria-labelledby', { question });
+        return question;
+      }
+    }
+  }
+
+  // For radio buttons, also check parent container's aria-labelledby
+  if (input.type === 'radio') {
+    let container = input.closest('[aria-labelledby]');
+    if (container) {
+      const containerAriaLabelledBy = container.getAttribute('aria-labelledby');
+      if (containerAriaLabelledBy && containerAriaLabelledBy !== ariaLabelledBy) {
+        const labelElement = document.getElementById(containerAriaLabelledBy);
+        if (labelElement) {
+          const question = cleanQuestionText(labelElement.textContent);
+          if (question.length >= 5 && !['yes', 'no', 'true', 'false'].includes(question.toLowerCase())) {
+            logRecord('info', 'Found question via parent aria-labelledby', { question });
+            return question;
+          }
+        }
+      }
     }
   }
 
