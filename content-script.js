@@ -2715,7 +2715,7 @@ function highlightTextInElement(element, searchText, mouseEvent, sourceNode = nu
 
       // SUPER PRIORITY: If we have the exact offset, use only candidates at/near that offset
       if (sourceOffset !== null && candidates.length > 1) {
-        console.log('[Highlight] Filtering by offset. Candidates at indices:', candidates.map(c => c.matchIndex));
+        console.log('[Highlight] Filtering by offset', sourceOffset, '. Candidates at:', candidates.map(c => c.matchIndex).join(', '));
         const offsetCandidates = candidates.filter(c =>
           Math.abs(c.matchIndex - sourceOffset) < searchText.length + 5
         );
@@ -2723,7 +2723,7 @@ function highlightTextInElement(element, searchText, mouseEvent, sourceNode = nu
           console.log('[Highlight] Found', offsetCandidates.length, 'candidates near source offset', sourceOffset);
           candidates = offsetCandidates;
         } else {
-          console.log('[Highlight] No candidates near offset', sourceOffset, '- keeping all', candidates.length);
+          console.log('[Highlight] No candidates near offset', sourceOffset, '- keeping all', candidates.length, 'candidates');
         }
       }
     }
