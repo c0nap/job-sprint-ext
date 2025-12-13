@@ -273,16 +273,6 @@ function handleCustomControlClick(element) {
 
   // Wait a bit for the element to update its state
   setTimeout(async () => {
-    const question = extractQuestionForCustomControl(element);
-    if (!question || question.length < 3) {
-      logRecord('warn', 'Could not extract question for custom control', {
-        tag: element.tagName,
-        class: element.className,
-        role: element.getAttribute('role')
-      });
-      return;
-    }
-
     const answer = getCustomControlValue(element);
     if (!answer) {
       logRecord('warn', 'Could not extract value for custom control', {
@@ -292,29 +282,45 @@ function handleCustomControlClick(element) {
       return;
     }
 
+    // Extract context (always succeeds)
+    const context = extractContext(element);
+
+    // Try to extract question (best effort, not required)
+    const question = extractQuestionForCustomControl(element);
+    const hasValidQuestion = question && question.length >= 5;
+
+    // Use question if valid, otherwise use descriptive fallback
+    const displayQuestion = hasValidQuestion
+      ? question.trim()
+      : `${context.sectionPath.join(' > ') || 'Custom Control'} (${element.getAttribute('role') || element.className})`;
+
     // Get available options by looking at sibling elements
     const availableOptions = getCustomControlOptions(element);
 
+    // Generate unique ID based on context
+    const entryId = generateEntryId(element, context);
+
     const qaPair = {
-      question: question.trim(),
+      id: entryId,
+      question: displayQuestion,
       answer: answer.trim(),
       type: availableOptions.length > 0 ? 'choice' : 'text',
       timestamp: Date.now(),
-      inputType: 'custom-' + (element.getAttribute('role') || 'button'),
+      context,
       availableOptions: availableOptions.length > 0 ? availableOptions : undefined
     };
 
-    // Check for duplicate
+    // Check for duplicate by ID (not question)
     const existingIndex = recordedQAPairs.findIndex(
-      pair => pair.question === qaPair.question
+      pair => pair.id === qaPair.id
     );
 
     if (existingIndex >= 0) {
       recordedQAPairs[existingIndex] = qaPair;
-      logRecord('info', 'Updated custom control Q&A pair', qaPair);
+      logRecord('info', 'Updated custom control Q&A pair', { id: qaPair.id, question: qaPair.question });
     } else {
       recordedQAPairs.push(qaPair);
-      logRecord('success', 'Captured custom control Q&A pair', qaPair);
+      logRecord('success', 'Captured custom control Q&A pair', { id: qaPair.id, question: qaPair.question });
     }
 
     // Save to database immediately (real-time save)
@@ -521,6 +527,133 @@ function handleInputChangeDebounced(input) {
   debounceTimers.set(input, timer);
 }
 
+// ============ CONTEXT EXTRACTION ============
+
+/**
+ * Generate a unique identifier for a Q&A entry based on context
+ */
+function generateEntryId(input, context) {
+  const parts = [
+    context.siteName,
+    context.pageUrl,
+    input.name || input.id || '',
+    context.elementIndex
+  ];
+  return parts.join('::');
+}
+
+/**
+ * Extract section path (headings/labels leading to this field)
+ */
+function extractSectionPath(element) {
+  const path = [];
+  let current = element;
+  let depth = 0;
+  const maxDepth = 5;
+
+  while (current && current !== document.body && depth < maxDepth) {
+    current = current.parentElement;
+    if (!current) break;
+
+    // Look for section headings
+    const heading = current.querySelector(':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6, :scope > legend');
+    if (heading) {
+      const headingText = heading.textContent?.trim();
+      if (headingText && headingText.length > 0 && headingText.length < 100) {
+        path.unshift(cleanQuestionText(headingText));
+      }
+    }
+
+    // Look for aria-label on containers
+    const ariaLabel = current.getAttribute('aria-label');
+    if (ariaLabel && ariaLabel.length < 100) {
+      path.unshift(cleanQuestionText(ariaLabel));
+    }
+
+    depth++;
+  }
+
+  return path;
+}
+
+/**
+ * Build CSS selector path for an element
+ */
+function buildElementPath(element) {
+  if (element.id) {
+    return `#${element.id}`;
+  }
+
+  const path = [];
+  let current = element;
+  let depth = 0;
+  const maxDepth = 5;
+
+  while (current && current !== document.body && depth < maxDepth) {
+    let selector = current.tagName.toLowerCase();
+
+    if (current.id) {
+      selector += `#${current.id}`;
+      path.unshift(selector);
+      break;
+    }
+
+    if (current.className) {
+      const classes = current.className.split(' ').filter(c => c.trim()).slice(0, 2);
+      if (classes.length > 0) {
+        selector += '.' + classes.join('.');
+      }
+    }
+
+    // Add index if there are siblings with same tag
+    const siblings = Array.from(current.parentElement?.children || []).filter(
+      child => child.tagName === current.tagName
+    );
+    if (siblings.length > 1) {
+      const index = siblings.indexOf(current);
+      selector += `:nth-child(${index + 1})`;
+    }
+
+    path.unshift(selector);
+    current = current.parentElement;
+    depth++;
+  }
+
+  return path.join(' > ');
+}
+
+/**
+ * Get element index among similar inputs (e.g., 2nd phone field)
+ */
+function getElementIndex(input) {
+  const name = input.name || input.type || 'unknown';
+  const similarInputs = document.querySelectorAll(`input[name="${input.name}"], input[type="${input.type}"]`);
+  return Array.from(similarInputs).indexOf(input);
+}
+
+/**
+ * Extract context information for an input element
+ */
+function extractContext(input) {
+  const url = new URL(window.location.href);
+  const siteName = url.hostname;
+  const pageUrl = url.origin + url.pathname; // Strip query params
+
+  return {
+    pageUrl,
+    pageTitle: document.title,
+    siteName,
+    sectionPath: extractSectionPath(input),
+    elementPath: buildElementPath(input),
+    elementIndex: getElementIndex(input),
+    inputType: input.type || input.tagName.toLowerCase(),
+    inputName: input.name || '',
+    inputId: input.id || ''
+  };
+}
+
+// ============ INPUT CHANGE HANDLERS ============
+
 /**
  * Handle file input change
  */
@@ -542,23 +675,17 @@ async function handleFileInput(input) {
       return;
     }
 
-    // Extract question
-    const question = extractQuestionForInput(input);
-    logRecord('info', `Extracted question for file input: "${question}"`, {
-      name: input.name,
-      id: input.id
-    });
+    // Extract context (always succeeds)
+    const context = extractContext(input);
 
-    if (!question || question.length < 3) {
-      logRecord('warn', 'Could not extract valid question for file input', {
-        question,
-        name: input.name,
-        id: input.id,
-        placeholder: input.placeholder,
-        labels: input.labels?.length || 0
-      });
-      return;
-    }
+    // Try to extract question (best effort, not required)
+    const question = extractQuestionForInput(input);
+    const hasValidQuestion = question && question.length >= 5;
+
+    // Use question if valid, otherwise use descriptive fallback
+    const displayQuestion = hasValidQuestion
+      ? question.trim()
+      : `${context.sectionPath.join(' > ') || 'File Upload'} (${input.name || input.id || input.type})`;
 
     // Create answer indicating file was uploaded
     const fileNames = Array.from(files).map(f => f.name).join(', ');
@@ -566,26 +693,30 @@ async function handleFileInput(input) {
       ? `File uploaded: ${fileNames}`
       : `${files.length} files uploaded: ${fileNames}`;
 
-    // Create Q&A pair
+    // Generate unique ID based on context
+    const entryId = generateEntryId(input, context);
+
+    // Create Q&A pair with context
     const qaPair = {
-      question: question.trim(),
+      id: entryId,
+      question: displayQuestion,
       answer: answer,
       type: 'text', // File uploads are text type
       timestamp: Date.now(),
-      inputType: 'file'
+      context
     };
 
-    // Check for duplicate
+    // Check for duplicate by ID (not question)
     const existingIndex = recordedQAPairs.findIndex(
-      pair => pair.question === qaPair.question
+      pair => pair.id === qaPair.id
     );
 
     if (existingIndex >= 0) {
       recordedQAPairs[existingIndex] = qaPair;
-      logRecord('info', 'Updated file upload Q&A pair', qaPair);
+      logRecord('info', 'Updated file upload Q&A pair', { id: qaPair.id, question: qaPair.question });
     } else {
       recordedQAPairs.push(qaPair);
-      logRecord('success', 'Captured file upload Q&A pair', qaPair);
+      logRecord('success', 'Captured file upload Q&A pair', { id: qaPair.id, question: qaPair.question });
     }
 
     // Save to database immediately (real-time save)
@@ -629,23 +760,18 @@ async function handleInputChange(input) {
     return;
   }
 
-  // Extract question
-  const question = extractQuestionForInput(input);
+  // Extract context (always succeeds)
+  const context = extractContext(input);
 
-  // Validate question quality (not just "Yes"/"No" and reasonable length)
-  const isValidQuestion = question &&
-    question.length >= 5 &&
+  // Try to extract question (best effort, not required)
+  const question = extractQuestionForInput(input);
+  const hasValidQuestion = question && question.length >= 5 &&
     !['yes', 'no', 'true', 'false'].includes(question.toLowerCase().trim());
 
-  if (!isValidQuestion) {
-    logRecord('warn', 'Could not extract valid question for input', {
-      type: input.type,
-      name: input.name,
-      id: input.id,
-      extractedQuestion: question
-    });
-    return;
-  }
+  // Use question if valid, otherwise use a descriptive fallback
+  const displayQuestion = hasValidQuestion
+    ? question.trim()
+    : `${context.sectionPath.join(' > ') || 'Field'} (${input.name || input.id || input.type})`;
 
   // Determine answer type
   const answerType = determineAnswerType(input);
@@ -653,29 +779,33 @@ async function handleInputChange(input) {
   // Get available options for choice types
   const availableOptions = getAvailableOptions(input);
 
-  // Create Q&A pair
+  // Generate unique ID based on context
+  const entryId = generateEntryId(input, context);
+
+  // Create Q&A pair with context
   const qaPair = {
-    question: question.trim(),
+    id: entryId,
+    question: displayQuestion,
     answer: value.trim(),
     type: answerType,
     timestamp: Date.now(),
-    inputType: input.type || input.tagName.toLowerCase(),
+    context,
     availableOptions: availableOptions.length > 0 ? availableOptions : undefined
   };
 
-  // Check for duplicate
+  // Check for duplicate by ID (not question)
   const existingIndex = recordedQAPairs.findIndex(
-    pair => pair.question === qaPair.question
+    pair => pair.id === qaPair.id
   );
 
   if (existingIndex >= 0) {
     // Update existing
     recordedQAPairs[existingIndex] = qaPair;
-    logRecord('info', 'Updated Q&A pair', qaPair);
+    logRecord('info', 'Updated Q&A pair', { id: qaPair.id, question: qaPair.question });
   } else {
     // Add new
     recordedQAPairs.push(qaPair);
-    logRecord('success', 'Captured Q&A pair', qaPair);
+    logRecord('success', 'Captured Q&A pair', { id: qaPair.id, question: qaPair.question });
   }
 
   // Save to database immediately (real-time save)
@@ -986,6 +1116,7 @@ function findFormInputs() {
 
 /**
  * Save a single Q&A pair to the database immediately (real-time save)
+ * Uses context-based matching (ID) instead of question text
  */
 async function saveQAPairToDatabase(qaPair, isUpdate = false) {
   try {
@@ -993,19 +1124,35 @@ async function saveQAPairToDatabase(qaPair, isUpdate = false) {
     const result = await chrome.storage.local.get(['qaDatabase']);
     const database = result.qaDatabase || [];
 
-    // Check if question already exists
+    // Check if entry already exists by ID (context-based)
     const existingIndex = database.findIndex(
-      pair => pair.question.toLowerCase().trim() === qaPair.question.toLowerCase().trim()
+      pair => pair.id === qaPair.id
     );
 
     if (existingIndex >= 0) {
-      // Update existing entry
-      database[existingIndex] = qaPair;
-      logRecord('info', 'Updated Q&A in database', { question: qaPair.question });
+      // Update existing entry (preserve original timestamp, update lastUsed)
+      const updated = {
+        ...qaPair,
+        timestamp: database[existingIndex].timestamp || qaPair.timestamp,
+        lastUsed: Date.now()
+      };
+      database[existingIndex] = updated;
+      logRecord('info', 'Updated Q&A in database', {
+        id: qaPair.id,
+        question: qaPair.question,
+        site: qaPair.context?.siteName
+      });
     } else {
-      // Add new entry
-      database.push(qaPair);
-      logRecord('success', 'Added new Q&A to database', { question: qaPair.question });
+      // Add new entry with lastUsed
+      database.push({
+        ...qaPair,
+        lastUsed: Date.now()
+      });
+      logRecord('success', 'Added new Q&A to database', {
+        id: qaPair.id,
+        question: qaPair.question,
+        site: qaPair.context?.siteName
+      });
     }
 
     // Save to storage immediately
