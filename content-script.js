@@ -2710,17 +2710,20 @@ function highlightTextInElement(element, searchText, mouseEvent, sourceNode = nu
   if (sourceNode) {
     const sourceNodeCandidates = candidates.filter(c => c.node === sourceNode);
     if (sourceNodeCandidates.length > 0) {
-      console.log('[Highlight] Found', sourceNodeCandidates.length, 'candidates in source node - prioritizing');
+      console.log('[Highlight] Found', sourceNodeCandidates.length, 'candidates in source node - prioritizing, sourceOffset:', sourceOffset);
       candidates = sourceNodeCandidates;
 
       // SUPER PRIORITY: If we have the exact offset, use only candidates at/near that offset
       if (sourceOffset !== null && candidates.length > 1) {
+        console.log('[Highlight] Filtering by offset. Candidates at indices:', candidates.map(c => c.matchIndex));
         const offsetCandidates = candidates.filter(c =>
           Math.abs(c.matchIndex - sourceOffset) < searchText.length + 5
         );
         if (offsetCandidates.length > 0) {
           console.log('[Highlight] Found', offsetCandidates.length, 'candidates near source offset', sourceOffset);
           candidates = offsetCandidates;
+        } else {
+          console.log('[Highlight] No candidates near offset', sourceOffset, '- keeping all', candidates.length);
         }
       }
     }
