@@ -30,8 +30,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false; // Synchronous response
 
     case 'startAutofill':
-      // Start semi-supervised form autofill process
-      startAutofillProcess();
+      // Start semi-supervised form autofill process with options
+      const options = message.options || {};
+      startAutofillProcess(options);
       sendResponse({ success: true });
       return false; // Synchronous response
 
@@ -190,22 +191,22 @@ function extractSource(url) {
 // ============ AUTOFILL FEATURE ============
 
 /**
- * Start the semi-supervised autofill process
- * Finds all form inputs and processes them sequentially with user confirmation
+ * NOTE: The main autofill implementation is in content-script-autofill.js
+ * This file previously had a legacy implementation that has been commented out
+ * in favor of the more sophisticated version in content-script-autofill.js
  */
-function startAutofillProcess() {
-  console.log('Starting autofill process...');
 
-  const formInputs = findFormInputs();
-
-  if (formInputs.length === 0) {
-    console.log('No form inputs found');
-    return;
-  }
-
-  console.log(`Found ${formInputs.length} form inputs`);
-  processNextInput(formInputs, 0);
-}
+// LEGACY CODE - Commented out in favor of content-script-autofill.js
+// function startAutofillProcess() {
+//   console.log('Starting autofill process...');
+//   const formInputs = findFormInputs();
+//   if (formInputs.length === 0) {
+//     console.log('No form inputs found');
+//     return;
+//   }
+//   console.log(`Found ${formInputs.length} form inputs`);
+//   processNextInput(formInputs, 0);
+// }
 
 /**
  * Find all relevant form inputs on the page
