@@ -1373,10 +1373,11 @@ function handleMouseMove(event) {
   const extractionResult = extractTextFromElement(element, event, mode);
   const text = typeof extractionResult === 'string' ? extractionResult : extractionResult.text;
   const sourceNode = extractionResult.sourceNode || null;
+  const sourceOffset = extractionResult.sourceOffset || null;
 
   if (text && text.trim()) {
     // Highlight the element and the extracted text
-    highlightElement(element, text.trim(), event, sourceNode);
+    highlightElement(element, text.trim(), event, sourceNode, sourceOffset);
 
     // Send text to extension popup
     sendTextToPopup(text.trim());
@@ -1402,7 +1403,8 @@ function handleMouseClick(event) {
   const element = document.elementFromPoint(event.clientX, event.clientY);
 
   if (element && element !== mouseTrackingOverlay) {
-    const text = extractTextFromElement(element, event, mode);
+    const extractionResult = extractTextFromElement(element, event, mode);
+    const text = typeof extractionResult === 'string' ? extractionResult : extractionResult.text;
 
     if (text && text.trim()) {
       // Send final text to popup and stop tracking
@@ -1888,7 +1890,8 @@ function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1
 
   return {
     text: selectedWords.join(' '),
-    sourceNode: textNode  // Return the text node where extraction occurred
+    sourceNode: textNode,  // Return the text node where extraction occurred
+    sourceOffset: offset   // Return the exact character offset within the node
   };
 }
 
@@ -1951,7 +1954,8 @@ function extractNearestChars(text, event, element, charsLeft = 1, charsRight = 1
     // Just the character under cursor
     return {
       text: text.charAt(targetPosition) || text.charAt(0),
-      sourceNode: textNode
+      sourceNode: textNode,
+      sourceOffset: offset
     };
   }
 
@@ -1960,7 +1964,8 @@ function extractNearestChars(text, event, element, charsLeft = 1, charsRight = 1
 
   return {
     text: text.substring(startIndex, endIndex),
-    sourceNode: textNode
+    sourceNode: textNode,
+    sourceOffset: offset
   };
 }
 
@@ -2470,7 +2475,7 @@ function extractLargeTextBlock(element) {
  * @param {string} extractedText - The extracted text to highlight within the element (null for outline only)
  * @param {MouseEvent} mouseEvent - Mouse event for cursor position (used by position-based highlighting)
  */
-function highlightElement(element, extractedText = null, mouseEvent = null, sourceNode = null) {
+function highlightElement(element, extractedText = null, mouseEvent = null, sourceNode = null, sourceOffset = null) {
   // Early exit: if already highlighting the same element with the same text, do nothing
   // This prevents unnecessary DOM manipulation and improves performance
   if (lastHighlightedElement === element && lastHighlightedText === extractedText) return;
@@ -2494,7 +2499,7 @@ function highlightElement(element, extractedText = null, mouseEvent = null, sour
   // In smart mode, extractedText may be null if element doesn't contain the extracted text
   if (extractedText && extractedText.trim()) {
     try {
-      highlightTextInElement(element, extractedText.trim(), mouseEvent || lastMouseEvent, sourceNode);
+      highlightTextInElement(element, extractedText.trim(), mouseEvent || lastMouseEvent, sourceNode, sourceOffset);
     } catch (error) {
       console.error('[MouseTracking] Error highlighting text:', error);
       // Fail gracefully - element outline will still be visible
@@ -2555,7 +2560,7 @@ function createTextHighlight(element, text) {
  * @param {string} searchText - Text to highlight (will be cleaned/normalized)
  * @param {MouseEvent} mouseEvent - Mouse event for cursor position (null for fallback to first occurrence)
  */
-function highlightTextInElement(element, searchText, mouseEvent, sourceNode = null) {
+function highlightTextInElement(element, searchText, mouseEvent, sourceNode = null, sourceOffset = null) {
   // STEP 1: Verify the search text actually exists in this element
   // This is crucial for smart mode which may extract text from parent/sibling elements
   // We clone and clean to avoid false negatives from existing highlights or whitespace differences
@@ -2707,6 +2712,17 @@ function highlightTextInElement(element, searchText, mouseEvent, sourceNode = nu
     if (sourceNodeCandidates.length > 0) {
       console.log('[Highlight] Found', sourceNodeCandidates.length, 'candidates in source node - prioritizing');
       candidates = sourceNodeCandidates;
+
+      // SUPER PRIORITY: If we have the exact offset, use only candidates at/near that offset
+      if (sourceOffset !== null && candidates.length > 1) {
+        const offsetCandidates = candidates.filter(c =>
+          Math.abs(c.matchIndex - sourceOffset) < searchText.length + 5
+        );
+        if (offsetCandidates.length > 0) {
+          console.log('[Highlight] Found', offsetCandidates.length, 'candidates near source offset', sourceOffset);
+          candidates = offsetCandidates;
+        }
+      }
     }
   }
 
