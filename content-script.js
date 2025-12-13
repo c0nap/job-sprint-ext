@@ -2628,7 +2628,7 @@ function highlightTextInElement(element, searchText, mouseEvent, sourceNode = nu
   // STEP 6: Find ALL occurrences of the search text in the element
   // Use TreeWalker to traverse all text nodes efficiently
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
-  const candidates = [];
+  let candidates = [];  // Use 'let' so we can filter to source node candidates later
   let node;
 
   while (node = walker.nextNode()) {
