@@ -57,7 +57,55 @@
     <!-- Autofill Section -->
     <section class="feature-section">
       <h2>Smart Autofill</h2>
-      <button class="primary-btn" id="autofillBtn">Start Autofill</button>
+
+      <!-- Mode Toggle -->
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="playbackModeBtn" data-mode="playback">
+          ▶ Playback Mode
+        </button>
+        <button class="mode-btn" id="recordModeBtn" data-mode="record">
+          ⏺ Record Mode
+        </button>
+      </div>
+
+      <!-- Mode descriptions -->
+      <div id="playbackModeDesc" class="mode-description" style="display: block;">
+        <small>Auto-fill forms using your saved Q&A database</small>
+      </div>
+      <div id="recordModeDesc" class="mode-description" style="display: none;">
+        <small>Capture your answers as you fill out forms</small>
+      </div>
+
+      <!-- Action buttons -->
+      <div id="playbackActions" style="display: block;">
+        <button class="primary-btn" id="autofillBtn">Start Playback</button>
+
+        <!-- Advanced Options -->
+        <div class="advanced-options" style="margin-top: 12px; padding: 10px; border: 1px solid #e0e0e0; border-radius: 6px; background: #f9f9f9;">
+          <div style="font-weight: 600; margin-bottom: 8px; color: #555; font-size: 13px;">⚡ Advanced Options</div>
+
+          <label class="checkbox-label" style="display: flex; align-items: center; margin-bottom: 6px; cursor: pointer;">
+            <input type="checkbox" id="autoPlaybackCheckbox" style="margin-right: 8px;">
+            <span style="font-size: 12px;">
+              <strong>Auto-Playback (Nuclear Option)</strong>
+              <div style="color: #666; font-size: 11px; margin-top: 2px;">Automatically fill all fields without confirmation</div>
+            </span>
+          </label>
+
+          <label class="checkbox-label" style="display: flex; align-items: center; cursor: pointer;">
+            <input type="checkbox" id="autoProceedCheckbox" style="margin-right: 8px;">
+            <span style="font-size: 12px;">
+              <strong>Auto-Proceed to Next Page</strong>
+              <div style="color: #666; font-size: 11px; margin-top: 2px;">Click "Next"/"Continue" buttons (stops before "Submit")</div>
+            </span>
+          </label>
+        </div>
+      </div>
+      <div id="recordActions" style="display: none;">
+        <button class="primary-btn" id="recordBtn">Start Recording</button>
+        <button class="secondary-btn" id="stopRecordBtn" style="display: none;">Stop</button>
+      </div>
+
       <div id="autofillStatus" class="status-message"></div>
     </section>
 
