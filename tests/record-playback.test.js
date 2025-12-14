@@ -463,8 +463,9 @@ function extractQuestionForInput(input) {
 function cleanQuestionText(text) {
   return text
     .trim()
+    .replace(/\*+/g, '')
     .replace(/\s+/g, ' ')
-    .replace(/\*+/g, '');
+    .trim();
 }
 
 function determineAnswerType(input) {
