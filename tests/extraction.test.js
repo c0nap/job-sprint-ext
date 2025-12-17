@@ -266,6 +266,9 @@ describe('Feature 2: Extraction - Job Data Extraction', () => {
 
   describe('Data Validation', () => {
     test('should return object with all required fields', () => {
+      // Silence the warning for this specific test
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
       const extractJobData = require('../content-script-testable').extractJobData;
       const data = extractJobData();
 
@@ -274,6 +277,8 @@ describe('Feature 2: Extraction - Job Data Extraction', () => {
       expect(data).toHaveProperty('location');
       expect(data).toHaveProperty('url');
       expect(data).toHaveProperty('timestamp');
+
+      warnSpy.mockRestore(); // Restore so real warnings in other tests show up
     });
 
     test('should have correct data types', () => {
@@ -437,6 +442,9 @@ describe('Feature 2: Extraction - Integration Tests', () => {
   });
 
   test('should handle extraction with partial data', () => {
+    // Silence the warning for this specific test
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    
     document.body.innerHTML = `
       <h1>Consultant</h1>
     `;
@@ -450,5 +458,7 @@ describe('Feature 2: Extraction - Integration Tests', () => {
 
     // Should still be valid JSON
     expect(() => JSON.stringify(data)).not.toThrow();
+
+    warnSpy.mockRestore(); // Restore so real warnings in other tests show up
   });
 });
