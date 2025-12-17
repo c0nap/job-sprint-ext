@@ -485,7 +485,7 @@ function showApprovalUI(input, question, answer, availableOptions, answerType, o
   `;
 
   // Available options (if any)
-  if (availableOptions.length > 0) {
+  if (availableOptions && Array.isArray(availableOptions) && availableOptions.length > 0) {
     const optionsDiv = document.createElement('div');
     optionsDiv.style.cssText = 'margin-bottom: 12px; padding: 12px; background: #fff3e0; border-radius: 6px;';
     optionsDiv.innerHTML = `
