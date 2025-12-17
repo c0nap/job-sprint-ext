@@ -1289,31 +1289,15 @@ async function handleManualEntryClick(button, statusDiv) {
 
 /**
  * Log extracted job data via service worker
- * Checks if manual entry is needed before logging
+ * Simplified version - always submits directly (no manual entry check)
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Extracted job data
  */
 function logJobData(button, statusDiv, jobData) {
-  log('[Extract] Checking if manual entry needed...');
-
-  // Check if manual entry is enabled and if data is missing
-  chrome.runtime.sendMessage({ action: 'getConfig' }, (configResponse) => {
-    const isManualEntryEnabled = configResponse?.config?.ENABLE_MANUAL_ENTRY !== false;
-    const hasMissingData = isMissingRequiredData(jobData);
-
-    log(`[Extract] Manual entry enabled: ${isManualEntryEnabled}, Missing data: ${hasMissingData}`);
-
-    if (isManualEntryEnabled && hasMissingData) {
-      log('[Extract] Showing manual entry modal');
-      // Show manual entry modal
-      showManualEntryModal(button, statusDiv, jobData);
-    } else {
-      log('[Extract] Proceeding with automatic submission');
-      // Proceed with logging directly
-      submitJobData(button, statusDiv, jobData);
-    }
-  });
+  log('[Extract] Submitting simplified job data (URL + content)...');
+  // Proceed with logging directly (no manual entry modal for automatic extraction)
+  submitJobData(button, statusDiv, jobData);
 }
 
 /**
@@ -1433,7 +1417,7 @@ function resetExtractButton(button) {
   if (button.id === 'manualEntryBtn') {
     button.textContent = 'Manual Entry';
   } else {
-    button.textContent = 'Extract & Log Job Data';
+    button.textContent = 'Quick Save (URL + Content)';
   }
 }
 
@@ -1725,6 +1709,7 @@ function initializeManualEntryModal() {
   const closeBtn = document.getElementById('closeModal');
   const cancelBtn = document.getElementById('cancelModal');
   const form = document.getElementById('manualEntryForm');
+  const autoExtractBtn = document.getElementById('autoExtractBtn');
 
   if (!modal || !closeBtn || !cancelBtn || !form) return;
 
@@ -1754,8 +1739,138 @@ function initializeManualEntryModal() {
     handleManualEntrySubmit();
   });
 
+  // Handle auto-extract button
+  if (autoExtractBtn) {
+    autoExtractBtn.addEventListener('click', () => {
+      handleAutoExtractClick();
+    });
+  }
+
   // Add mode selector button handlers
   setupModeSelectorButtons();
+}
+
+/**
+ * Handle auto-extract button click
+ * Reconnects to the current tab and extracts detailed job data to fill the form
+ */
+async function handleAutoExtractClick() {
+  const autoExtractBtn = document.getElementById('autoExtractBtn');
+  const errorContainer = document.getElementById('manualEntryError');
+
+  // Clear any previous error
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+    errorContainer.innerHTML = '';
+  }
+
+  // Set button to loading state
+  if (autoExtractBtn) {
+    autoExtractBtn.disabled = true;
+    autoExtractBtn.textContent = '⏳ Extracting...';
+  }
+
+  try {
+    // Step 1: Get the current active tab (reconnect)
+    log('[AutoExtract] Getting current active tab...');
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (!tabs || tabs.length === 0) {
+      throw new Error('No active tab found. Please make sure you have a job page open.');
+    }
+
+    const activeTab = tabs[0];
+    log(`[AutoExtract] Active tab found: ${activeTab.url}`);
+
+    // Update the stored source tab ID (reconnect)
+    await chrome.storage.local.set({ popupSourceTabId: activeTab.id });
+    log('[AutoExtract] Reconnected to active tab');
+
+    // Check if tab URL is accessible
+    if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+      throw new Error('Cannot extract from this page. Chrome extension pages and settings are not supported.');
+    }
+
+    // Step 2: Request detailed extraction from content script
+    log('[AutoExtract] Requesting detailed job data extraction...');
+
+    chrome.tabs.sendMessage(
+      activeTab.id,
+      { action: 'extractJobDataDetailed' },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          const errorMsg = chrome.runtime.lastError.message;
+          logError(`[AutoExtract] Runtime error: ${errorMsg}`);
+
+          if (errorMsg.includes('Receiving end does not exist')) {
+            showAutoExtractError('Please reload the page and try again. The extension needs to reinitialize.');
+          } else {
+            showAutoExtractError(`Error: ${errorMsg}`);
+          }
+
+          // Reset button
+          if (autoExtractBtn) {
+            autoExtractBtn.disabled = false;
+            autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+          }
+          return;
+        }
+
+        if (!response?.success) {
+          logError('[AutoExtract] Content script returned failure');
+          showAutoExtractError('Failed to extract job data from page');
+
+          // Reset button
+          if (autoExtractBtn) {
+            autoExtractBtn.disabled = false;
+            autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+          }
+          return;
+        }
+
+        log(`[AutoExtract] Data extracted successfully:`, response.data);
+
+        // Step 3: Fill the form fields with extracted data
+        populateDynamicFormFields(response.data);
+
+        // Show success feedback
+        if (autoExtractBtn) {
+          autoExtractBtn.textContent = '✓ Extracted!';
+          autoExtractBtn.style.background = '#28a745';
+
+          // Reset button after 2 seconds
+          setTimeout(() => {
+            autoExtractBtn.disabled = false;
+            autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+            autoExtractBtn.style.background = '#4CAF50';
+          }, 2000);
+        }
+
+        log('[AutoExtract] Form fields populated successfully');
+      }
+    );
+  } catch (error) {
+    logError(`[AutoExtract] Error: ${error.message}`);
+    showAutoExtractError(error.message);
+
+    // Reset button
+    if (autoExtractBtn) {
+      autoExtractBtn.disabled = false;
+      autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+    }
+  }
+}
+
+/**
+ * Show error message in auto-extract error container
+ * @param {string} message - Error message to display
+ */
+function showAutoExtractError(message) {
+  const errorContainer = document.getElementById('manualEntryError');
+  if (errorContainer) {
+    errorContainer.innerHTML = `<strong>✗ Auto-Extract Failed</strong><div style="margin-top: 8px;">${message}</div>`;
+    errorContainer.style.display = 'block';
+  }
 }
 
 /**

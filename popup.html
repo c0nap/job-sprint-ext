@@ -51,7 +51,7 @@
     <section class="feature-section">
       <h2>Job Data Extraction</h2>
       <div class="button-group">
-        <button class="primary-btn" id="extractBtn">Extract & Log Job Data</button>
+        <button class="primary-btn" id="extractBtn">Quick Save (URL + Content)</button>
         <button class="primary-btn" id="manualEntryBtn">Manual Entry</button>
       </div>
       <div id="extractionStatus" class="status-message"></div>
@@ -121,6 +121,16 @@
               <span>Characters</span>
             </button>
           </div>
+        </div>
+
+        <!-- Auto-extract button -->
+        <div style="margin: 12px 0;">
+          <button type="button" id="autoExtractBtn" class="btn-auto-extract" style="width: 100%; padding: 10px; background: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+            🔄 Auto-Extract from Page
+          </button>
+          <p style="font-size: 11px; color: #666; margin-top: 4px; text-align: center;">
+            Automatically reconnect and fill fields with detected job information
+          </p>
         </div>
 
         <!-- Error message container -->
