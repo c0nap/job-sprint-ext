@@ -490,6 +490,77 @@
             </div>
         </div>
 
+        <!-- Autofill Q&A Database -->
+        <div class="settings-section">
+            <h3>
+                Autofill Q&A Database
+                <span class="tooltip">
+                    <span class="help-icon">?</span>
+                    <span class="tooltip-text">Manage your question-answer pairs for semi-supervised autofill. The extension will automatically suggest answers when it finds matching questions on job application forms.</span>
+                </span>
+            </h3>
+
+            <div class="alert alert-info">
+                <strong>🤖 Smart Autofill:</strong> Add question-answer pairs to build your personal autofill database. The system will intelligently match questions on forms and suggest your answers for approval.
+            </div>
+
+            <!-- Search and Filter -->
+            <div style="margin-bottom: 15px;">
+                <input type="text" id="qaSearchInput" placeholder="Search questions or answers..." style="width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 14px; margin-bottom: 10px;">
+
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button id="addQAButton" class="btn-primary" style="padding: 8px 16px;">+ Add New Q&A</button>
+                    <span id="qaCountDisplay" style="color: #666; font-size: 13px;"></span>
+                </div>
+            </div>
+
+            <!-- Q&A List -->
+            <div id="qaListContainer" style="max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; background: white;">
+                <div id="qaList" style="padding: 10px;">
+                    <!-- Q&A items will be populated here -->
+                </div>
+            </div>
+
+            <!-- Add/Edit Q&A Modal -->
+            <div id="qaModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;">
+                <div style="background: white; border-radius: 8px; padding: 24px; max-width: 600px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                    <h3 style="margin-top: 0; margin-bottom: 20px;" id="qaModalTitle">Add Q&A Pair</h3>
+
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Question</label>
+                        <input type="text" id="qaModalQuestion" placeholder="e.g., Are you authorized to work in the U.S.?" style="width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 14px; box-sizing: border-box;">
+                        <small style="display: block; margin-top: 5px; color: #666;">Enter the question exactly as it appears on forms</small>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Answer</label>
+                        <input type="text" id="qaModalAnswer" placeholder="e.g., Yes" style="width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 14px; box-sizing: border-box;">
+                        <small style="display: block; margin-top: 5px; color: #666;">Your response to this question</small>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">
+                            Answer Type
+                            <span class="tooltip">
+                                <span class="help-icon">?</span>
+                                <span class="tooltip-text">Helps the system intelligently match answers. 'Exact' requires perfect match. 'Choice' handles variations like "Yes", "Yes with conditions", "No". 'Text' is for open-ended responses.</span>
+                            </span>
+                        </label>
+                        <select id="qaModalType" style="width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 14px;">
+                            <option value="choice">Choice (Yes/No, Multiple Choice)</option>
+                            <option value="text">Text (Open-ended response)</option>
+                            <option value="exact">Exact Match (Specific value)</option>
+                        </select>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button id="qaModalCancel" class="btn-secondary" style="padding: 10px 20px;">Cancel</button>
+                        <button id="qaModalSave" class="btn-primary" style="padding: 10px 20px;">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Google Sheets Configuration -->
         <div class="settings-section">
             <h3>Google Sheets Configuration</h3>

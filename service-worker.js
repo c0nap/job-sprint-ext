@@ -310,12 +310,63 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       testConnection(sendResponse);
       return true; // Async: fetch to external endpoint
 
+    case 'autofillLog':
+      // Forward autofill logs to popup's debug console (best effort)
+      broadcastToPopup(message).catch(() => {});
+      sendResponse({ success: true });
+      return false; // Synchronous
+
+    case 'autofillStateChange':
+      // Forward autofill state changes to popup (best effort)
+      broadcastToPopup(message).catch(() => {});
+      sendResponse({ success: true });
+      return false; // Synchronous
+
+    case 'recordLog':
+      // Forward record mode logs to popup's debug console (best effort)
+      broadcastToPopup(message).catch(() => {});
+      sendResponse({ success: true });
+      return false; // Synchronous
+
+    case 'recordStatusChange':
+      // Forward record mode status changes to popup (best effort)
+      broadcastToPopup(message).catch(() => {});
+      sendResponse({ success: true });
+      return false; // Synchronous
+
+    case 'getTabId':
+      // Return tab ID for multi-tab coordination
+      sendResponse({ success: true, tabId: sender.tab?.id || 'unknown' });
+      return false; // Synchronous
+
     default:
       // Unknown action - return error
       sendResponse({ success: false, error: `Unknown action: ${message.action}` });
       return false; // Synchronous error response
   }
 });
+
+// ============ UTILITY FUNCTIONS ============
+
+/**
+ * Broadcast message to popup (if it's open)
+ * @param {Object} message - Message to broadcast
+ * @returns {Promise} Promise that resolves when message is sent
+ */
+async function broadcastToPopup(message) {
+  try {
+    // Get all extension views (popups)
+    const views = chrome.extension.getViews({ type: 'popup' });
+
+    if (views.length > 0) {
+      // Send message to popup via runtime messaging
+      await chrome.runtime.sendMessage(message);
+    }
+  } catch (error) {
+    // Popup might be closed, ignore error
+    console.debug('Could not broadcast to popup:', error);
+  }
+}
 
 // ============ CLIPBOARD FEATURE ============
 
@@ -750,6 +801,7 @@ function handleFindSimilarAnswer(question, sendResponse) {
       sendResponse({
         success: true,
         answer: bestMatch.answer,
+        answerType: bestMatch.type || 'choice',
         similarity: bestSimilarity
       });
     } else {

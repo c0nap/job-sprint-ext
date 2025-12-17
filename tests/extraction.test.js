@@ -24,6 +24,14 @@ global.chrome = {
   }
 };
 
+beforeAll(() => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+});
+
+afterAll(() => {
+  console.warn.mockRestore();
+});
+
 // Mock fetch for testing service worker
 global.fetch = jest.fn();
 

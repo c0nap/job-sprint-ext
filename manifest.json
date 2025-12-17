@@ -9,6 +9,7 @@
     "scripting"
   ],
   "host_permissions": [
+    "http://*/*",
     "https://*/*"
   ],
   "background": {
@@ -17,7 +18,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content-script.js"],
+      "js": ["content-script-autofill.js", "content-script-record.js", "content-script.js"],
       "run_at": "document_idle"
     }
   ],
