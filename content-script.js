@@ -121,15 +121,36 @@ function pasteTextToActiveField(text) {
 }
 
 // ============ EXTRACTION FEATURE ============
-// Note: Core extraction logic is in content-script-testable.js for better testability
-// These functions are duplicated here since browser extensions can't use ES6 imports in content scripts
+// Uses the context-aware extraction engine loaded via extraction-engine.js
 
 /**
- * Extract job posting data from the current page (simplified version)
- * Returns only URL and page content (plain text with formatting preserved)
- * @returns {Object} Extracted job data with url, description (page content), timestamp, and source
+ * Extract job posting data from the current page
+ * Uses context-aware extraction with document parsing and section-based search
+ * Falls back to legacy extraction if context-aware extraction fails
+ *
+ * @returns {Object} Extracted job data with title, company, location, url, timestamp, and source
  */
 function extractJobData() {
+  try {
+    // Check if extraction engine is loaded
+    if (typeof window.ExtractionEngine !== 'undefined') {
+      console.log('JobSprint: Using context-aware extraction');
+      return window.ExtractionEngine.extractJobDataContextAware();
+    } else {
+      console.warn('JobSprint: Extraction engine not loaded, using legacy extraction');
+      return extractJobDataLegacy();
+    }
+  } catch (error) {
+    console.error('JobSprint: Error in extraction, falling back to legacy:', error);
+    return extractJobDataLegacy();
+  }
+}
+
+/**
+ * Legacy extraction (fallback when context-aware extraction not available)
+ * @returns {Object} Extracted job data
+ */
+function extractJobDataLegacy() {
   try {
     const data = {
       url: window.location.href,
@@ -215,7 +236,7 @@ function extractJobDataDetailed() {
       console.warn('JobSprint: Could not extract meaningful job data from this page');
     }
 
-    console.log('Extracted detailed job data:', data);
+    console.log('Extracted job data (legacy):', data);
     return data;
   } catch (error) {
     console.error('Error extracting detailed job data:', error);
