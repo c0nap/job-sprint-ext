@@ -171,7 +171,8 @@ async function loadConfiguration() {
       'SPREADSHEET_ID',
       'PROJECT_ID',
       'ENABLE_MANUAL_ENTRY',
-      'TARGET_SHEET_NAME'
+      'TARGET_SHEET_NAME',
+      'SCHEMA_MAPPING'
     ]);
 
     // Check if we have values in storage
@@ -187,6 +188,7 @@ async function loadConfiguration() {
       configCache.ENABLE_MANUAL_ENTRY =
         storageConfig.ENABLE_MANUAL_ENTRY !== undefined ? storageConfig.ENABLE_MANUAL_ENTRY : true;
       configCache.TARGET_SHEET_NAME = storageConfig.TARGET_SHEET_NAME || 'Job Applications';
+      configCache.SCHEMA_MAPPING = storageConfig.SCHEMA_MAPPING || {};
       console.log('Configuration loaded from chrome.storage');
     } else {
       // Fallback to config.local.js
