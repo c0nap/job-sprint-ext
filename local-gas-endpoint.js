@@ -75,8 +75,10 @@ function createApp() {
 
   // Request logging middleware
   app.use((req, res, next) => {
-    const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] ${req.method} ${req.path}`);
+    if (process.env.NODE_ENV !== 'test') {  // Prevent CI logs from interrupting valid output
+      const timestamp = new Date().toISOString();
+      console.log(`[${timestamp}] ${req.method} ${req.path}`);
+    }
     next();
   });
 
@@ -87,7 +89,9 @@ function createApp() {
     // Validate the job data
     const validation = validateJobData(data);
     if (!validation.valid) {
-      console.error(`Validation error: ${validation.error}`);
+      if (process.env.NODE_ENV !== 'test') {  // Prevent CI logs from interrupting valid output
+        console.error(`Validation error: ${validation.error}`);
+      }
       return res.status(400).json({
         success: false,
         error: validation.error
@@ -101,8 +105,10 @@ function createApp() {
     };
     jobLogs.push(jobEntry);
 
-    console.log(`✅ Job logged successfully: ${data.title} at ${data.company}`);
-    console.log(`   Total jobs logged: ${jobLogs.length}`);
+    if (process.env.NODE_ENV !== 'test') {  // Prevent CI logs from interrupting valid output
+      console.log(`✅ Job logged successfully: ${data.title} at ${data.company}`);
+      console.log(`   Total jobs logged: ${jobLogs.length}`);
+    }
 
     // Return success response matching GAS contract
     res.json({
