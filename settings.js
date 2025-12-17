@@ -978,9 +978,7 @@ function renderQAList(searchTerm = '') {
             ${optionsHtml}
             <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
               ${typeBadge}
-              ${sourceBadge}
               ${entry.timestamp ? `<span style="color: #999; font-size: 11px;">Added: ${new Date(entry.timestamp).toLocaleDateString()}</span>` : ''}
-              ${entry.lastUsed ? `<span style="color: #999; font-size: 11px;">Last used: ${new Date(entry.lastUsed).toLocaleDateString()}</span>` : ''}
             </div>
           </div>
           <div style="display: flex; gap: 6px; margin-left: 12px;">
@@ -1053,35 +1051,12 @@ async function saveQAEntry() {
     return;
   }
 
-  let entry;
-
-  if (currentEditingIndex >= 0) {
-    // Editing existing entry - preserve context and ID if they exist
-    const existing = qaDatabase[currentEditingIndex];
-    entry = {
-      ...existing,
-      question,
-      answer,
-      type,
-      lastUsed: Date.now()
-    };
-    // Preserve timestamp from original
-    if (!entry.timestamp) {
-      entry.timestamp = Date.now();
-    }
-  } else {
-    // Adding new manual entry - create simple ID based on question
-    const manualId = 'manual::' + question.toLowerCase().replace(/\s+/g, '-').substring(0, 50);
-    entry = {
-      id: manualId,
-      question,
-      answer,
-      type,
-      timestamp: Date.now(),
-      lastUsed: Date.now()
-      // No context for manually added entries
-    };
-  }
+  const entry = {
+    question,
+    answer,
+    type,
+    timestamp: Date.now()
+  };
 
   if (currentEditingIndex >= 0) {
     // Update existing entry
