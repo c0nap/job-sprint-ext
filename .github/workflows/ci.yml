@@ -5,12 +5,12 @@ on:
     branches:
       - main
       - 'claude/**'
-      - 'integrate-**'
       - 'feature/**'
+      - 'fix/**'
+      - 'patch/**'
   pull_request:
     branches:
       - main
-      - integrate-mvp-features
   workflow_dispatch:
 
 jobs:
