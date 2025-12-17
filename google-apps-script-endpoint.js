@@ -885,6 +885,7 @@ function logJobToSheet(jobData, config, requestId) {
 
     // Get sheet name from config, default to "Job Applications"
     var sheetName = jobData.targetSheetName || 'Job Applications';
+    delete jobData.targetSheetName; // Remove targetSheetName from data to be written
 
     // Get or create the target sheet
     sheet = spreadsheet.getSheetByName(sheetName);
@@ -945,9 +946,8 @@ function logJobToSheet(jobData, config, requestId) {
     console.info({
       message: 'JobSprint: Job logged to sheet successfully',
       requestId: requestId,
-      jobTitle: jobData.title || '(No title)',
-      company: jobData.company || '(No company)',
-      newRowNumber: sheet.getLastRow()
+      newRowNumber: sheet.getLastRow(),
+      columnsUsed: headers.length
     });
 
     return { success: true };

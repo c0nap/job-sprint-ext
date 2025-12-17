@@ -632,6 +632,71 @@ async function fetchWithRetry(url, options, maxRetries = 2) {
 }
 
 /**
+ * Transform job data from extractor keys to column names using schema mapping
+ * @param {Object} data - Job data with extractor keys (e.g., {company: "Google", jobTitle: "Engineer"})
+ * @returns {Object} Data with column names (e.g., {Employer: "Google", "Job Title": "Engineer"})
+ */
+function transformDataToColumns(data) {
+  const schemaMapping = configCache.SCHEMA_MAPPING || {};
+
+  // Legacy field name mappings (for backwards compatibility with existing popup code)
+  const legacyFieldMap = {
+    'title': 'jobTitle',
+    'description': 'notes',
+    'source': 'board'
+    // 'company' stays as 'company'
+    // 'location' stays as 'location'
+    // 'url' stays as 'url'
+    // 'compensation' stays as 'compensation'
+    // 'pay' stays as 'pay'
+    // 'role' stays as 'role'
+    // 'tailor' stays as 'tailor'
+  };
+
+  // Normalize data: convert legacy field names to extractor keys
+  const normalizedData = {};
+  Object.entries(data).forEach(([key, value]) => {
+    const normalizedKey = legacyFieldMap[key] || key;
+    normalizedData[normalizedKey] = value;
+  });
+
+  // If no schema mapping exists, return normalized data (fallback for backwards compatibility)
+  if (!schemaMapping || Object.keys(schemaMapping).length === 0) {
+    console.warn('No schema mapping configured. Using normalized data as-is.');
+    return normalizedData;
+  }
+
+  // Create reverse mapping: extractorKey -> columnName
+  const reverseMapping = {};
+  Object.entries(schemaMapping).forEach(([columnName, extractorKey]) => {
+    if (extractorKey && extractorKey !== 'none') {
+      reverseMapping[extractorKey] = columnName;
+    }
+  });
+
+  // Transform data using reverse mapping
+  const transformedData = {};
+  Object.entries(normalizedData).forEach(([key, value]) => {
+    // Check if this key is an extractor mode that has a column mapping
+    if (reverseMapping[key]) {
+      transformedData[reverseMapping[key]] = value;
+    } else {
+      // If no mapping exists, use the original key (for backwards compatibility)
+      transformedData[key] = value;
+    }
+  });
+
+  console.log('Data transformation:', {
+    originalKeys: Object.keys(data),
+    normalizedKeys: Object.keys(normalizedData),
+    transformedKeys: Object.keys(transformedData),
+    mappingUsed: Object.keys(reverseMapping).length > 0
+  });
+
+  return transformedData;
+}
+
+/**
  * Log job data to Google Sheets via Apps Script endpoint
  * Includes retry logic for transient network failures
  * @param {Object} data - Job data to log
@@ -668,9 +733,12 @@ function handleLogJobData(data, sendResponse) {
   // 1. Settings UI display and "Open Sheet" link
   // 2. User convenience (remembering configuration)
 
+  // Transform data from extractor keys to column names using schema mapping
+  const transformedData = transformDataToColumns(data);
+
   // Add target sheet name to the data
   const dataWithSheetName = {
-    ...data,
+    ...transformedData,
     targetSheetName: configCache.TARGET_SHEET_NAME || 'Job Applications'
   };
 
