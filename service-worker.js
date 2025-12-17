@@ -283,6 +283,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleSearchDuplicate(message.url, message.targetSheetName, sendResponse);
       return true; // Async: fetch to external endpoint
 
+    case 'getRowByNumber':
+      // Get row data by row number
+      handleGetRowByNumber(message.rowNumber, message.targetSheetName, sendResponse);
+      return true; // Async: fetch to external endpoint
+
     case 'findSimilarAnswer':
       // Find similar Q&A pair from database for autofill
       handleFindSimilarAnswer(message.question, sendResponse);
@@ -722,6 +727,79 @@ function handleSearchDuplicate(url, targetSheetName, sendResponse) {
       sendResponse({
         success: false,
         error: 'Duplicate search failed: ' + error.message
+      });
+    });
+}
+
+/**
+ * Handle get row by number request
+ * @param {number} rowNumber - Row number to retrieve
+ * @param {string} targetSheetName - Target sheet name
+ * @param {function} sendResponse - Response callback
+ */
+function handleGetRowByNumber(rowNumber, targetSheetName, sendResponse) {
+  const endpoint = getAppsScriptEndpoint();
+
+  // Check if endpoint is configured
+  if (!endpoint || endpoint === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    console.warn('Apps Script endpoint not configured');
+    sendResponse({
+      success: false,
+      error: 'Apps Script endpoint not configured. Please set up your Google Apps Script URL.'
+    });
+    return;
+  }
+
+  // Validate row number
+  if (!rowNumber || rowNumber < 2) {
+    sendResponse({
+      success: false,
+      error: 'Valid row number (>= 2) is required'
+    });
+    return;
+  }
+
+  // Send request to endpoint
+  const requestData = {
+    action: 'getRowByNumber',
+    rowNumber: parseInt(rowNumber),
+    targetSheetName: targetSheetName || configCache.TARGET_SHEET_NAME || 'Job Applications'
+  };
+
+  fetchWithRetry(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestData),
+    signal: AbortSignal.timeout(15000) // 15 second timeout
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} error during row retrieval`);
+      }
+      return response.json();
+    })
+    .then((responseData) => {
+      if (responseData.success) {
+        console.log('Row retrieval completed:', responseData.rowData);
+        sendResponse({
+          success: true,
+          rowData: responseData.rowData
+        });
+      } else {
+        console.error('Row retrieval error:', responseData.error);
+        sendResponse({
+          success: false,
+          error: responseData.error || 'Unknown error during row retrieval'
+        });
+      }
+    })
+    .catch((error) => {
+      console.error('Failed to get row by number:', error);
+      sendResponse({
+        success: false,
+        error: 'Row retrieval failed: ' + error.message
       });
     });
 }
