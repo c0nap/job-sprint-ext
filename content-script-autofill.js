@@ -22,10 +22,6 @@ let currentIndex = 0;
 let tabId = null;
 let processedInputs = new Set();
 let skippedInputs = new Set();
-let autofillOptions = {
-  autoPlayback: false,
-  autoProceed: false
-};
 
 // ============ LOGGING UTILITIES ============
 
@@ -61,26 +57,10 @@ function logToConsole(level, message, data = null) {
 
 /**
  * Start the semi-supervised autofill process
- * @param {Object} options - Autofill options
- * @param {boolean} options.autoPlayback - Auto-fill without confirmation
- * @param {boolean} options.autoProceed - Auto-click next/continue buttons
  */
-async function startAutofillProcess(options = {}) {
+async function startAutofillProcess() {
   try {
-    // Store options
-    autofillOptions = {
-      autoPlayback: options.autoPlayback || false,
-      autoProceed: options.autoProceed || false
-    };
-
-    if (autofillOptions.autoPlayback) {
-      logToConsole('warn', '⚡ AUTO-PLAYBACK MODE ENABLED - All fields will be filled automatically without confirmation!');
-    }
-    if (autofillOptions.autoProceed) {
-      logToConsole('warn', '⚡ AUTO-PROCEED MODE ENABLED - Will automatically click Next/Continue buttons!');
-    }
-
-    logToConsole('info', 'Starting autofill process...', autofillOptions);
+    logToConsole('info', 'Starting autofill process...');
 
     // Get tab ID for multi-tab coordination
     tabId = await getTabId();
@@ -146,13 +126,6 @@ async function processNextInput() {
     });
     setState(AutofillState.COMPLETED);
     removeApprovalUI();
-
-    // Check if auto-proceed is enabled
-    if (autofillOptions.autoProceed) {
-      logToConsole('info', '⚡ Auto-proceed enabled - looking for Next/Continue button...');
-      await handleAutoProceed();
-    }
-
     return;
   }
 
@@ -211,60 +184,49 @@ async function processNextInput() {
         availableOptions
       });
 
-      // Define approval callback (used for both auto and manual)
-      const approvalCallback = async () => {
-        // Fill the input
-        const success = await fillInputIntelligently(input, response.answer, availableOptions, response.answerType);
+      // Show approval UI with intelligent matching
+      showApprovalUI(
+        input,
+        question,
+        response.answer,
+        availableOptions,
+        response.answerType,
+        async () => {
+          // User approved - fill the input
+          const success = await fillInputIntelligently(input, response.answer, availableOptions, response.answerType);
 
-        if (success) {
-          logToConsole('success', 'Successfully filled input', {
-            question,
-            answer: response.answer,
-            auto: autofillOptions.autoPlayback
-          });
-          processedInputs.add(currentIndex);
-        } else {
-          logToConsole('error', 'Failed to fill input', {
-            question,
-            answer: response.answer
-          });
-          skippedInputs.add(currentIndex);
-        }
-
-        currentIndex++;
-        setState(AutofillState.RUNNING);
-        await processNextInput();
-      };
-
-      // Check if auto-playback is enabled
-      if (autofillOptions.autoPlayback) {
-        // Auto-fill without showing UI
-        logToConsole('info', '⚡ Auto-filling (no confirmation)', { question, answer: response.answer });
-        await approvalCallback();
-      } else {
-        // Show approval UI with intelligent matching
-        showApprovalUI(
-          input,
-          question,
-          response.answer,
-          availableOptions,
-          response.answerType,
-          approvalCallback,
-          async () => {
-            // User rejected - skip this input
-            logToConsole('info', 'User skipped input', { question });
+          if (success) {
+            logToConsole('success', 'Successfully filled input', {
+              question,
+              answer: response.answer
+            });
+            processedInputs.add(currentIndex);
+          } else {
+            logToConsole('error', 'Failed to fill input', {
+              question,
+              answer: response.answer
+            });
             skippedInputs.add(currentIndex);
-            currentIndex++;
-            setState(AutofillState.RUNNING);
-            await processNextInput();
-          },
-          () => {
-            // User paused
-            logToConsole('warn', 'User paused autofill');
-            setState(AutofillState.PAUSED);
           }
-        );
-      }
+
+          currentIndex++;
+          setState(AutofillState.RUNNING);
+          await processNextInput();
+        },
+        async () => {
+          // User rejected - skip this input
+          logToConsole('info', 'User skipped input', { question });
+          skippedInputs.add(currentIndex);
+          currentIndex++;
+          setState(AutofillState.RUNNING);
+          await processNextInput();
+        },
+        () => {
+          // User paused
+          logToConsole('warn', 'User paused autofill');
+          setState(AutofillState.PAUSED);
+        }
+      );
     }
   );
 }
@@ -591,61 +553,6 @@ function findDangerousButtons() {
     const text = btn.textContent.toLowerCase() || btn.value.toLowerCase();
     return dangerousKeywords.some(keyword => text.includes(keyword));
   });
-}
-
-/**
- * Handle auto-proceed - click Next/Continue buttons but not Submit
- */
-async function handleAutoProceed() {
-  try {
-    // Find all buttons
-    const buttons = document.querySelectorAll('button, input[type="submit"], input[type="button"], a[role="button"]');
-
-    // Keywords to look for (proceed buttons)
-    const proceedKeywords = ['next', 'continue', 'proceed', 'forward', 'go', 'advance'];
-
-    // Keywords to avoid (dangerous buttons)
-    const dangerousKeywords = ['submit', 'send', 'complete', 'finish', 'finalize', 'confirm', 'apply'];
-
-    // Find the proceed button
-    let proceedButton = null;
-    for (const btn of buttons) {
-      const text = (btn.textContent || btn.value || btn.getAttribute('aria-label') || '').toLowerCase().trim();
-
-      // Skip if button is hidden or disabled
-      if (btn.offsetParent === null || btn.disabled) continue;
-
-      // Skip if it contains dangerous keywords
-      if (dangerousKeywords.some(keyword => text.includes(keyword))) {
-        logToConsole('info', `Skipping dangerous button: "${text}"`);
-        continue;
-      }
-
-      // Check if it contains proceed keywords
-      if (proceedKeywords.some(keyword => text.includes(keyword))) {
-        proceedButton = btn;
-        logToConsole('success', `Found proceed button: "${text}"`);
-        break;
-      }
-    }
-
-    if (proceedButton) {
-      logToConsole('warn', `⚡ Clicking proceed button in 2 seconds...`, {
-        buttonText: proceedButton.textContent || proceedButton.value
-      });
-
-      // Wait 2 seconds before clicking (give user time to see what's happening)
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Click the button
-      proceedButton.click();
-      logToConsole('success', '✓ Clicked proceed button');
-    } else {
-      logToConsole('info', 'No proceed button found - staying on current page');
-    }
-  } catch (error) {
-    logToConsole('error', 'Error in handleAutoProceed', { error: error.message });
-  }
 }
 
 function escapeHtml(unsafe) {
