@@ -57,7 +57,34 @@
     <!-- Autofill Section -->
     <section class="feature-section">
       <h2>Smart Autofill</h2>
-      <button class="primary-btn" id="autofillBtn">Start Autofill</button>
+
+      <!-- Mode Toggle -->
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="playbackModeBtn" data-mode="playback">
+          ▶ Playback Mode
+        </button>
+        <button class="mode-btn" id="recordModeBtn" data-mode="record">
+          ⏺ Record Mode
+        </button>
+      </div>
+
+      <!-- Mode descriptions -->
+      <div id="playbackModeDesc" class="mode-description" style="display: block;">
+        <small>Auto-fill forms using your saved Q&A database</small>
+      </div>
+      <div id="recordModeDesc" class="mode-description" style="display: none;">
+        <small>Capture your answers as you fill out forms</small>
+      </div>
+
+      <!-- Action buttons -->
+      <div id="playbackActions" style="display: block;">
+        <button class="primary-btn" id="autofillBtn">Start Playback</button>
+      </div>
+      <div id="recordActions" style="display: none;">
+        <button class="primary-btn" id="recordBtn">Start Recording</button>
+        <button class="secondary-btn" id="stopRecordBtn" style="display: none;">Stop</button>
+      </div>
+
       <div id="autofillStatus" class="status-message"></div>
     </section>
 

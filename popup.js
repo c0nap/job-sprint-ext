@@ -15,6 +15,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Update autofill status display
     updateAutofillStatus(message.state, message.progress);
     sendResponse({ success: true });
+  } else if (message.action === 'recordLog') {
+    // Add record mode log to debug console
+    const { log } = message;
+    addConsoleLog(log.level, `[Record] ${log.message}`, log.data);
+    sendResponse({ success: true });
+  } else if (message.action === 'recordStatusChange') {
+    // Update record mode status display
+    updateRecordStatus(message.status, message.count);
+    sendResponse({ success: true });
   }
   return false; // Synchronous
 });
@@ -148,6 +157,47 @@ function logError(message) {
 }
 
 /**
+ * Add a log entry to debug console with custom level
+ * @param {string} level - Log level (info, warn, error, success)
+ * @param {string} message - Log message
+ * @param {any} data - Optional data to log
+ */
+function addConsoleLog(level, message, data) {
+  const timestamp = new Date().toLocaleTimeString();
+
+  // Map level to console type
+  const typeMap = {
+    'info': 'log',
+    'success': 'log',
+    'warn': 'warn',
+    'error': 'error'
+  };
+  const type = typeMap[level] || 'log';
+
+  // Format message with data if provided
+  let fullMessage = message;
+  if (data) {
+    try {
+      fullMessage += ' ' + JSON.stringify(data);
+    } catch (e) {
+      fullMessage += ' [data]';
+    }
+  }
+
+  const logEntry = { timestamp, message: fullMessage, type };
+
+  debugLogs.push(logEntry);
+  if (debugLogs.length > MAX_LOGS) {
+    debugLogs.shift();
+  }
+
+  // Always try to append if console is enabled
+  if (debugConsoleEnabled) {
+    appendToConsole(logEntry);
+  }
+}
+
+/**
  * Append log entry to console UI
  * @param {Object} entry - Log entry
  */
@@ -160,7 +210,16 @@ function appendToConsole(entry) {
   logLine.textContent = `[${entry.timestamp}] ${entry.message}`;
 
   consoleOutput.appendChild(logLine);
-  consoleOutput.scrollTop = consoleOutput.scrollHeight;
+
+  // Force scroll to bottom - multiple attempts to ensure it works
+  const scrollToBottom = () => {
+    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+  };
+
+  scrollToBottom(); // Immediate
+  requestAnimationFrame(scrollToBottom); // After paint
+  setTimeout(scrollToBottom, 0); // After current task
+  setTimeout(scrollToBottom, 10); // Backup
 }
 
 /**
@@ -1257,13 +1316,185 @@ function resetExtractButton(button) {
  */
 function initializeAutofill() {
   const autofillBtn = document.getElementById('autofillBtn');
+  const recordBtn = document.getElementById('recordBtn');
+  const stopRecordBtn = document.getElementById('stopRecordBtn');
   const statusDiv = document.getElementById('autofillStatus');
+  const playbackModeBtn = document.getElementById('playbackModeBtn');
+  const recordModeBtn = document.getElementById('recordModeBtn');
 
   if (!autofillBtn || !statusDiv) return;
 
+  // Mode toggle handlers
+  playbackModeBtn?.addEventListener('click', () => {
+    switchToPlaybackMode();
+  });
+
+  recordModeBtn?.addEventListener('click', () => {
+    switchToRecordMode();
+  });
+
+  // Playback mode button
   autofillBtn.addEventListener('click', () => {
     handleAutofillClick(autofillBtn, statusDiv);
   });
+
+  // Record mode buttons
+  recordBtn?.addEventListener('click', () => {
+    handleRecordClick(recordBtn, stopRecordBtn, statusDiv);
+  });
+
+  stopRecordBtn?.addEventListener('click', () => {
+    handleStopRecordClick(recordBtn, stopRecordBtn, statusDiv);
+  });
+}
+
+/**
+ * Switch to Playback Mode
+ */
+function switchToPlaybackMode() {
+  // Update button states
+  document.getElementById('playbackModeBtn')?.classList.add('active');
+  document.getElementById('recordModeBtn')?.classList.remove('active');
+
+  // Show/hide descriptions
+  document.getElementById('playbackModeDesc').style.display = 'block';
+  document.getElementById('recordModeDesc').style.display = 'none';
+
+  // Show/hide action buttons
+  document.getElementById('playbackActions').style.display = 'block';
+  document.getElementById('recordActions').style.display = 'none';
+
+  // Clear status
+  const statusDiv = document.getElementById('autofillStatus');
+  if (statusDiv) statusDiv.textContent = '';
+}
+
+/**
+ * Switch to Record Mode
+ */
+function switchToRecordMode() {
+  // Update button states
+  document.getElementById('recordModeBtn')?.classList.add('active');
+  document.getElementById('playbackModeBtn')?.classList.remove('active');
+
+  // Show/hide descriptions
+  document.getElementById('recordModeDesc').style.display = 'block';
+  document.getElementById('playbackModeDesc').style.display = 'none';
+
+  // Show/hide action buttons
+  document.getElementById('recordActions').style.display = 'block';
+  document.getElementById('playbackActions').style.display = 'none';
+
+  // Clear status
+  const statusDiv = document.getElementById('autofillStatus');
+  if (statusDiv) statusDiv.textContent = '';
+}
+
+/**
+ * Handle Record button click
+ */
+async function handleRecordClick(recordBtn, stopBtn, statusDiv) {
+  setButtonLoading(recordBtn, 'Starting...');
+  showStatus(statusDiv, 'info', 'ℹ Starting record mode...');
+
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    showStatus(statusDiv, 'error', '✗ No active tab found');
+    resetRecordButton(recordBtn);
+    return;
+  }
+
+  chrome.tabs.sendMessage(
+    activeTab.id,
+    { action: 'startRecordMode' },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        showStatus(statusDiv, 'error', `✗ ${chrome.runtime.lastError.message}`);
+        resetRecordButton(recordBtn);
+        return;
+      }
+
+      if (response?.success) {
+        showStatus(statusDiv, 'success', '⏺ Recording... Fill out the form normally.');
+        recordBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+        addConsoleLog('success', 'Record mode started');
+      } else {
+        showStatus(statusDiv, 'error', '✗ Failed to start recording');
+        resetRecordButton(recordBtn);
+      }
+    }
+  );
+}
+
+/**
+ * Handle Stop Record button click
+ */
+async function handleStopRecordClick(recordBtn, stopBtn, statusDiv) {
+  setButtonLoading(stopBtn, 'Stopping...');
+  showStatus(statusDiv, 'info', 'ℹ Stopping recording...');
+
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    showStatus(statusDiv, 'error', '✗ No active tab found');
+    return;
+  }
+
+  chrome.tabs.sendMessage(
+    activeTab.id,
+    { action: 'stopRecordMode' },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        showStatus(statusDiv, 'error', `✗ ${chrome.runtime.lastError.message}`);
+        return;
+      }
+
+      if (response?.success) {
+        const count = response.count || 0;
+        showStatus(statusDiv, 'success', `✓ Recording stopped. ${count} Q&A pair${count !== 1 ? 's' : ''} saved.`);
+        addConsoleLog('success', `Record mode stopped - ${count} Q&A pairs saved to database`);
+        stopBtn.style.display = 'none';
+        resetRecordButton(recordBtn);
+        recordBtn.style.display = 'block';
+      } else {
+        showStatus(statusDiv, 'error', '✗ Failed to stop recording');
+      }
+    }
+  );
+}
+
+/**
+ * Update recording status from content script
+ */
+function updateRecordStatus(status, count) {
+  const statusDiv = document.getElementById('autofillStatus');
+  const recordBtn = document.getElementById('recordBtn');
+  const stopBtn = document.getElementById('stopRecordBtn');
+
+  if (!statusDiv) return;
+
+  switch (status) {
+    case 'recording':
+      showStatus(statusDiv, 'info', `⏺ Recording: ${count} Q&A pair${count !== 1 ? 's' : ''} captured`);
+      // Sync button states
+      if (recordBtn && stopBtn) {
+        recordBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+      }
+      break;
+    case 'paused':
+      showStatus(statusDiv, 'warn', `⏸ Recording paused: ${count} Q&A pair${count !== 1 ? 's' : ''}`);
+      break;
+    case 'stopped':
+      // Sync button states when stopped from page indicator
+      if (recordBtn && stopBtn) {
+        stopBtn.style.display = 'none';
+        resetRecordButton(recordBtn);
+        recordBtn.style.display = 'block';
+      }
+      showStatus(statusDiv, 'success', `✓ Recording stopped. ${count} Q&A pair${count !== 1 ? 's' : ''} saved.`);
+      break;
+  }
 }
 
 /**
@@ -1376,6 +1607,14 @@ function handleAutofillError(button, statusDiv, message) {
 function resetAutofillButton(button) {
   button.disabled = false;
   button.textContent = 'Start Autofill';
+}
+
+/**
+ * Reset record button to default state
+ */
+function resetRecordButton(button) {
+  button.disabled = false;
+  button.textContent = 'Start Recording';
 }
 
 // ============ SETTINGS ============
