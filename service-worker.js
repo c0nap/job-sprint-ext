@@ -13,6 +13,86 @@ let configCache = {
   TARGET_SHEET_NAME: 'Job Applications'
 };
 
+// Extractor mode definitions
+// These define what types of data can be extracted and mapped to spreadsheet columns
+const EXTRACTOR_MODES = {
+  'company': {
+    label: 'Company/Employer',
+    description: 'Company or organization name',
+    category: 'basic'
+  },
+  'jobTitle': {
+    label: 'Job Title',
+    description: 'Position title or role name',
+    category: 'basic'
+  },
+  'location': {
+    label: 'Location',
+    description: 'Job location (city, state, country, or remote)',
+    category: 'basic'
+  },
+  'url': {
+    label: 'Portal Link/URL',
+    description: 'Job posting URL or application link',
+    category: 'basic'
+  },
+  'rawDescription': {
+    label: 'Raw Job Description',
+    description: 'Full page content as formatted plain text',
+    category: 'content'
+  },
+  'notes': {
+    label: 'Notes',
+    description: 'Additional notes or custom text',
+    category: 'content'
+  },
+  'status': {
+    label: 'Status',
+    description: 'Application status (default: "Queued" or "No response")',
+    category: 'tracking'
+  },
+  'appliedDate': {
+    label: 'Applied Date',
+    description: 'Date applied (auto-populated with current date)',
+    category: 'tracking'
+  },
+  'decision': {
+    label: 'Decision',
+    description: 'Final decision or outcome',
+    category: 'tracking'
+  },
+  'role': {
+    label: 'Role Category',
+    description: 'Role type (CODE, DSCI, STAT, R&D, etc.)',
+    category: 'classification'
+  },
+  'tailor': {
+    label: 'Tailor Category',
+    description: 'Resume/application tailoring category',
+    category: 'classification'
+  },
+  'compensation': {
+    label: 'Compensation Range',
+    description: 'Salary range or compensation package',
+    category: 'compensation'
+  },
+  'pay': {
+    label: 'Specific Pay',
+    description: 'Specific pay amount or hourly rate',
+    category: 'compensation'
+  },
+  'board': {
+    label: 'Job Board',
+    description: 'Source job board (Indeed, LinkedIn, Handshake, etc.)',
+    category: 'source'
+  },
+  'none': {
+    label: 'None (Ignore)',
+    description: 'Do not populate this column during extraction',
+    category: 'special'
+  }
+};
+
 // Initialize storage when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
   console.log('JobSprint Extension installed');
@@ -288,6 +368,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleGetRowByNumber(message.rowNumber, message.targetSheetName, sendResponse);
       return true; // Async: fetch to external endpoint
 
+    case 'getSheetSchema':
+      // Get sheet schema (column headers)
+      handleGetSheetSchema(message.targetSheetName, sendResponse);
+      return true; // Async: fetch to external endpoint
+
     case 'findSimilarAnswer':
       // Find similar Q&A pair from database for autofill
       handleFindSimilarAnswer(message.question, sendResponse);
@@ -312,6 +397,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({
         success: true,
         config: configCache
+      });
+      return false; // Synchronous
+
+    case 'getExtractorModes':
+      // Get available extractor modes for schema mapping
+      sendResponse({
+        success: true,
+        modes: EXTRACTOR_MODES
       });
       return false; // Synchronous
 
@@ -800,6 +893,68 @@ function handleGetRowByNumber(rowNumber, targetSheetName, sendResponse) {
       sendResponse({
         success: false,
         error: 'Row retrieval failed: ' + error.message
+      });
+    });
+}
+
+/**
+ * Handle get sheet schema request
+ * @param {string} targetSheetName - Target sheet name
+ * @param {function} sendResponse - Response callback
+ */
+function handleGetSheetSchema(targetSheetName, sendResponse) {
+  const endpoint = getAppsScriptEndpoint();
+
+  // Check if endpoint is configured
+  if (!endpoint || endpoint === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    console.warn('Apps Script endpoint not configured');
+    sendResponse({
+      success: false,
+      error: 'Apps Script endpoint not configured. Please set up your Google Apps Script URL.'
+    });
+    return;
+  }
+
+  // Send request to endpoint
+  const requestData = {
+    action: 'getSheetSchema',
+    targetSheetName: targetSheetName || configCache.TARGET_SHEET_NAME || 'Job Applications'
+  };
+
+  fetchWithRetry(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestData),
+    signal: AbortSignal.timeout(15000) // 15 second timeout
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} error during schema retrieval`);
+      }
+      return response.json();
+    })
+    .then((responseData) => {
+      if (responseData.success) {
+        console.log('Schema retrieval completed:', responseData.schema);
+        sendResponse({
+          success: true,
+          schema: responseData.schema
+        });
+      } else {
+        console.error('Schema retrieval error:', responseData.error);
+        sendResponse({
+          success: false,
+          error: responseData.error || 'Unknown error during schema retrieval'
+        });
+      }
+    })
+    .catch((error) => {
+      console.error('Failed to get sheet schema:', error);
+      sendResponse({
+        success: false,
+        error: 'Schema retrieval failed: ' + error.message
       });
     });
 }

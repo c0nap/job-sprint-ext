@@ -1381,3 +1381,4 @@ function setupSchemaEditor() {
   // Load schema when page loads
   loadSchema();
 }
+
