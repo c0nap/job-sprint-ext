@@ -145,7 +145,9 @@ function createApp() {
   app.delete('/jobs', (req, res) => {
     const count = jobLogs.length;
     jobLogs.length = 0; // Clear array
-    console.log(`🗑️  Cleared ${count} job(s) from storage`);
+    if (process.env.NODE_ENV !== 'test') {  // Prevent CI logs from interrupting valid output
+      console.log(`🗑️  Cleared ${count} job(s) from storage`);
+    }
 
     res.json({
       success: true,

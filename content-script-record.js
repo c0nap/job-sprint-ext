@@ -1083,7 +1083,7 @@ function cleanQuestionText(text) {
     .replace(/\s+/g, ' ')
     .replace(/\*+/g, '')  // Remove asterisks
     .replace(/^\s*-\s*/, '')  // Remove leading dash
-    .substring(0, 300);  // Limit length
+    .substring(0, 300)  // Limit length
     .trim();  // catch spaces left behind by removed asterisks
 }
 
