@@ -1289,15 +1289,59 @@ async function handleManualEntryClick(button, statusDiv) {
 
 /**
  * Log extracted job data via service worker
- * Simplified version - always submits directly (no manual entry check)
+ * Checks for duplicates first, then submits
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Extracted job data
  */
-function logJobData(button, statusDiv, jobData) {
-  log('[Extract] Submitting simplified job data (URL + content)...');
-  // Proceed with logging directly (no manual entry modal for automatic extraction)
-  submitJobData(button, statusDiv, jobData);
+async function logJobData(button, statusDiv, jobData) {
+  log('[Extract] Checking for duplicates before logging...');
+  showStatus(statusDiv, 'info', 'ℹ Checking for duplicates...');
+
+  // Search for duplicates by URL
+  chrome.runtime.sendMessage(
+    {
+      action: 'searchDuplicate',
+      url: jobData.url
+    },
+    (duplicateResponse) => {
+      if (duplicateResponse?.success) {
+        const duplicate = duplicateResponse.duplicate;
+
+        if (duplicate) {
+          log('[Extract] Duplicate found:', duplicate);
+
+          // Check if status is "Queued"
+          if (duplicate.status && duplicate.status.toLowerCase().includes('queued')) {
+            // Found with Queued status - skip appending
+            log('[Extract] Duplicate found with Queued status, skipping append');
+            showStatus(statusDiv, 'info', `ℹ Job already queued (Row ${duplicate.rowNumber}, added ${duplicate.appliedDate})`);
+            resetExtractButton(button);
+            return;
+          } else {
+            // Found with different status - show warning and still append
+            log('[Extract] Duplicate found with non-Queued status, appending anyway with warning');
+            showStatus(statusDiv, 'warning', `⚠ Job already exists (Row ${duplicate.rowNumber}, status: ${duplicate.status}). Adding new entry...`);
+
+            // Wait a bit to show the warning, then proceed
+            setTimeout(() => {
+              submitJobData(button, statusDiv, jobData);
+            }, 1500);
+            return;
+          }
+        } else {
+          // No duplicate found - proceed with logging
+          log('[Extract] No duplicate found, proceeding with logging');
+          submitJobData(button, statusDiv, jobData);
+        }
+      } else {
+        // Error checking for duplicates - log error but proceed with submission
+        logError('[Extract] Error checking for duplicates:', duplicateResponse?.error);
+        log('[Extract] Proceeding with logging despite duplicate check error');
+        submitJobData(button, statusDiv, jobData);
+      }
+    }
+  );
 }
 
 /**
@@ -1969,6 +2013,7 @@ function setupFieldMouseTracking() {
 
 /**
  * Show manual entry modal with pre-filled data
+ * Checks for duplicates and displays the information
  * @param {HTMLButtonElement} button - Extract or manual entry button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Extracted job data to pre-fill
@@ -1982,6 +2027,12 @@ function showManualEntryModal(button, statusDiv, jobData) {
   if (errorContainer) {
     errorContainer.style.display = 'none';
     errorContainer.innerHTML = '';
+  }
+
+  // Hide duplicate info initially
+  const duplicateInfo = document.getElementById('duplicateInfo');
+  if (duplicateInfo) {
+    duplicateInfo.style.display = 'none';
   }
 
   // Store references for later use
@@ -2016,6 +2067,44 @@ function showManualEntryModal(button, statusDiv, jobData) {
 
   // Reset button state
   resetExtractButton(button);
+
+  // Check for duplicates and display results (no warning, just info)
+  if (jobData.url) {
+    checkAndDisplayDuplicate(jobData.url);
+  }
+}
+
+/**
+ * Check for duplicate and display results in modal
+ * @param {string} url - Job URL to check
+ */
+function checkAndDisplayDuplicate(url) {
+  chrome.runtime.sendMessage(
+    {
+      action: 'searchDuplicate',
+      url: url
+    },
+    (duplicateResponse) => {
+      if (duplicateResponse?.success && duplicateResponse.duplicate) {
+        const duplicate = duplicateResponse.duplicate;
+        const duplicateInfo = document.getElementById('duplicateInfo');
+        const duplicateDetails = document.getElementById('duplicateDetails');
+
+        if (duplicateInfo && duplicateDetails) {
+          duplicateDetails.innerHTML = `
+            <strong>Row:</strong> ${duplicate.rowNumber}<br>
+            <strong>Status:</strong> ${duplicate.status || 'N/A'}<br>
+            <strong>Date Recorded:</strong> ${duplicate.appliedDate || 'N/A'}
+          `;
+          duplicateInfo.style.display = 'block';
+
+          log('[DuplicateCheck] Duplicate found and displayed:', duplicate);
+        }
+      } else {
+        log('[DuplicateCheck] No duplicate found or error occurred');
+      }
+    }
+  );
 }
 
 /**

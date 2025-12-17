@@ -278,6 +278,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleLogJobData(message.data, sendResponse);
       return true; // Async: fetch to external endpoint
 
+    case 'searchDuplicate':
+      // Search for duplicate job by URL
+      handleSearchDuplicate(message.url, message.targetSheetName, sendResponse);
+      return true; // Async: fetch to external endpoint
+
     case 'findSimilarAnswer':
       // Find similar Q&A pair from database for autofill
       handleFindSimilarAnswer(message.question, sendResponse);
@@ -650,6 +655,79 @@ async function handleLogJobData(data, sendResponse) {
       sendResponse({
         success: false,
         error: errorMsg
+      });
+    });
+}
+
+/**
+ * Search for duplicate job entry by URL
+ * @param {string} url - Job URL to search for
+ * @param {string} targetSheetName - Target sheet name
+ * @param {Function} sendResponse - Response callback
+ */
+function handleSearchDuplicate(url, targetSheetName, sendResponse) {
+  const endpoint = getAppsScriptEndpoint();
+
+  // Check if endpoint is configured
+  if (!endpoint || endpoint === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    console.warn('Apps Script endpoint not configured');
+    sendResponse({
+      success: false,
+      error: 'Apps Script endpoint not configured. Please set up your Google Apps Script URL.'
+    });
+    return;
+  }
+
+  // Validate URL
+  if (!url) {
+    sendResponse({
+      success: false,
+      error: 'URL is required for duplicate search'
+    });
+    return;
+  }
+
+  // Send search request to endpoint
+  const requestData = {
+    action: 'searchDuplicate',
+    url: url,
+    targetSheetName: targetSheetName || configCache.TARGET_SHEET_NAME || 'Job Applications'
+  };
+
+  fetchWithRetry(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestData),
+    signal: AbortSignal.timeout(15000) // 15 second timeout
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} error during duplicate search`);
+      }
+      return response.json();
+    })
+    .then((responseData) => {
+      if (responseData.success) {
+        console.log('Duplicate search completed:', responseData.duplicate);
+        sendResponse({
+          success: true,
+          duplicate: responseData.duplicate
+        });
+      } else {
+        console.error('Duplicate search error:', responseData.error);
+        sendResponse({
+          success: false,
+          error: responseData.error || 'Unknown error during duplicate search'
+        });
+      }
+    })
+    .catch((error) => {
+      console.error('Failed to search for duplicate:', error);
+      sendResponse({
+        success: false,
+        error: 'Duplicate search failed: ' + error.message
       });
     });
 }
