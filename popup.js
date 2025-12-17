@@ -2120,12 +2120,12 @@ function showSuccess(message) {
 // Track currently focused field for mouse tracking
 let currentlyFocusedField = null;
 let currentActiveFieldElement = null; // Track the actual field DOM element
-let currentMode = 'smart'; // Track the current mode globally (persists across fields)
+let currentMode = 'words'; // Track the current mode globally (persists across fields)
 
 // Mode colors (loaded from storage)
 let popupModeColors = {
+  disabled: '#6c757d',
   words: '#2ecc71',
-  smart: '#3498db',
   chars: '#9b59b6'
 };
 
@@ -2135,14 +2135,14 @@ let popupModeColors = {
 async function loadModeColors() {
   try {
     const result = await chrome.storage.sync.get([
+      'DISABLED_MODE_COLOR',
       'WORD_MODE_COLOR',
-      'SENTENCE_MODE_COLOR',
       'CHAR_MODE_COLOR'
     ]);
 
     popupModeColors = {
+      disabled: result.DISABLED_MODE_COLOR || '#6c757d',
       words: result.WORD_MODE_COLOR || '#2ecc71',
-      smart: result.SENTENCE_MODE_COLOR || '#3498db',
       chars: result.CHAR_MODE_COLOR || '#9b59b6'
     };
 
@@ -2154,13 +2154,13 @@ async function loadModeColors() {
 
 /**
  * Get border color for a specific mode
- * @param {string} mode - Mode name: 'words', 'smart', 'chars'
+ * @param {string} mode - Mode name: 'disabled', 'words', 'chars'
  * @returns {string} Border color for the mode
  */
 function getModeBorderColor(mode) {
   switch (mode) {
-    case 'smart':
-      return popupModeColors.smart;
+    case 'disabled':
+      return popupModeColors.disabled;
     case 'chars':
       return popupModeColors.chars;
     case 'words':

@@ -1202,12 +1202,11 @@ let mouseTrackingActive = false;
 let currentTrackedFieldId = null;
 let lastHighlightedElement = null;
 let mouseTrackingOverlay = null;
-let currentModifierMode = 'smart'; // 'smart', 'words', 'chars'
+let currentModifierMode = 'words'; // 'disabled', 'words', 'chars' (smart mode removed - only used for auto-extraction)
 let currentGranularity = {
   words: { left: 0, right: 0 },  // Number of words on each side (default: just target word = 1 total)
   chars: { left: 1, right: 1 }   // Number of characters on each side (default: 1 char left + 1 char right + target = 3 total)
 };
-let smartModeStrength = 2; // Aggressiveness level for smart mode (1-5, default: 2)
 let lastHighlightedText = null; // Track the highlighted text range
 let lastHighlightPosition = null; // Screen coordinates of last highlight for hysteresis { x, y, text }
 let lastMouseEvent = null; // Store last mouse event for re-extraction on mode/granularity changes
@@ -1220,7 +1219,7 @@ let overlayPosition = {
 
 // Mouse tracking settings (loaded from chrome.storage)
 let mouseTrackingSettings = {
-  smartModifier: 'none',
+  disabledModifier: 'none',
   charModifier: 'ctrl',
   wordModifier: 'shift',
   overlayMoveModifier: 'alt',
@@ -1229,10 +1228,9 @@ let mouseTrackingSettings = {
 
 // Mode colors (loaded from chrome.storage)
 let modeColors = {
+  disabled: { solid: '#6c757d', transparent: 'rgba(108, 117, 125, 0.1)', bg: 'rgba(108, 117, 125, 0.95)' },
   words: { solid: '#2ecc71', transparent: 'rgba(46, 204, 113, 0.1)', bg: 'rgba(46, 204, 113, 0.95)' },
-  smart: { solid: '#3498db', transparent: 'rgba(52, 152, 219, 0.1)', bg: 'rgba(52, 152, 219, 0.95)' },
-  chars: { solid: '#9b59b6', transparent: 'rgba(155, 89, 182, 0.1)', bg: 'rgba(155, 89, 182, 0.95)' },
-  disabled: { solid: '#6c757d', transparent: 'rgba(108, 117, 125, 0.1)', bg: 'rgba(108, 117, 125, 0.95)' }
+  chars: { solid: '#9b59b6', transparent: 'rgba(155, 89, 182, 0.1)', bg: 'rgba(155, 89, 182, 0.95)' }
 };
 
 /**
@@ -1242,58 +1240,48 @@ let modeColors = {
 async function loadMouseTrackingSettings() {
   try {
     const result = await chrome.storage.sync.get([
-      'SENTENCE_MODIFIER',
+      'DISABLED_MODIFIER',
       'CHAR_MODIFIER',
       'WORD_MODIFIER',
       'OVERLAY_MOVE_MODIFIER',
       'OVERLAY_MOVE_STEP',
-      'SMART_MODE_STRENGTH',
       'WORD_MODE_COLOR',
-      'SENTENCE_MODE_COLOR',
       'CHAR_MODE_COLOR',
       'DISABLED_MODE_COLOR'
     ]);
 
     mouseTrackingSettings = {
-      smartModifier: result.SENTENCE_MODIFIER || 'none',
+      disabledModifier: result.DISABLED_MODIFIER || 'none',
       charModifier: result.CHAR_MODIFIER || 'ctrl',
       wordModifier: result.WORD_MODIFIER || 'shift',
       overlayMoveModifier: result.OVERLAY_MOVE_MODIFIER || 'alt',
       overlayMoveStep: result.OVERLAY_MOVE_STEP || 20
     };
 
-    smartModeStrength = result.SMART_MODE_STRENGTH || 2;
-
     // Load and convert colors
     const wordColor = result.WORD_MODE_COLOR || '#2ecc71';
-    const smartColor = result.SENTENCE_MODE_COLOR || '#3498db';
     const charColor = result.CHAR_MODE_COLOR || '#9b59b6';
     const disabledColor = result.DISABLED_MODE_COLOR || '#6c757d';
 
     modeColors = {
+      disabled: {
+        solid: disabledColor,
+        transparent: hexToRgba(disabledColor, 0.1),
+        bg: hexToRgba(disabledColor, 0.95)
+      },
       words: {
         solid: wordColor,
         transparent: hexToRgba(wordColor, 0.1),
         bg: hexToRgba(wordColor, 0.95)
       },
-      smart: {
-        solid: smartColor,
-        transparent: hexToRgba(smartColor, 0.1),
-        bg: hexToRgba(smartColor, 0.95)
-      },
       chars: {
         solid: charColor,
         transparent: hexToRgba(charColor, 0.1),
         bg: hexToRgba(charColor, 0.95)
-      },
-      disabled: {
-        solid: disabledColor,
-        transparent: hexToRgba(disabledColor, 0.1),
-        bg: hexToRgba(disabledColor, 0.95)
       }
     };
 
-    console.log('[MouseTracking] Settings loaded:', mouseTrackingSettings, 'Smart mode strength:', smartModeStrength);
+    console.log('[MouseTracking] Settings loaded:', mouseTrackingSettings);
     console.log('[MouseTracking] Colors loaded:', modeColors);
   } catch (error) {
     console.error('[MouseTracking] Error loading settings:', error);
@@ -1325,7 +1313,7 @@ function hexToRgba(hex, alpha) {
  * @param {string} fieldId - ID of the field being filled
  * @param {string} mode - Initial mode to use ('words', 'smart', 'chars')
  */
-async function startMouseTracking(fieldId, mode = 'smart') {
+async function startMouseTracking(fieldId, mode = 'words') {
   console.log('[MouseTracking] Starting mouse tracking for field:', fieldId, 'with mode:', mode);
 
   // Load settings before starting
@@ -1784,10 +1772,10 @@ function getExtractionModeFromModifiers(event) {
   // Check each configured modifier and return corresponding mode if pressed
   // Skip 'none' modifiers as they shouldn't override the button-selected mode
 
-  // Check for smart modifier (only if it's not 'none')
-  if (mouseTrackingSettings.smartModifier !== 'none' &&
-      checkModifierKey(event, mouseTrackingSettings.smartModifier)) {
-    return 'smart';
+  // Check for disabled modifier (only if it's not 'none')
+  if (mouseTrackingSettings.disabledModifier !== 'none' &&
+      checkModifierKey(event, mouseTrackingSettings.disabledModifier)) {
+    return 'disabled';
   }
 
   // Check for char modifier (only if it's not 'none')
@@ -1862,13 +1850,14 @@ function extractTextFromElement(element, event, mode = 'words') {
   fullText = cleanText(fullText);
 
   // Apply scope based on mode and granularity
-  if (mode === 'smart') {
-    // Smart mode: aggressive field-aware extraction with configurable strength
-    return extractSmartMode(element, event, fullText);
+  if (mode === 'disabled') {
+    // Disabled mode: return empty (no extraction)
+    return '';
   } else if (mode === 'words') {
     // Word mode: basic nearest words extraction
     return extractNearestWords(fullText, event, element, currentGranularity.words.left, currentGranularity.words.right);
   } else if (mode === 'chars') {
+    // Char mode: nearest characters extraction
     return extractNearestChars(fullText, event, element, currentGranularity.chars.left, currentGranularity.chars.right);
   }
 
