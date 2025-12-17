@@ -35,9 +35,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false; // Synchronous response
 
     case 'extractJobData':
-      // Extract job posting data from current page
+      // Extract job posting data from current page (simplified: URL + content only)
       const jobData = extractJobData();
       sendResponse({ success: true, data: jobData });
+      return false; // Synchronous response
+
+    case 'extractJobDataDetailed':
+      // Extract detailed job posting data for manual entry auto-fill
+      const detailedJobData = extractJobDataDetailed();
+      sendResponse({ success: true, data: detailedJobData });
       return false; // Synchronous response
 
     case 'startAutofill':
@@ -119,11 +125,39 @@ function pasteTextToActiveField(text) {
 // These functions are duplicated here since browser extensions can't use ES6 imports in content scripts
 
 /**
- * Extract job posting data from the current page
- * Uses intelligent field-aware extractors (same logic as interactive mouse tracking)
- * @returns {Object} Extracted job data with title, company, location, compensation, pay, description, url, timestamp, and source
+ * Extract job posting data from the current page (simplified version)
+ * Returns only URL and page content (plain text with formatting preserved)
+ * @returns {Object} Extracted job data with url, description (page content), timestamp, and source
  */
 function extractJobData() {
+  try {
+    const data = {
+      url: window.location.href,
+      description: extractPageContentAsPlainText(),
+      timestamp: new Date().toISOString(),
+      source: extractSource(window.location.href)
+    };
+
+    console.log('Extracted simplified job data (URL + content):', { url: data.url, contentLength: data.description.length });
+    return data;
+  } catch (error) {
+    console.error('Error extracting job data:', error);
+    return {
+      url: window.location.href,
+      description: 'Error extracting page content: ' + error.message,
+      timestamp: new Date().toISOString(),
+      source: extractSource(window.location.href),
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Extract detailed job posting data from the current page (for manual entry auto-fill)
+ * Uses intelligent field-aware extractors (same logic as interactive mouse tracking)
+ * @returns {Object} Extracted job data with all fields: title, company, location, compensation, pay, description, url, timestamp, and source
+ */
+function extractJobDataDetailed() {
   try {
     const data = {
       title: '',
@@ -181,10 +215,10 @@ function extractJobData() {
       console.warn('JobSprint: Could not extract meaningful job data from this page');
     }
 
-    console.log('Extracted job data:', data);
+    console.log('Extracted detailed job data:', data);
     return data;
   } catch (error) {
-    console.error('Error extracting job data:', error);
+    console.error('Error extracting detailed job data:', error);
     return {
       title: '',
       company: '',
@@ -244,6 +278,148 @@ function extractSource(url) {
     return hostname;
   } catch {
     return 'Unknown';
+  }
+}
+
+/**
+ * Extract main page content as plain text while preserving formatting
+ * Respects paragraphs, bullets, and headers
+ * @returns {string} Formatted plain text content
+ */
+function extractPageContentAsPlainText() {
+  try {
+    // Try to find the main content area
+    let contentContainer = document.querySelector('main, article, [role="main"], .job-description, .description');
+
+    // If no main content area found, use body but filter out navigation, headers, footers
+    if (!contentContainer) {
+      contentContainer = document.body;
+    }
+
+    // Clone the container to avoid modifying the actual DOM
+    const clone = contentContainer.cloneNode(true);
+
+    // Remove unwanted elements (scripts, styles, nav, header, footer, ads)
+    const unwantedSelectors = [
+      'script', 'style', 'nav', 'header', 'footer',
+      '.navigation', '.navbar', '.nav', '.menu',
+      '.advertisement', '.ad', '.ads', '.sidebar',
+      'iframe', 'noscript', '[role="navigation"]',
+      '[role="banner"]', '[role="complementary"]'
+    ];
+
+    unwantedSelectors.forEach(selector => {
+      const elements = clone.querySelectorAll(selector);
+      elements.forEach(el => el.remove());
+    });
+
+    // Process the DOM tree and build formatted text
+    const lines = [];
+
+    function processNode(node, indent = 0) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent.trim();
+        if (text) {
+          return text;
+        }
+        return '';
+      }
+
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const tagName = node.tagName.toLowerCase();
+
+        // Headers - add with blank line before and after
+        if (/^h[1-6]$/.test(tagName)) {
+          const text = getTextContent(node).trim();
+          if (text) {
+            lines.push('');
+            lines.push(text);
+            lines.push('');
+          }
+          return '';
+        }
+
+        // Paragraphs - add with blank line after
+        if (tagName === 'p') {
+          const text = getTextContent(node).trim();
+          if (text) {
+            lines.push(text);
+            lines.push('');
+          }
+          return '';
+        }
+
+        // Lists - process each item
+        if (tagName === 'ul' || tagName === 'ol') {
+          const items = node.querySelectorAll('li');
+          items.forEach((item, index) => {
+            const text = getTextContent(item).trim();
+            if (text) {
+              const bullet = tagName === 'ul' ? '•' : `${index + 1}.`;
+              lines.push(`${bullet} ${text}`);
+            }
+          });
+          lines.push('');
+          return '';
+        }
+
+        // Line breaks
+        if (tagName === 'br') {
+          lines.push('');
+          return '';
+        }
+
+        // Divs and sections - process children
+        if (tagName === 'div' || tagName === 'section') {
+          for (const child of node.childNodes) {
+            processNode(child, indent);
+          }
+          return '';
+        }
+
+        // For other elements, just get text content
+        const text = getTextContent(node).trim();
+        if (text && !hasBlockChildren(node)) {
+          return text;
+        }
+      }
+
+      return '';
+    }
+
+    // Helper to get clean text content
+    function getTextContent(node) {
+      return node.textContent.replace(/\s+/g, ' ').trim();
+    }
+
+    // Helper to check if node has block-level children
+    function hasBlockChildren(node) {
+      const blockTags = ['p', 'div', 'section', 'article', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li'];
+      for (const child of node.children || []) {
+        if (blockTags.includes(child.tagName.toLowerCase())) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Start processing from root
+    for (const child of clone.childNodes) {
+      const text = processNode(child);
+      if (text) {
+        lines.push(text);
+      }
+    }
+
+    // Join lines and clean up excessive blank lines
+    let result = lines.join('\n');
+    result = result.replace(/\n{3,}/g, '\n\n'); // Max 2 consecutive newlines
+    result = result.trim();
+
+    return result || 'No content extracted from page';
+  } catch (error) {
+    console.error('Error extracting page content:', error);
+    return 'Error extracting page content: ' + error.message;
   }
 }
 
