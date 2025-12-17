@@ -95,6 +95,8 @@ describe('Feature 2: Extraction - Job Data Extraction', () => {
     });
 
     test('should handle missing fields gracefully', () => {
+      // Silence the warning for this specific test
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
       document.body.innerHTML = `<h1>Developer</h1>`;
 
       const extractJobData = require('../content-script-testable').extractJobData;
@@ -105,6 +107,8 @@ describe('Feature 2: Extraction - Job Data Extraction', () => {
       expect(data.location).toBe('');
       expect(data.url).toBeDefined();
       expect(data.timestamp).toBeDefined();
+
+      warnSpy.mockRestore(); // Restore so real warnings in other tests show up
     });
 
     test('should trim whitespace from extracted text', () => {
@@ -444,7 +448,7 @@ describe('Feature 2: Extraction - Integration Tests', () => {
   test('should handle extraction with partial data', () => {
     // Silence the warning for this specific test
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    
+
     document.body.innerHTML = `
       <h1>Consultant</h1>
     `;
