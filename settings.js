@@ -19,6 +19,105 @@ const DEFAULT_CONFIG = {
   DISABLED_MODE_COLOR: '#6c757d'   // Grey color for disabled mode
 };
 
+// Default job data schema
+const DEFAULT_SCHEMA = {
+  columns: [
+    {
+      id: 'company',
+      label: 'Employer',
+      type: 'text',
+      placeholder: 'e.g., Google',
+      tooltip: 'Company or organization name',
+      required: false,
+      readonly: false
+    },
+    {
+      id: 'title',
+      label: 'Job Title',
+      type: 'text',
+      placeholder: 'e.g., Software Engineer',
+      tooltip: 'Position or role title',
+      required: false,
+      readonly: false
+    },
+    {
+      id: 'location',
+      label: 'Location',
+      type: 'text',
+      placeholder: 'e.g., San Francisco, CA',
+      tooltip: 'Job location (city, state, or remote)',
+      required: false,
+      readonly: false
+    },
+    {
+      id: 'role',
+      label: 'Role',
+      type: 'select',
+      placeholder: '',
+      tooltip: 'Job role category',
+      required: false,
+      readonly: false,
+      options: ['CODE', 'DSCI', 'STAT', 'R&D']
+    },
+    {
+      id: 'tailor',
+      label: 'Tailor',
+      type: 'select',
+      placeholder: 'Same as Role',
+      tooltip: 'Custom role tailoring',
+      required: false,
+      readonly: false,
+      options: ['CODE', 'DSCI', 'STAT', 'R&D']
+    },
+    {
+      id: 'description',
+      label: 'Notes',
+      type: 'textarea',
+      placeholder: 'Additional notes or job description',
+      tooltip: 'Job description, requirements, or notes',
+      required: false,
+      readonly: false
+    },
+    {
+      id: 'compensation',
+      label: 'Compensation',
+      type: 'text',
+      placeholder: 'e.g., $65.00 - $75.00 / hour',
+      tooltip: 'Salary or compensation range',
+      required: false,
+      readonly: false
+    },
+    {
+      id: 'pay',
+      label: 'Pay',
+      type: 'text',
+      placeholder: 'e.g., $70.00',
+      tooltip: 'Specific pay amount or average',
+      required: false,
+      readonly: false
+    },
+    {
+      id: 'url',
+      label: 'Portal Link',
+      type: 'url',
+      placeholder: 'https://...',
+      tooltip: 'Job posting URL',
+      required: false,
+      readonly: true
+    },
+    {
+      id: 'source',
+      label: 'Board',
+      type: 'select',
+      placeholder: 'Auto-detect from URL',
+      tooltip: 'Job board or source',
+      required: false,
+      readonly: false,
+      options: ['Indeed', 'Handshake', 'Symplicity', 'Google', 'LinkedIn', 'Website', 'Other']
+    }
+  ]
+};
+
 // Default clipboard macros (nested structure)
 const DEFAULT_MACROS = {
   demographics: {
@@ -47,6 +146,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   setupFolderHandlers();
   setupCloseLink();
+  setupSchemaEditor();
 });
 
 // Setup close settings link
@@ -976,4 +1076,308 @@ async function handleImportFile(event) {
 
   // Clear the file input so the same file can be selected again
   event.target.value = '';
+}
+
+// ============ SCHEMA MANAGEMENT ============
+
+let currentSchema = null;
+
+// Load schema from storage
+async function loadSchema() {
+  try {
+    const result = await chrome.storage.sync.get(['JOB_DATA_SCHEMA']);
+    currentSchema = result.JOB_DATA_SCHEMA || DEFAULT_SCHEMA;
+    renderSchemaEditor();
+  } catch (error) {
+    console.error('Error loading schema:', error);
+    currentSchema = DEFAULT_SCHEMA;
+    renderSchemaEditor();
+  }
+}
+
+// Save schema to storage
+async function saveSchema() {
+  try {
+    // Collect schema from UI
+    const columns = [];
+    const columnElements = document.querySelectorAll('.schema-column');
+
+    columnElements.forEach((el) => {
+      const column = {
+        id: el.querySelector('[data-field="id"]').value.trim(),
+        label: el.querySelector('[data-field="label"]').value.trim(),
+        type: el.querySelector('[data-field="type"]').value,
+        placeholder: el.querySelector('[data-field="placeholder"]').value.trim(),
+        tooltip: el.querySelector('[data-field="tooltip"]').value.trim(),
+        required: el.querySelector('[data-field="required"]').checked,
+        readonly: el.querySelector('[data-field="readonly"]').checked
+      };
+
+      // Add options for select type
+      if (column.type === 'select') {
+        const optionsText = el.querySelector('[data-field="options"]').value.trim();
+        column.options = optionsText ? optionsText.split('\n').map(o => o.trim()).filter(o => o) : [];
+      }
+
+      columns.push(column);
+    });
+
+    const schema = { columns };
+
+    // Save to storage
+    await chrome.storage.sync.set({ JOB_DATA_SCHEMA: schema });
+    currentSchema = schema;
+
+    // Show success message
+    const statusDiv = document.getElementById('schemaSaveStatus');
+    statusDiv.className = 'status-message success';
+    statusDiv.textContent = 'Schema saved successfully!';
+    setTimeout(() => {
+      statusDiv.className = 'status-message';
+      statusDiv.textContent = '';
+    }, 3000);
+
+    // Notify other parts of the extension
+    chrome.runtime.sendMessage({ action: 'schemaUpdated', schema });
+
+  } catch (error) {
+    console.error('Error saving schema:', error);
+    const statusDiv = document.getElementById('schemaSaveStatus');
+    statusDiv.className = 'status-message error';
+    statusDiv.textContent = 'Error saving schema: ' + error.message;
+  }
+}
+
+// Reset schema to default
+async function resetSchema() {
+  if (!confirm('Reset schema to default? This will remove all custom columns.')) {
+    return;
+  }
+
+  currentSchema = JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
+  renderSchemaEditor();
+
+  const statusDiv = document.getElementById('schemaSaveStatus');
+  statusDiv.className = 'status-message info';
+  statusDiv.textContent = 'Schema reset to default. Click "Save Schema" to apply changes.';
+}
+
+// Render schema editor
+function renderSchemaEditor() {
+  const container = document.getElementById('schemaEditor');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (!currentSchema || !currentSchema.columns || currentSchema.columns.length === 0) {
+    container.innerHTML = '<div class="schema-empty">No columns defined. Click "Add Column" to create one.</div>';
+    return;
+  }
+
+  currentSchema.columns.forEach((column, index) => {
+    const columnEl = createSchemaColumnElement(column, index);
+    container.appendChild(columnEl);
+  });
+}
+
+// Create schema column element
+function createSchemaColumnElement(column, index) {
+  const div = document.createElement('div');
+  div.className = 'schema-column';
+  div.dataset.index = index;
+
+  const showOptionsField = column.type === 'select';
+
+  div.innerHTML = `
+    <div class="schema-column-header">
+      <span class="schema-drag-handle" title="Drag to reorder">☰</span>
+      <span class="schema-column-title">${column.label || 'New Column'}</span>
+      <div class="schema-column-controls">
+        <button class="schema-btn toggle-details">
+          ${index === 0 ? '▼' : '▶'} Details
+        </button>
+        <button class="schema-btn delete">✕ Delete</button>
+      </div>
+    </div>
+    <div class="schema-column-details" style="display: ${index === 0 ? 'grid' : 'none'}">
+      <div class="schema-field">
+        <label>ID (internal key)</label>
+        <input type="text" data-field="id" value="${column.id || ''}" placeholder="e.g., company">
+      </div>
+      <div class="schema-field">
+        <label>Label (display name)</label>
+        <input type="text" data-field="label" value="${column.label || ''}" placeholder="e.g., Employer">
+      </div>
+      <div class="schema-field">
+        <label>Field Type</label>
+        <select data-field="type">
+          <option value="text" ${column.type === 'text' ? 'selected' : ''}>Text</option>
+          <option value="textarea" ${column.type === 'textarea' ? 'selected' : ''}>Textarea</option>
+          <option value="select" ${column.type === 'select' ? 'selected' : ''}>Select Dropdown</option>
+          <option value="url" ${column.type === 'url' ? 'selected' : ''}>URL</option>
+          <option value="number" ${column.type === 'number' ? 'selected' : ''}>Number</option>
+          <option value="date" ${column.type === 'date' ? 'selected' : ''}>Date</option>
+        </select>
+      </div>
+      <div class="schema-field">
+        <label>Placeholder</label>
+        <input type="text" data-field="placeholder" value="${column.placeholder || ''}" placeholder="e.g., Enter company name">
+      </div>
+      <div class="schema-field schema-field-full">
+        <label>Tooltip (help text)</label>
+        <textarea data-field="tooltip" placeholder="Description shown on hover">${column.tooltip || ''}</textarea>
+      </div>
+      <div class="schema-field schema-field-full" style="display: ${showOptionsField ? 'flex' : 'none'}" data-options-field>
+        <label>Options (one per line, for select type only)</label>
+        <textarea data-field="options" placeholder="Option 1\nOption 2\nOption 3">${column.options ? column.options.join('\n') : ''}</textarea>
+      </div>
+      <div class="schema-field">
+        <label class="schema-checkbox">
+          <input type="checkbox" data-field="required" ${column.required ? 'checked' : ''}>
+          Required field
+        </label>
+      </div>
+      <div class="schema-field">
+        <label class="schema-checkbox">
+          <input type="checkbox" data-field="readonly" ${column.readonly ? 'checked' : ''}>
+          Read-only (auto-filled)
+        </label>
+      </div>
+    </div>
+  `;
+
+  // Setup event listeners
+  const toggleBtn = div.querySelector('.toggle-details');
+  const detailsDiv = div.querySelector('.schema-column-details');
+  const deleteBtn = div.querySelector('.delete');
+  const typeSelect = div.querySelector('[data-field="type"]');
+  const labelInput = div.querySelector('[data-field="label"]');
+  const titleSpan = div.querySelector('.schema-column-title');
+
+  toggleBtn.addEventListener('click', () => {
+    const isVisible = detailsDiv.style.display === 'grid';
+    detailsDiv.style.display = isVisible ? 'none' : 'grid';
+    toggleBtn.textContent = isVisible ? '▶ Details' : '▼ Details';
+  });
+
+  deleteBtn.addEventListener('click', () => {
+    if (confirm(`Delete column "${column.label}"?`)) {
+      div.remove();
+      // Update indices
+      document.querySelectorAll('.schema-column').forEach((el, idx) => {
+        el.dataset.index = idx;
+      });
+    }
+  });
+
+  // Update title when label changes
+  labelInput.addEventListener('input', () => {
+    titleSpan.textContent = labelInput.value || 'New Column';
+  });
+
+  // Show/hide options field based on type
+  typeSelect.addEventListener('change', () => {
+    const optionsField = div.querySelector('[data-options-field]');
+    optionsField.style.display = typeSelect.value === 'select' ? 'flex' : 'none';
+  });
+
+  // Setup drag and drop
+  setupDragAndDrop(div);
+
+  return div;
+}
+
+// Add new column
+function addSchemaColumn() {
+  const newColumn = {
+    id: 'new_field_' + Date.now(),
+    label: 'New Column',
+    type: 'text',
+    placeholder: '',
+    tooltip: '',
+    required: false,
+    readonly: false
+  };
+
+  if (!currentSchema.columns) {
+    currentSchema.columns = [];
+  }
+
+  currentSchema.columns.push(newColumn);
+
+  const container = document.getElementById('schemaEditor');
+  const columnEl = createSchemaColumnElement(newColumn, currentSchema.columns.length - 1);
+  container.appendChild(columnEl);
+
+  // Expand details for new column
+  const detailsDiv = columnEl.querySelector('.schema-column-details');
+  const toggleBtn = columnEl.querySelector('.toggle-details');
+  detailsDiv.style.display = 'grid';
+  toggleBtn.textContent = '▼ Details';
+
+  // Focus on label field
+  columnEl.querySelector('[data-field="label"]').focus();
+}
+
+// Setup drag and drop for column reordering
+function setupDragAndDrop(element) {
+  const handle = element.querySelector('.schema-drag-handle');
+  let draggedElement = null;
+
+  handle.addEventListener('mousedown', (e) => {
+    draggedElement = element;
+    element.style.opacity = '0.5';
+    element.draggable = true;
+  });
+
+  element.addEventListener('dragstart', (e) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', element.innerHTML);
+  });
+
+  element.addEventListener('dragover', (e) => {
+    if (e.preventDefault) {
+      e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+
+    if (draggedElement && draggedElement !== element) {
+      const container = element.parentNode;
+      const draggedIndex = Array.from(container.children).indexOf(draggedElement);
+      const targetIndex = Array.from(container.children).indexOf(element);
+
+      if (draggedIndex < targetIndex) {
+        container.insertBefore(draggedElement, element.nextSibling);
+      } else {
+        container.insertBefore(draggedElement, element);
+      }
+    }
+
+    return false;
+  });
+
+  element.addEventListener('dragend', (e) => {
+    element.style.opacity = '1';
+    element.draggable = false;
+    draggedElement = null;
+
+    // Update indices
+    document.querySelectorAll('.schema-column').forEach((el, idx) => {
+      el.dataset.index = idx;
+    });
+  });
+}
+
+// Setup schema editor event listeners
+function setupSchemaEditor() {
+  const addBtn = document.getElementById('addSchemaColumn');
+  const resetBtn = document.getElementById('resetSchema');
+  const saveBtn = document.getElementById('saveSchema');
+
+  if (addBtn) addBtn.addEventListener('click', addSchemaColumn);
+  if (resetBtn) resetBtn.addEventListener('click', resetSchema);
+  if (saveBtn) saveBtn.addEventListener('click', saveSchema);
+
+  // Load schema when page loads
+  loadSchema();
 }

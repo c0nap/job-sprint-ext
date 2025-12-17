@@ -609,18 +609,262 @@ function showApprovalUI(input, question, answer, onApprove, onReject) {
 }
 
 /**
+ * Inject CSS stylesheet for JobSprint modal (CSP-compliant)
+ * Only injects once, uses classes instead of inline styles
+ */
+function injectJobSprintStyles() {
+  if (document.getElementById('jobsprint-modal-styles')) {
+    console.log('[Styles] JobSprint styles already injected');
+    return; // Already injected
+  }
+
+  console.log('[Styles] Injecting JobSprint styles...');
+  const style = document.createElement('style');
+  style.id = 'jobsprint-modal-styles';
+  style.textContent = `
+    @keyframes slideIn {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    #jobsprint-approval-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 999999;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .jobsprint-modal {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      animation: slideIn 0.3s ease-out;
+    }
+
+    .jobsprint-modal-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .jobsprint-modal-icon {
+      width: 32px;
+      height: 32px;
+      background: #4CAF50;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 18px;
+      margin-right: 12px;
+    }
+
+    .jobsprint-modal-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .jobsprint-data-container {
+      margin-bottom: 12px;
+      padding: 12px;
+      background: #f5f5f5;
+      border-radius: 6px;
+    }
+
+    .jobsprint-data-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #666;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .jobsprint-data-text {
+      font-size: 14px;
+      color: #333;
+      line-height: 1.4;
+    }
+
+    .jobsprint-success-container {
+      margin-bottom: 20px;
+      padding: 12px;
+      background: #e8f5e9;
+      border-radius: 6px;
+      border-left: 3px solid #4CAF50;
+    }
+
+    .jobsprint-success-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #2e7d32;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .jobsprint-success-text {
+      font-size: 14px;
+      color: #1b5e20;
+      line-height: 1.4;
+    }
+
+    .jobsprint-button-container {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    .jobsprint-btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 2px solid;
+    }
+
+    .jobsprint-btn-reject {
+      border-color: #ddd;
+      background: white;
+      color: #666;
+    }
+
+    .jobsprint-btn-reject:hover {
+      background: #f5f5f5;
+      border-color: #999;
+    }
+
+    .jobsprint-btn-approve {
+      border: none;
+      background: #4CAF50;
+      color: white;
+    }
+
+    .jobsprint-btn-approve:hover {
+      background: #45a049;
+    }
+
+    /* Mouse tracking highlight styles */
+    .jobsprint-text-highlight {
+      background-color: var(--jobsprint-highlight-bg, #ffd700);
+      color: inherit;
+      padding: 0;
+      margin: 0;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      font-weight: inherit;
+      font-size: inherit;
+      line-height: inherit;
+      letter-spacing: inherit;
+      pointer-events: none;
+      display: inline;
+    }
+
+    #jobsprint-mouse-tracking-overlay {
+      position: fixed;
+      background: rgba(255, 107, 107, 0.95);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 999998;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      pointer-events: auto;
+      animation: slideInFromRight 0.3s ease-out;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #jobsprint-tracking-title {
+      font-weight: 600;
+      margin-right: 4px;
+    }
+
+    #jobsprint-tracking-mode {
+      font-size: 11px;
+      opacity: 0.9;
+      margin-left: auto;
+    }
+
+    @keyframes slideInFromRight {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); }
+      50% { box-shadow: 0 4px 20px rgba(255, 107, 107, 0.6); }
+    }
+
+    #jobsprint-exit-btn {
+      background: rgb(220, 53, 69);
+      border: none;
+      color: white;
+      font-size: 20px;
+      font-weight: bold;
+      width: 26px;
+      height: 26px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      margin: 0 0 0 4px;
+      line-height: 1;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+      pointer-events: auto;
+      outline: none;
+      box-shadow: none;
+    }
+
+    #jobsprint-exit-btn:hover {
+      background: rgb(200, 35, 51);
+      transform: scale(1.1);
+    }
+
+    #jobsprint-exit-btn:active {
+      background: rgb(189, 33, 48);
+      transform: scale(0.95);
+    }
+  `;
+
+  try {
+    document.head.appendChild(style);
+    console.log('[Styles] JobSprint styles successfully injected');
+  } catch (error) {
+    console.error('[Styles] Error injecting styles:', error);
+  }
+}
+
+/**
  * Create the overlay backdrop
  * @returns {HTMLElement} Overlay element
  */
 function createOverlay() {
+  injectJobSprintStyles(); // Ensure styles are injected
   const overlay = document.createElement('div');
   overlay.id = 'jobsprint-approval-overlay';
-  overlay.style.cssText = `
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.7); display: flex;
-    justify-content: center; align-items: center; z-index: 999999;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  `;
   return overlay;
 }
 
@@ -630,21 +874,7 @@ function createOverlay() {
  */
 function createModal() {
   const modal = document.createElement('div');
-  modal.style.cssText = `
-    background: white; border-radius: 12px; padding: 24px;
-    max-width: 500px; width: 90%;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    animation: slideIn 0.3s ease-out;
-  `;
-
-  // Add animation
-  if (!document.getElementById('jobsprint-modal-styles')) {
-    const style = document.createElement('style');
-    style.id = 'jobsprint-modal-styles';
-    style.textContent = `@keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`;
-    document.head.appendChild(style);
-  }
-
+  modal.className = 'jobsprint-modal';
   return modal;
 }
 
@@ -654,18 +884,14 @@ function createModal() {
  */
 function createModalHeader() {
   const header = document.createElement('div');
-  header.style.cssText = 'display: flex; align-items: center; margin-bottom: 16px;';
+  header.className = 'jobsprint-modal-header';
 
   const icon = document.createElement('div');
-  icon.style.cssText = `
-    width: 40px; height: 40px; background: #4CAF50; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    margin-right: 12px; font-size: 20px; color: white;
-  `;
+  icon.className = 'jobsprint-modal-icon';
   icon.textContent = '✓';
 
   const title = document.createElement('h3');
-  title.style.cssText = 'margin: 0; font-size: 18px; font-weight: 600; color: #333;';
+  title.className = 'jobsprint-modal-title';
   title.textContent = 'Autofill Suggestion';
 
   header.appendChild(icon);
@@ -680,14 +906,14 @@ function createModalHeader() {
  */
 function createQuestionDisplay(question) {
   const container = document.createElement('div');
-  container.style.cssText = 'margin-bottom: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px;';
+  container.className = 'jobsprint-data-container';
 
   const label = document.createElement('div');
-  label.style.cssText = 'font-size: 12px; font-weight: 600; color: #666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;';
+  label.className = 'jobsprint-data-label';
   label.textContent = 'Question';
 
   const text = document.createElement('div');
-  text.style.cssText = 'font-size: 14px; color: #333; line-height: 1.4;';
+  text.className = 'jobsprint-data-text';
   text.textContent = question;
 
   container.appendChild(label);
@@ -702,14 +928,14 @@ function createQuestionDisplay(question) {
  */
 function createAnswerDisplay(answer) {
   const container = document.createElement('div');
-  container.style.cssText = 'margin-bottom: 20px; padding: 12px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #4CAF50;';
+  container.className = 'jobsprint-success-container';
 
   const label = document.createElement('div');
-  label.style.cssText = 'font-size: 12px; font-weight: 600; color: #2e7d32; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;';
+  label.className = 'jobsprint-success-label';
   label.textContent = 'Suggested Answer';
 
   const text = document.createElement('div');
-  text.style.cssText = 'font-size: 15px; color: #1b5e20; font-weight: 500; line-height: 1.4;';
+  text.className = 'jobsprint-success-text';
   text.textContent = answer;
 
   container.appendChild(label);
@@ -726,17 +952,13 @@ function createAnswerDisplay(answer) {
 function createActionButtons(onApprove, onReject) {
   const rejectBtn = document.createElement('button');
   rejectBtn.textContent = 'Skip';
-  rejectBtn.style.cssText = 'padding: 10px 20px; border: 2px solid #ddd; background: white; color: #666; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;';
-  rejectBtn.onmouseover = () => { rejectBtn.style.background = '#f5f5f5'; rejectBtn.style.borderColor = '#999'; };
-  rejectBtn.onmouseout = () => { rejectBtn.style.background = 'white'; rejectBtn.style.borderColor = '#ddd'; };
-  rejectBtn.onclick = () => { removeApprovalUI(); onReject(); };
+  rejectBtn.className = 'jobsprint-btn jobsprint-btn-reject';
+  rejectBtn.addEventListener('click', () => { removeApprovalUI(); onReject(); });
 
   const approveBtn = document.createElement('button');
   approveBtn.textContent = 'Apply Answer';
-  approveBtn.style.cssText = 'padding: 10px 20px; border: none; background: #4CAF50; color: white; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;';
-  approveBtn.onmouseover = () => { approveBtn.style.background = '#45a049'; };
-  approveBtn.onmouseout = () => { approveBtn.style.background = '#4CAF50'; };
-  approveBtn.onclick = () => { removeApprovalUI(); onApprove(); };
+  approveBtn.className = 'jobsprint-btn jobsprint-btn-approve';
+  approveBtn.addEventListener('click', () => { removeApprovalUI(); onApprove(); });
 
   return { approveBtn, rejectBtn };
 }
@@ -748,7 +970,7 @@ function createActionButtons(onApprove, onReject) {
  */
 function createButtonContainer(...buttons) {
   const container = document.createElement('div');
-  container.style.cssText = 'display: flex; gap: 12px; justify-content: flex-end;';
+  container.className = 'jobsprint-button-container';
   buttons.forEach(btn => container.appendChild(btn));
   return container;
 }
@@ -1148,11 +1370,15 @@ function handleMouseMove(event) {
   }
 
   // Extract text from element with appropriate scope
-  const text = extractTextFromElement(element, event, mode);
+  const extractionResult = extractTextFromElement(element, event, mode);
+  const text = typeof extractionResult === 'string' ? extractionResult : extractionResult.text;
+  const sourceNode = extractionResult.sourceNode || null;
+  const sourceOffset = extractionResult.sourceOffset || null;
+  const sourceOffsetEnd = extractionResult.sourceOffsetEnd || null;
 
   if (text && text.trim()) {
     // Highlight the element and the extracted text
-    highlightElement(element, text.trim(), event);
+    highlightElement(element, text.trim(), event, sourceNode, sourceOffset, sourceOffsetEnd);
 
     // Send text to extension popup
     sendTextToPopup(text.trim());
@@ -1178,7 +1404,8 @@ function handleMouseClick(event) {
   const element = document.elementFromPoint(event.clientX, event.clientY);
 
   if (element && element !== mouseTrackingOverlay) {
-    const text = extractTextFromElement(element, event, mode);
+    const extractionResult = extractTextFromElement(element, event, mode);
+    const text = typeof extractionResult === 'string' ? extractionResult : extractionResult.text;
 
     if (text && text.trim()) {
       // Send final text to popup and stop tracking
@@ -1611,6 +1838,7 @@ function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1
   // Try to find the word under cursor using Range API
   const range = document.caretRangeFromPoint(event.clientX, event.clientY);
   if (!range) {
+    console.log('[Extract] caretRangeFromPoint returned null - using fallback');
     // Fallback: return first N words
     const totalWords = wordsLeft + wordsRight + 1;
     return words.slice(0, totalWords).join(' ');
@@ -1619,47 +1847,72 @@ function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1
   // Get approximate position in text
   const textNode = range.startContainer;
   if (textNode.nodeType !== Node.TEXT_NODE) {
+    console.log('[Extract] Range not in text node, nodeType:', textNode.nodeType);
     const totalWords = wordsLeft + wordsRight + 1;
     return words.slice(0, totalWords).join(' ');
   }
 
   const offset = range.startOffset;
+  console.log('[Extract] Found text node:', textNode.nodeValue?.substring(0, 50), 'offset:', offset);
 
-  // Calculate the actual position by walking through all text nodes before the cursor
-  let targetPosition = 0;
-  const walker = document.createTreeWalker(
-    element,
-    NodeFilter.SHOW_TEXT,
-    null
-  );
+  // Find the exact character range in the RAW text node for the extracted words
+  // We need to map from cursor position → word boundaries in RAW text
+  const rawText = textNode.nodeValue || '';
 
-  let currentNode;
-  while (currentNode = walker.nextNode()) {
-    if (currentNode === textNode) {
-      targetPosition += offset;
-      break;
+  // Split into words while tracking their positions in the raw text
+  const wordBoundaries = [];
+  const wordRegex = /[\s\/—–]+/g;
+  let lastIndex = 0;
+  let match;
+
+  // Find each word and its position in the raw text
+  while ((match = wordRegex.exec(rawText)) !== null) {
+    if (match.index > lastIndex) {
+      wordBoundaries.push({
+        word: rawText.substring(lastIndex, match.index),
+        start: lastIndex,
+        end: match.index
+      });
     }
-    targetPosition += currentNode.textContent.length;
+    lastIndex = match.index + match[0].length;
+  }
+  // Add final word after last separator
+  if (lastIndex < rawText.length) {
+    wordBoundaries.push({
+      word: rawText.substring(lastIndex),
+      start: lastIndex,
+      end: rawText.length
+    });
   }
 
-  // Find which word the cursor is near
-  let cumulativeLength = 0;
+  // Find which word contains the offset
   let targetWordIndex = 0;
-
-  for (let i = 0; i < words.length; i++) {
-    cumulativeLength += words[i].length + 1; // +1 for space
-    if (cumulativeLength >= targetPosition) {
+  for (let i = 0; i < wordBoundaries.length; i++) {
+    if (offset >= wordBoundaries[i].start && offset <= wordBoundaries[i].end) {
       targetWordIndex = i;
       break;
     }
   }
 
-  // Extract words around the target (wordsLeft before, target, wordsRight after)
-  const startIndex = Math.max(0, targetWordIndex - wordsLeft);
-  const endIndex = Math.min(words.length, targetWordIndex + wordsRight + 1);
-  const selectedWords = words.slice(startIndex, endIndex);
+  // Get words around the target
+  const startWordIndex = Math.max(0, targetWordIndex - wordsLeft);
+  const endWordIndex = Math.min(wordBoundaries.length, targetWordIndex + wordsRight + 1);
 
-  return selectedWords.join(' ');
+  if (wordBoundaries.length === 0) {
+    return words.slice(0, wordsLeft + wordsRight + 1).join(' ');
+  }
+
+  // Calculate exact character range in raw text
+  const rangeStart = wordBoundaries[startWordIndex].start;
+  const rangeEnd = wordBoundaries[endWordIndex - 1].end;
+  const extractedRawText = rawText.substring(rangeStart, rangeEnd);
+
+  return {
+    text: extractedRawText.trim(),
+    sourceNode: textNode,
+    sourceOffset: rangeStart,  // Start of the range
+    sourceOffsetEnd: rangeEnd  // End of the range
+  };
 }
 
 /**
@@ -1716,16 +1969,17 @@ function extractNearestChars(text, event, element, charsLeft = 1, charsRight = 1
     return text.substring(0, totalChars);
   }
 
-  // Extract characters around the target position
-  if (charsLeft === 0 && charsRight === 0) {
-    // Just the character under cursor
-    return text.charAt(targetPosition) || text.charAt(0);
-  }
+  // Extract characters around the target position in RAW text node
+  const rawText = textNode.nodeValue || '';
+  const startIndex = Math.max(0, offset - charsLeft);
+  const endIndex = Math.min(rawText.length, offset + charsRight + 1);
 
-  const startIndex = Math.max(0, targetPosition - charsLeft);
-  const endIndex = Math.min(text.length, targetPosition + charsRight + 1);
-
-  return text.substring(startIndex, endIndex);
+  return {
+    text: rawText.substring(startIndex, endIndex),
+    sourceNode: textNode,
+    sourceOffset: startIndex,
+    sourceOffsetEnd: endIndex
+  };
 }
 
 // ============ FIELD-SPECIFIC INTELLIGENT EXTRACTORS ============
@@ -2234,7 +2488,7 @@ function extractLargeTextBlock(element) {
  * @param {string} extractedText - The extracted text to highlight within the element (null for outline only)
  * @param {MouseEvent} mouseEvent - Mouse event for cursor position (used by position-based highlighting)
  */
-function highlightElement(element, extractedText = null, mouseEvent = null) {
+function highlightElement(element, extractedText = null, mouseEvent = null, sourceNode = null, sourceOffset = null, sourceOffsetEnd = null) {
   // Early exit: if already highlighting the same element with the same text, do nothing
   // This prevents unnecessary DOM manipulation and improves performance
   if (lastHighlightedElement === element && lastHighlightedText === extractedText) return;
@@ -2258,7 +2512,7 @@ function highlightElement(element, extractedText = null, mouseEvent = null) {
   // In smart mode, extractedText may be null if element doesn't contain the extracted text
   if (extractedText && extractedText.trim()) {
     try {
-      highlightTextInElement(element, extractedText.trim(), mouseEvent || lastMouseEvent);
+      highlightTextInElement(element, extractedText.trim(), mouseEvent || lastMouseEvent, sourceNode, sourceOffset, sourceOffsetEnd);
     } catch (error) {
       console.error('[MouseTracking] Error highlighting text:', error);
       // Fail gracefully - element outline will still be visible
@@ -2319,7 +2573,7 @@ function createTextHighlight(element, text) {
  * @param {string} searchText - Text to highlight (will be cleaned/normalized)
  * @param {MouseEvent} mouseEvent - Mouse event for cursor position (null for fallback to first occurrence)
  */
-function highlightTextInElement(element, searchText, mouseEvent) {
+function highlightTextInElement(element, searchText, mouseEvent, sourceNode = null, sourceOffset = null, sourceOffsetEnd = null) {
   // STEP 1: Verify the search text actually exists in this element
   // This is crucial for smart mode which may extract text from parent/sibling elements
   // We clone and clean to avoid false negatives from existing highlights or whitespace differences
@@ -2335,9 +2589,12 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   if (!elementText.includes(cleanedSearchText)) {
     // Text not in this element - only show outline, no text highlight
     // This is normal for smart mode which extracts from broader context
+    console.log('[Highlight] Text not found in element. Searched for:', cleanedSearchText.substring(0, 30));
     lastHighlightPosition = null;
     return;
   }
+
+  console.log('[Highlight] Highlighting text:', cleanedSearchText.substring(0, 30), 'in element:', element.tagName, element.className);
 
   // STEP 2: Get mode-specific colors for the highlight
   const colors = getModeColors(currentModifierMode);
@@ -2362,6 +2619,52 @@ function highlightTextInElement(element, searchText, mouseEvent) {
 
   const mouseX = mouseEvent.clientX;
   const mouseY = mouseEvent.clientY;
+
+  // FAST PATH: If we have exact source node + offset range, highlight directly at that exact range
+  if (sourceNode && sourceOffset !== null && sourceOffsetEnd !== null && sourceNode.nodeType === Node.TEXT_NODE) {
+    console.log('[Highlight] Using EXACT range highlighting from', sourceOffset, 'to', sourceOffsetEnd);
+
+    // Remove existing highlights
+    const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
+    existingHighlights.forEach(mark => {
+      const text = mark.textContent;
+      const textNode = document.createTextNode(text);
+      mark.parentNode.replaceChild(textNode, mark);
+    });
+    // DON'T normalize() yet - it would destroy sourceNode reference!
+
+    // Verify sourceNode is still in the DOM
+    if (!sourceNode.parentNode) {
+      console.log('[Highlight] Source node no longer in DOM, falling back to search');
+      // Fall through to normal search path below
+    } else {
+      // Highlight the EXACT range - no searching needed!
+      const nodeText = sourceNode.nodeValue || '';
+      const actualText = nodeText.substring(sourceOffset, sourceOffsetEnd);
+
+      console.log('[Highlight] Highlighting exact text:', actualText.substring(0, 30));
+
+      // Create highlight at this exact position
+      const before = nodeText.substring(0, sourceOffset);
+      const after = nodeText.substring(sourceOffsetEnd);
+
+      const fragment = document.createDocumentFragment();
+      if (before) fragment.appendChild(document.createTextNode(before));
+
+      const mark = document.createElement('mark');
+      mark.className = 'jobsprint-text-highlight';
+      mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
+      mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
+      mark.textContent = actualText;
+      fragment.appendChild(mark);
+
+      if (after) fragment.appendChild(document.createTextNode(after));
+
+      sourceNode.parentNode.replaceChild(fragment, sourceNode);
+      lastHighlightPosition = { x: mouseX, y: mouseY, text: actualText };
+      return;
+    }
+  }
 
   // STEP 4: Clean the DOM before searching
   // CRITICAL: Remove existing highlights first to prevent stale node references
@@ -2389,7 +2692,7 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   // STEP 6: Find ALL occurrences of the search text in the element
   // Use TreeWalker to traverse all text nodes efficiently
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
-  const candidates = [];
+  let candidates = [];  // Use 'let' so we can filter to source node candidates later
   let node;
 
   while (node = walker.nextNode()) {
@@ -2454,13 +2757,40 @@ function highlightTextInElement(element, searchText, mouseEvent) {
 
   // STEP 7: Handle edge case - no matches found
   if (candidates.length === 0) {
+    console.log('[Highlight] No text candidates found');
     lastHighlightPosition = null;
     return;
   }
 
+  console.log('[Highlight] Found', candidates.length, 'candidates, Mouse at:', mouseX.toFixed(0), mouseY.toFixed(0));
+
   // STEP 8: Select the occurrence closest to the mouse cursor
+  // PRIORITY: If we have a sourceNode from extraction, strongly prefer candidates from that node
+  if (sourceNode) {
+    const sourceNodeCandidates = candidates.filter(c => c.node === sourceNode);
+    if (sourceNodeCandidates.length > 0) {
+      console.log('[Highlight] Found', sourceNodeCandidates.length, 'candidates in source node - prioritizing, sourceOffset:', sourceOffset);
+      candidates = sourceNodeCandidates;
+
+      // SUPER PRIORITY: If we have the exact offset, use only candidates at/near that offset
+      if (sourceOffset !== null && candidates.length > 1) {
+        console.log('[Highlight] Filtering by offset', sourceOffset, '. Candidates at:', candidates.map(c => c.matchIndex).join(', '));
+        const offsetCandidates = candidates.filter(c =>
+          Math.abs(c.matchIndex - sourceOffset) < searchText.length + 5
+        );
+        if (offsetCandidates.length > 0) {
+          console.log('[Highlight] Found', offsetCandidates.length, 'candidates near source offset', sourceOffset);
+          candidates = offsetCandidates;
+        } else {
+          console.log('[Highlight] No candidates near offset', sourceOffset, '- keeping all', candidates.length, 'candidates');
+        }
+      }
+    }
+  }
+
   candidates.sort((a, b) => a.distance - b.distance);
   let best = candidates[0];
+  console.log('[Highlight] Best candidate at:', best.centerX.toFixed(0), best.centerY.toFixed(0), 'distance:', best.distance.toFixed(1), 'px, text:', best.matchText.substring(0, 20));
 
   // STEP 9: Apply hysteresis to prevent jitter
   // PROBLEM: In char mode, there are often many identical characters very close together
@@ -2501,18 +2831,11 @@ function highlightTextInElement(element, searchText, mouseEvent) {
   const fragment = document.createDocumentFragment();
   if (before) fragment.appendChild(document.createTextNode(before));
 
-  // Create the <mark> element with mode-specific styling
+  // Create the <mark> element with mode-specific styling using CSS variables
   const mark = document.createElement('mark');
   mark.className = 'jobsprint-text-highlight';
-  mark.style.cssText = `
-    background-color: ${bgColor};
-    color: inherit;
-    padding: 2px 0;
-    border-radius: 2px;
-    box-shadow: 0 0 0 2px ${shadowColor};
-    font-weight: inherit;
-    pointer-events: none;
-  `;
+  mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
+  mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
   // CRITICAL: pointer-events: none prevents the mark from interfering with mouse tracking
   // WITHOUT THIS: mouse would constantly hit the mark itself, causing jitter/flicker
   mark.textContent = best.matchText;
@@ -2602,15 +2925,8 @@ function highlightFirstOccurrence(element, searchText, elementText, bgColor, sha
 
         const mark = document.createElement('mark');
         mark.className = 'jobsprint-text-highlight';
-        mark.style.cssText = `
-          background-color: ${bgColor};
-          color: inherit;
-          padding: 2px 0;
-          border-radius: 2px;
-          box-shadow: 0 0 0 2px ${shadowColor};
-          font-weight: inherit;
-          pointer-events: none;
-        `;
+        mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
+        mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
         mark.textContent = matchedText;
         fragment.appendChild(mark);
 
@@ -2796,125 +3112,70 @@ function updateModeButtonStates() {
 }
 
 /**
- * Create visual overlay to indicate tracking mode is active
+ * Create visual overlay to indicate tracking mode is active (CSP-compliant)
  */
 function createTrackingOverlay() {
+  console.log('[Overlay] createTrackingOverlay() called');
   removeTrackingOverlay();
 
-  const overlay = document.createElement('div');
-  overlay.id = 'jobsprint-tracking-overlay';
+  injectJobSprintStyles(); // Ensure styles are injected
 
-  // Build position CSS based on stored position
-  let positionCSS = '';
+  const overlay = document.createElement('div');
+  overlay.id = 'jobsprint-mouse-tracking-overlay';
+
+  // Apply position using inline styles for dynamic positioning (this is allowed)
   if (overlayPosition.top !== null) {
-    positionCSS += `top: ${overlayPosition.top}px;`;
+    overlay.style.top = `${overlayPosition.top}px`;
   }
   if (overlayPosition.bottom !== null) {
-    positionCSS += `bottom: ${overlayPosition.bottom}px;`;
+    overlay.style.bottom = `${overlayPosition.bottom}px`;
   }
   if (overlayPosition.right !== null) {
-    positionCSS += `right: ${overlayPosition.right}px;`;
+    overlay.style.right = `${overlayPosition.right}px`;
   }
   if (overlayPosition.left !== null) {
-    positionCSS += `left: ${overlayPosition.left}px;`;
+    overlay.style.left = `${overlayPosition.left}px`;
   }
 
-  overlay.style.cssText = `
-    position: fixed;
-    ${positionCSS}
-    background: rgba(255, 107, 107, 0.95);
-    color: white;
-    padding: 8px 12px 8px 12px;
-    border-radius: 6px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 13px;
-    font-weight: 600;
-    z-index: 999998;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    pointer-events: auto;
-    animation: slideInFromRight 0.3s ease-out;
-  `;
+  // Create overlay content structure using DOM methods (no innerHTML)
+  const icon = document.createElement('span');
+  icon.textContent = '🎯';
 
-  overlay.innerHTML = `
-    <div style="display: flex; align-items: flex-start; gap: 6px; position: relative;">
-      <div style="flex: 1;">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-size: 14px;">🎯</span>
-          <span id="jobsprint-tracking-title" style="font-size: 11px; font-weight: 500;">Mouse Text Mirror</span>
-        </div>
-        <div id="jobsprint-tracking-mode" style="font-size: 9px; opacity: 0.75; line-height: 1.3; margin-top: 3px;">
-          ↑↓ adjust • Alt+Arrows move • ESC cancel
-        </div>
-      </div>
-      <button id="jobsprint-exit-btn" style="
-        background-color: rgb(220, 53, 69) !important;
-        background: rgb(220, 53, 69) !important;
-        border: none !important;
-        color: rgb(255, 255, 255) !important;
-        font-size: 20px !important;
-        font-weight: bold !important;
-        width: 26px !important;
-        height: 26px !important;
-        border-radius: 4px !important;
-        cursor: pointer !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        margin-left: 4px !important;
-        line-height: 1 !important;
-        transition: all 0.2s ease !important;
-        flex-shrink: 0 !important;
-        pointer-events: auto !important;
-        outline: none !important;
-        box-shadow: none !important;
-      " title="Exit tracking mode (ESC)">×</button>
-    </div>
-  `;
+  const title = document.createElement('span');
+  title.id = 'jobsprint-tracking-title';
+  title.textContent = 'Mouse Text Mirror';
 
-  // Add animation
-  if (!document.getElementById('jobsprint-tracking-styles')) {
-    const style = document.createElement('style');
-    style.id = 'jobsprint-tracking-styles';
-    style.textContent = `
-      @keyframes slideInFromRight {
-        from {
-          transform: translateX(100%);
-          opacity: 0;
-        }
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
-      }
-      @keyframes pulseGlow {
-        0%, 100% {
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-        50% {
-          box-shadow: 0 4px 20px rgba(255, 107, 107, 0.6);
-        }
-      }
-      #jobsprint-exit-btn:hover {
-        background-color: rgb(200, 35, 51) !important;
-        background: rgb(200, 35, 51) !important;
-        transform: scale(1.1) !important;
-      }
-      #jobsprint-exit-btn:active {
-        background-color: rgb(189, 33, 48) !important;
-        background: rgb(189, 33, 48) !important;
-        transform: scale(0.95) !important;
-      }
-    `;
-    document.head.appendChild(style);
+  const mode = document.createElement('div');
+  mode.id = 'jobsprint-tracking-mode';
+  mode.textContent = '↑↓ adjust • Alt+Arrows move • ESC cancel';
+
+  const exitBtn = document.createElement('button');
+  exitBtn.id = 'jobsprint-exit-btn';
+  exitBtn.title = 'Exit tracking mode (ESC)';
+  exitBtn.textContent = '×';
+
+  // Assemble the overlay structure
+  overlay.appendChild(icon);
+  overlay.appendChild(title);
+  overlay.appendChild(mode);
+  overlay.appendChild(exitBtn);
+
+  // Ensure document.body exists before appending
+  if (!document.body) {
+    console.error('[Overlay] document.body does not exist! Cannot create overlay.');
+    return;
   }
 
-  document.body.appendChild(overlay);
-  mouseTrackingOverlay = overlay;
+  try {
+    document.body.appendChild(overlay);
+    mouseTrackingOverlay = overlay;
+    console.log('[Overlay] Overlay successfully appended to document.body');
+  } catch (error) {
+    console.error('[Overlay] Error appending overlay to document.body:', error);
+    return;
+  }
 
   // Add event listener for exit button
-  const exitBtn = overlay.querySelector('#jobsprint-exit-btn');
   if (exitBtn) {
     console.log('[Overlay] Exit button found, attaching event listeners');
 
