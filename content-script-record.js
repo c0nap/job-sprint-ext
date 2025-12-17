@@ -953,7 +953,7 @@ function extractQuestionForInput(input) {
     if (labelElement) {
       const question = cleanQuestionText(labelElement.textContent);
       // Skip if it's just a short label like "Yes"/"No"
-      if (question.length >= 5 && !['yes', 'no', 'true', 'false'].includes(question.toLowerCase())) {
+      if (question && question.length >= 5 && !['yes', 'no', 'true', 'false'].includes(question.toLowerCase())) {
         logRecord('info', 'Found question via aria-labelledby', { question });
         return question;
       }
@@ -969,7 +969,7 @@ function extractQuestionForInput(input) {
         const labelElement = document.getElementById(containerAriaLabelledBy);
         if (labelElement) {
           const question = cleanQuestionText(labelElement.textContent);
-          if (question.length >= 5 && !['yes', 'no', 'true', 'false'].includes(question.toLowerCase())) {
+          if (question && question.length >= 5 && !['yes', 'no', 'true', 'false'].includes(question.toLowerCase())) {
             logRecord('info', 'Found question via parent aria-labelledby', { question });
             return question;
           }
@@ -1078,6 +1078,7 @@ function extractQuestionForInput(input) {
  * Clean and normalize question text
  */
 function cleanQuestionText(text) {
+  if (!text) return '';  // Handle null/undefined/empty input
   return text
     .trim()
     .replace(/\s+/g, ' ')
