@@ -129,6 +129,154 @@ function getConfiguration() {
 }
 
 /**
+ * Handle duplicate search request
+ * Searches for an existing row with the same URL
+ * @param {Object} requestData - Request data with url and targetSheetName
+ * @param {string} requestId - Request ID for logging
+ * @returns {ContentService.TextOutput} JSON response with duplicate info or null
+ */
+function handleSearchDuplicate(requestData, requestId) {
+  try {
+    console.info({
+      message: 'JobSprint: Searching for duplicate',
+      requestId: requestId,
+      url: requestData.url
+    });
+
+    // Get configuration
+    var config = getConfiguration();
+    if (!config) {
+      return createJsonResponse({
+        success: false,
+        error: 'Server configuration not set up. Please run setupConfiguration().'
+      }, 500);
+    }
+
+    // Validate URL
+    if (!requestData.url) {
+      return createJsonResponse({
+        success: false,
+        error: 'URL is required for duplicate search'
+      }, 400);
+    }
+
+    // Search for duplicate
+    var duplicate = searchForDuplicate(requestData.url, requestData.targetSheetName, config, requestId);
+
+    console.info({
+      message: 'JobSprint: Duplicate search completed',
+      requestId: requestId,
+      found: !!duplicate
+    });
+
+    return createJsonResponse({
+      success: true,
+      duplicate: duplicate
+    }, 200);
+
+  } catch (error) {
+    console.error({
+      message: 'JobSprint: Error in duplicate search',
+      requestId: requestId,
+      error: error.toString()
+    });
+
+    return createJsonResponse({
+      success: false,
+      error: 'Duplicate search failed: ' + error.toString()
+    }, 500);
+  }
+}
+
+/**
+ * Search for a duplicate row by URL
+ * @param {string} url - URL to search for
+ * @param {string} targetSheetName - Sheet name to search in
+ * @param {Object} config - Server configuration
+ * @param {string} requestId - Request ID for logging
+ * @returns {Object|null} Duplicate info {rowNumber, status, appliedDate} or null if not found
+ */
+function searchForDuplicate(url, targetSheetName, config, requestId) {
+  try {
+    // Open spreadsheet
+    var spreadsheet = SpreadsheetApp.openById(config.spreadsheetId);
+    var sheetName = targetSheetName || 'Job Applications';
+    var sheet = spreadsheet.getSheetByName(sheetName);
+
+    // If sheet doesn't exist, no duplicates
+    if (!sheet) {
+      console.log({
+        message: 'JobSprint: Sheet does not exist, no duplicates',
+        requestId: requestId,
+        sheetName: sheetName
+      });
+      return null;
+    }
+
+    // Get all data
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      // Only header row or empty sheet
+      return null;
+    }
+
+    // Get headers to find the Portal Link column
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var urlColumnIndex = headers.indexOf('Portal Link');
+
+    if (urlColumnIndex === -1) {
+      console.warn({
+        message: 'JobSprint: Portal Link column not found',
+        requestId: requestId,
+        headers: headers
+      });
+      return null;
+    }
+
+    // Get Status and Applied columns
+    var statusColumnIndex = headers.indexOf('Status');
+    var appliedColumnIndex = headers.indexOf('Applied');
+
+    // Search for URL in Portal Link column
+    var urlColumn = sheet.getRange(2, urlColumnIndex + 1, lastRow - 1, 1).getValues();
+
+    for (var i = 0; i < urlColumn.length; i++) {
+      if (urlColumn[i][0] === url) {
+        // Found a duplicate!
+        var rowNumber = i + 2; // +2 because we started at row 2 (after header)
+        var status = statusColumnIndex !== -1 ? sheet.getRange(rowNumber, statusColumnIndex + 1).getValue() : '';
+        var appliedDate = appliedColumnIndex !== -1 ? sheet.getRange(rowNumber, appliedColumnIndex + 1).getValue() : '';
+
+        console.info({
+          message: 'JobSprint: Duplicate found',
+          requestId: requestId,
+          rowNumber: rowNumber,
+          status: status,
+          appliedDate: appliedDate
+        });
+
+        return {
+          rowNumber: rowNumber,
+          status: status,
+          appliedDate: appliedDate
+        };
+      }
+    }
+
+    // No duplicate found
+    return null;
+
+  } catch (error) {
+    console.error({
+      message: 'JobSprint: Error in searchForDuplicate',
+      requestId: requestId,
+      error: error.toString()
+    });
+    throw error;
+  }
+}
+
+/**
  * Main entry point for HTTP POST requests from the extension
  * @param {Object} e - Event object containing request parameters
  * @returns {ContentService.TextOutput} JSON response
@@ -147,6 +295,11 @@ function doPost(e) {
 
     // Parse the JSON request body
     var requestData = JSON.parse(e.postData.contents);
+
+    // Check if this is a duplicate search request
+    if (requestData.action === 'searchDuplicate') {
+      return handleSearchDuplicate(requestData, requestId);
+    }
 
     console.log({
       message: 'JobSprint: Request parsed',
