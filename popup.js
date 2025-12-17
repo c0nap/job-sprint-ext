@@ -1558,7 +1558,19 @@ function updateAutofillStatus(state, progress) {
 async function handleAutofillClick(button, statusDiv) {
   // Set button to loading state
   setButtonLoading(button, 'Starting...');
-  showStatus(statusDiv, 'info', 'ℹ Autofill process started. Check the page for prompts.');
+
+  // Get checkbox states
+  const autoPlaybackCheckbox = document.getElementById('autoPlaybackCheckbox');
+  const autoProceedCheckbox = document.getElementById('autoProceedCheckbox');
+  const autoPlayback = autoPlaybackCheckbox?.checked || false;
+  const autoProceed = autoProceedCheckbox?.checked || false;
+
+  // Show appropriate status message
+  if (autoPlayback) {
+    showStatus(statusDiv, 'info', '⚡ AUTO-PLAYBACK MODE: Filling all fields automatically...');
+  } else {
+    showStatus(statusDiv, 'info', 'ℹ Autofill process started. Check the page for prompts.');
+  }
 
   // Get the source tab (the tab that was active when popup was opened)
   const activeTab = await getSourceTab();
@@ -1567,10 +1579,16 @@ async function handleAutofillClick(button, statusDiv) {
     return;
   }
 
-  // Send autofill command to content script
+  // Send autofill command to content script with options
   chrome.tabs.sendMessage(
     activeTab.id,
-    { action: 'startAutofill' },
+    {
+      action: 'startAutofill',
+      options: {
+        autoPlayback,
+        autoProceed
+      }
+    },
     (response) => {
       if (chrome.runtime.lastError) {
         handleAutofillError(button, statusDiv, `Could not access page: ${chrome.runtime.lastError.message}`);
@@ -1578,7 +1596,11 @@ async function handleAutofillClick(button, statusDiv) {
       }
 
       if (response?.success) {
-        showStatus(statusDiv, 'success', '✓ Autofill started! Answer prompts on the page.');
+        if (autoPlayback) {
+          showStatus(statusDiv, 'success', '✓ Auto-playback started! Watch the magic happen.');
+        } else {
+          showStatus(statusDiv, 'success', '✓ Autofill started! Answer prompts on the page.');
+        }
       } else {
         handleAutofillError(button, statusDiv, 'Failed to start autofill process');
       }
