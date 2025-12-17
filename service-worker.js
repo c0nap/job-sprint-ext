@@ -322,18 +322,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       return false; // Synchronous
 
-    case 'recordLog':
-      // Forward record mode logs to popup's debug console (best effort)
-      broadcastToPopup(message).catch(() => {});
-      sendResponse({ success: true });
-      return false; // Synchronous
-
-    case 'recordStatusChange':
-      // Forward record mode status changes to popup (best effort)
-      broadcastToPopup(message).catch(() => {});
-      sendResponse({ success: true });
-      return false; // Synchronous
-
     case 'getTabId':
       // Return tab ID for multi-tab coordination
       sendResponse({ success: true, tabId: sender.tab?.id || 'unknown' });

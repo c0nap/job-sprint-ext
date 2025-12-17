@@ -41,9 +41,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   setupFolderHandlers();
   setupCloseLink();
-
-  // Load and display Q&A database
-  await loadQADatabase();
 });
 
 // Setup close settings link
@@ -187,9 +184,6 @@ function setupEventListeners() {
 
   const importFileInput = document.getElementById('importFileInput');
   if (importFileInput) importFileInput.addEventListener('change', handleImportFile);
-
-  // Q&A Database event listeners
-  setupQAEventListeners();
 }
 
 // Setup folder expand/collapse and JSON validation
@@ -959,28 +953,6 @@ function renderQAList(searchTerm = '') {
       exact: '<span style="background: #e67e22; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600;">EXACT</span>'
     }[typeLabel];
 
-    const optionsHtml = entry.availableOptions && entry.availableOptions.length > 0
-      ? `<div style="color: #666; font-size: 12px; margin-top: 4px; padding: 6px; background: #fff3cd; border-radius: 4px;">
-           <strong>Options:</strong> ${entry.availableOptions.map(opt => escapeHtml(opt)).join(', ')}
-         </div>`
-      : '';
-
-    // Show context information if available (new context-based entries)
-    const contextHtml = entry.context
-      ? `<div style="color: #666; font-size: 11px; margin-top: 6px; padding: 6px; background: #e3f2fd; border-radius: 4px; border-left: 3px solid #2196f3;">
-           <div><strong>🌐 Site:</strong> ${escapeHtml(entry.context.siteName)}</div>
-           ${entry.context.pageTitle ? `<div><strong>📄 Page:</strong> ${escapeHtml(entry.context.pageTitle)}</div>` : ''}
-           ${entry.context.sectionPath && entry.context.sectionPath.length > 0
-             ? `<div><strong>📍 Section:</strong> ${entry.context.sectionPath.map(s => escapeHtml(s)).join(' → ')}</div>`
-             : ''}
-           ${entry.context.elementPath ? `<div style="font-family: monospace; font-size: 10px; color: #555;"><strong>🔧 Path:</strong> ${escapeHtml(entry.context.elementPath)}</div>` : ''}
-         </div>`
-      : '';
-
-    const sourceBadge = entry.context
-      ? '<span style="background: #9c27b0; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600;">RECORDED</span>'
-      : '<span style="background: #607d8b; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600;">MANUAL</span>';
-
     return `
       <div style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-bottom: 10px; background: #fafafa;">
         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
@@ -991,13 +963,9 @@ function renderQAList(searchTerm = '') {
             <div style="color: #666; font-size: 13px; margin-bottom: 6px;">
               <strong>Answer:</strong> ${escapeHtml(entry.answer)}
             </div>
-            ${optionsHtml}
-            ${contextHtml}
-            <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap;">
+            <div style="display: flex; gap: 8px; align-items: center;">
               ${typeBadge}
-              ${sourceBadge}
               ${entry.timestamp ? `<span style="color: #999; font-size: 11px;">Added: ${new Date(entry.timestamp).toLocaleDateString()}</span>` : ''}
-              ${entry.lastUsed ? `<span style="color: #999; font-size: 11px;">Last used: ${new Date(entry.lastUsed).toLocaleDateString()}</span>` : ''}
             </div>
           </div>
           <div style="display: flex; gap: 6px; margin-left: 12px;">
@@ -1070,35 +1038,12 @@ async function saveQAEntry() {
     return;
   }
 
-  let entry;
-
-  if (currentEditingIndex >= 0) {
-    // Editing existing entry - preserve context and ID if they exist
-    const existing = qaDatabase[currentEditingIndex];
-    entry = {
-      ...existing,
-      question,
-      answer,
-      type,
-      lastUsed: Date.now()
-    };
-    // Preserve timestamp from original
-    if (!entry.timestamp) {
-      entry.timestamp = Date.now();
-    }
-  } else {
-    // Adding new manual entry - create simple ID based on question
-    const manualId = 'manual::' + question.toLowerCase().replace(/\s+/g, '-').substring(0, 50);
-    entry = {
-      id: manualId,
-      question,
-      answer,
-      type,
-      timestamp: Date.now(),
-      lastUsed: Date.now()
-      // No context for manually added entries
-    };
-  }
+  const entry = {
+    question,
+    answer,
+    type,
+    timestamp: Date.now()
+  };
 
   if (currentEditingIndex >= 0) {
     // Update existing entry
