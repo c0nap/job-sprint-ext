@@ -159,12 +159,15 @@ async function processNextInput() {
   const input = formInputs[currentIndex];
   const question = extractQuestionForInput(input);
 
+  // Defensive: ensure question is a string
+  const safeQuestion = (typeof question === 'string') ? question : '';
+
   logToConsole('info', `Processing input ${currentIndex + 1}/${formInputs.length}`, {
     type: input.type,
-    question
+    question: safeQuestion
   });
 
-  if (!question || question.length < 3) {
+  if (!safeQuestion || safeQuestion.length < 3) {
     logToConsole('warn', 'Skipping input: no question found', {
       type: input.type,
       name: input.name,
@@ -179,10 +182,10 @@ async function processNextInput() {
   // Request suggestion from service worker
   setState(AutofillState.WAITING_USER);
   chrome.runtime.sendMessage(
-    { action: 'findSimilarAnswer', question },
+    { action: 'findSimilarAnswer', question: safeQuestion },
     async (response) => {
       if (!response || !response.success) {
-        logToConsole('warn', 'No matching Q&A found for question', { question });
+        logToConsole('warn', 'No matching Q&A found for question', { question: safeQuestion });
         skippedInputs.add(currentIndex);
         currentIndex++;
         await processNextInput();
@@ -191,7 +194,7 @@ async function processNextInput() {
 
       if (!response.answer) {
         logToConsole('info', 'No answer suggestion available', {
-          question,
+          question: safeQuestion,
           similarity: response.similarity
         });
         skippedInputs.add(currentIndex);
@@ -204,7 +207,7 @@ async function processNextInput() {
       const availableOptions = getAvailableOptions(input);
 
       logToConsole('success', 'Found matching Q&A pair', {
-        question,
+        question: safeQuestion,
         suggestedAnswer: response.answer,
         similarity: response.similarity,
         answerType: response.answerType,
@@ -218,14 +221,14 @@ async function processNextInput() {
 
         if (success) {
           logToConsole('success', 'Successfully filled input', {
-            question,
+            question: safeQuestion,
             answer: response.answer,
             auto: autofillOptions.autoPlayback
           });
           processedInputs.add(currentIndex);
         } else {
           logToConsole('error', 'Failed to fill input', {
-            question,
+            question: safeQuestion,
             answer: response.answer
           });
           skippedInputs.add(currentIndex);
@@ -239,20 +242,20 @@ async function processNextInput() {
       // Check if auto-playback is enabled
       if (autofillOptions.autoPlayback) {
         // Auto-fill without showing UI
-        logToConsole('info', '⚡ Auto-filling (no confirmation)', { question, answer: response.answer });
+        logToConsole('info', '⚡ Auto-filling (no confirmation)', { question: safeQuestion, answer: response.answer });
         await approvalCallback();
       } else {
         // Show approval UI with intelligent matching
         showApprovalUI(
           input,
-          question,
+          safeQuestion,
           response.answer,
           availableOptions,
           response.answerType,
           approvalCallback,
           async () => {
             // User rejected - skip this input
-            logToConsole('info', 'User skipped input', { question });
+            logToConsole('info', 'User skipped input', { question: safeQuestion });
             skippedInputs.add(currentIndex);
             currentIndex++;
             setState(AutofillState.RUNNING);
