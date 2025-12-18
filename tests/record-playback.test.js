@@ -5,7 +5,7 @@
 
 const { describe, it, expect, beforeEach } = require('@jest/globals');
 const { extractQuestionForInput, determineAnswerType, getInputValue, getAvailableOptions,
-  findSimilarQuestion, calculateSimilarity, findBestMatch } = require('../content-script-testable');
+  findSimilarQuestion, calculateSimilarity, findBestMatch } = require('../content-script-record');
 
 describe('Record Mode - User Interaction Capture', () => {
   let mockInput;

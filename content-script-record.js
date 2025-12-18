@@ -1113,6 +1113,52 @@ function findFormInputs() {
   });
 }
 
+function findSimilarQuestion(database, question) {
+  let bestMatch = null;
+  let bestSimilarity = 0;
+
+  for (const entry of database) {
+    const similarity = calculateSimilarity(question, entry.question);
+    if (similarity > bestSimilarity) {
+      bestSimilarity = similarity;
+      bestMatch = entry;
+    }
+  }
+
+  const THRESHOLD = 0.6;
+  return bestSimilarity > THRESHOLD ? bestMatch : null;
+}
+
+function calculateSimilarity(str1, str2) {
+  const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/);
+  const set1 = new Set(normalize(str1));
+  const set2 = new Set(normalize(str2));
+
+  const intersection = new Set([...set1].filter(x => set2.has(x)));
+  const union = new Set([...set1, ...set2]);
+
+  return intersection.size / union.size;
+}
+
+function findBestMatch(answer, options, answerType) {
+  const normalized = answer.toLowerCase().trim();
+
+  if (answerType === 'exact') {
+    return options.find(opt => opt.toLowerCase().trim() === normalized) || null;
+  }
+
+  // Fuzzy matching for choice type
+  for (const option of options) {
+    const optNormalized = option.toLowerCase().trim();
+    if (optNormalized.includes(normalized) || normalized.includes(optNormalized)) {
+      return option;
+    }
+  }
+
+  return null;
+}
+
+
 // ============ DATABASE OPERATIONS ============
 
 /**
@@ -1433,6 +1479,11 @@ if (typeof module !== 'undefined' && module.exports) {
     stopRecordMode,
     extractQuestionForInput,
     determineAnswerType,
-    getInputValue
+    getInputValue,
+    getAvailableOptions,
+    findSimilarQuestion,
+    calculateSimilarity,
+    findBestMatch
   };
 }
+
