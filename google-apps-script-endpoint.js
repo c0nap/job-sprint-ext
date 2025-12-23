@@ -220,46 +220,50 @@ function searchForDuplicate(url, targetSheetName, config, requestId) {
       return null;
     }
 
-    // Get headers to find the Portal Link column
+    // Get all headers
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    var urlColumnIndex = headers.indexOf('Portal Link');
 
-    if (urlColumnIndex === -1) {
-      console.warn({
-        message: 'JobSprint: Portal Link column not found',
-        requestId: requestId,
-        headers: headers
-      });
-      return null;
-    }
+    // Get all data to search for URL
+    var dataRange = sheet.getRange(2, 1, lastRow - 1, headers.length);
+    var allData = dataRange.getValues();
 
-    // Get Status and Applied columns
-    var statusColumnIndex = headers.indexOf('Status');
-    var appliedColumnIndex = headers.indexOf('Applied');
+    // Search for URL in all columns
+    for (var i = 0; i < allData.length; i++) {
+      for (var j = 0; j < allData[i].length; j++) {
+        if (allData[i][j] === url) {
+          // Found a duplicate!
+          var rowNumber = i + 2; // +2 because we started at row 2 (after header)
 
-    // Search for URL in Portal Link column
-    var urlColumn = sheet.getRange(2, urlColumnIndex + 1, lastRow - 1, 1).getValues();
+          // Try to find status and applied date columns dynamically
+          var status = '';
+          var appliedDate = '';
 
-    for (var i = 0; i < urlColumn.length; i++) {
-      if (urlColumn[i][0] === url) {
-        // Found a duplicate!
-        var rowNumber = i + 2; // +2 because we started at row 2 (after header)
-        var status = statusColumnIndex !== -1 ? sheet.getRange(rowNumber, statusColumnIndex + 1).getValue() : '';
-        var appliedDate = appliedColumnIndex !== -1 ? sheet.getRange(rowNumber, appliedColumnIndex + 1).getValue() : '';
+          // Look for common status column names
+          for (var k = 0; k < headers.length; k++) {
+            var headerName = String(headers[k]).toLowerCase();
+            if (headerName === 'status' || headerName === 'application status') {
+              status = allData[i][k];
+            } else if (headerName === 'applied' || headerName === 'date applied' || headerName === 'applied date') {
+              appliedDate = allData[i][k];
+            }
+          }
 
-        console.info({
-          message: 'JobSprint: Duplicate found',
-          requestId: requestId,
-          rowNumber: rowNumber,
-          status: status,
-          appliedDate: appliedDate
-        });
+          console.info({
+            message: 'JobSprint: Duplicate found',
+            requestId: requestId,
+            rowNumber: rowNumber,
+            urlFoundInColumn: headers[j],
+            status: status,
+            appliedDate: appliedDate
+          });
 
-        return {
-          rowNumber: rowNumber,
-          status: status,
-          appliedDate: appliedDate
-        };
+          return {
+            rowNumber: rowNumber,
+            status: status,
+            appliedDate: appliedDate,
+            url: url
+          };
+        }
       }
     }
 
@@ -695,48 +699,14 @@ function validateJobData(data) {
  * @returns {Array<string>} Array of header names
  */
 function getOrCreateHeaders(sheet, jobData, isNewSheet) {
-  // Define standard column mapping (field ID → display label)
-  var fieldLabelMap = {
-    'company': 'Employer',
-    'title': 'Job Title',
-    'location': 'Location',
-    'url': 'Portal Link',
-    'source': 'Board',
-    'role': 'Role',
-    'tailor': 'Tailor',
-    'description': 'Notes',
-    'compensation': 'Compensation',
-    'pay': 'Pay'
-  };
-
-  // System columns that are always added
-  var systemColumns = ['Status', 'Applied', 'Decision'];
-
   if (isNewSheet) {
-    // New sheet: create default headers based on standard fields + any custom fields
+    // New sheet: create headers from all keys in jobData
     var headers = [];
 
-    // Add standard columns that exist in jobData
-    for (var fieldId in fieldLabelMap) {
-      if (jobData.hasOwnProperty(fieldId) || fieldId === 'company' || fieldId === 'title') {
-        // Always include company and title, even if empty
-        headers.push(fieldLabelMap[fieldId]);
-      }
-    }
-
-    // Add system columns
-    headers = headers.concat(systemColumns);
-
-    // Add any custom fields not in the standard mapping
+    // Add all columns from jobData (extension already sends with correct column names)
     for (var key in jobData) {
-      if (jobData.hasOwnProperty(key) &&
-          !fieldLabelMap.hasOwnProperty(key) &&
-          key !== 'timestamp' && key !== 'targetSheetName') {
-        // Custom field - use field ID as label (capitalize first letter)
-        var customLabel = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
-        if (headers.indexOf(customLabel) === -1) {
-          headers.push(customLabel);
-        }
+      if (jobData.hasOwnProperty(key) && key !== 'timestamp' && key !== 'targetSheetName') {
+        headers.push(key);
       }
     }
 
@@ -765,25 +735,12 @@ function getOrCreateHeaders(sheet, jobData, isNewSheet) {
     // Check if any new columns need to be added
     var newColumns = [];
 
-    // Check standard fields
-    for (var fieldId in fieldLabelMap) {
-      if (jobData.hasOwnProperty(fieldId)) {
-        var label = fieldLabelMap[fieldId];
-        if (headers.indexOf(label) === -1) {
-          newColumns.push(label);
-        }
-      }
-    }
-
-    // Check custom fields
+    // Check all fields in jobData
     for (var key in jobData) {
       if (jobData.hasOwnProperty(key) &&
-          !fieldLabelMap.hasOwnProperty(key) &&
-          key !== 'timestamp' && key !== 'targetSheetName') {
-        var customLabel = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
-        if (headers.indexOf(customLabel) === -1 && newColumns.indexOf(customLabel) === -1) {
-          newColumns.push(customLabel);
-        }
+          key !== 'timestamp' && key !== 'targetSheetName' &&
+          headers.indexOf(key) === -1) {
+        newColumns.push(key);
       }
     }
 
@@ -823,7 +780,9 @@ function createRowData(headers, jobData, fieldLabelMap) {
 
     // Handle system columns
     if (header === 'Status') {
-      rowData.push('No response');
+      // Prompt 3 Fix: Changed default status from 'No response' to 'Queued'
+      // This ensures duplicate detection logic works correctly
+      rowData.push('Queued');
     } else if (header === 'Applied') {
       rowData.push(appliedDate);
     } else if (header === 'Decision') {
