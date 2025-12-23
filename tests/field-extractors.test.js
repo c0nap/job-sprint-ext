@@ -12,7 +12,7 @@ const {
   extractJobTitle,
   extractCompanyName,
   extractLargeTextBlock
-} = require('../field-extractors-testable');
+} = require('../extraction/extractors/field-extractors');
 
 describe('cleanText', () => {
   test('should remove extra whitespace', () => {
