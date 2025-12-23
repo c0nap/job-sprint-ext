@@ -301,6 +301,16 @@ function doPost(e) {
       return handleSearchDuplicate(requestData, requestId);
     }
 
+    // Check if this is a get row by number request
+    if (requestData.action === 'getRowByNumber') {
+      return handleGetRowByNumber(requestData, requestId);
+    }
+
+    // Check if this is a get sheet schema request
+    if (requestData.action === 'getSheetSchema') {
+      return handleGetSheetSchema(requestData, requestId);
+    }
+
     console.log({
       message: 'JobSprint: Request parsed',
       requestId: requestId,
@@ -384,6 +394,267 @@ function doPost(e) {
       success: false,
       error: 'Internal server error: ' + error.toString()
     }, 500);
+  }
+}
+
+/**
+ * Handle get row by number request
+ * Retrieves all data from a specific row in the spreadsheet
+ */
+function handleGetRowByNumber(requestData, requestId) {
+  try {
+    console.info({
+      message: 'JobSprint: Getting row by number',
+      requestId: requestId,
+      rowNumber: requestData.rowNumber
+    });
+
+    // Get configuration
+    var config = getConfiguration();
+    if (!config) {
+      return createJsonResponse({
+        success: false,
+        error: 'Server configuration not set up. Please run setupConfiguration().'
+      }, 500);
+    }
+
+    // Validate row number
+    if (!requestData.rowNumber || requestData.rowNumber < 2) {
+      return createJsonResponse({
+        success: false,
+        error: 'Valid row number (>= 2) is required'
+      }, 400);
+    }
+
+    // Get row data
+    var rowData = getRowByNumber(requestData.rowNumber, requestData.targetSheetName, config, requestId);
+
+    console.info({
+      message: 'JobSprint: Row retrieval completed',
+      requestId: requestId,
+      found: !!rowData
+    });
+
+    return createJsonResponse({
+      success: true,
+      rowData: rowData
+    }, 200);
+
+  } catch (error) {
+    console.error({
+      message: 'JobSprint: Error getting row by number',
+      requestId: requestId,
+      error: error.toString()
+    });
+
+    return createJsonResponse({
+      success: false,
+      error: 'Row retrieval failed: ' + error.toString()
+    }, 500);
+  }
+}
+
+/**
+ * Handle get sheet schema request
+ * Returns the column headers from the spreadsheet
+ */
+function handleGetSheetSchema(requestData, requestId) {
+  try {
+    console.info({
+      message: 'JobSprint: Getting sheet schema',
+      requestId: requestId,
+      targetSheet: requestData.targetSheetName
+    });
+
+    // Get configuration
+    var config = getConfiguration();
+    if (!config) {
+      return createJsonResponse({
+        success: false,
+        error: 'Server configuration not set up. Please run setupConfiguration().'
+      }, 500);
+    }
+
+    // Get sheet schema
+    var schema = getSheetSchema(requestData.targetSheetName, config, requestId);
+
+    console.info({
+      message: 'JobSprint: Schema retrieval completed',
+      requestId: requestId,
+      columnCount: schema ? schema.columns.length : 0
+    });
+
+    return createJsonResponse({
+      success: true,
+      schema: schema
+    }, 200);
+
+  } catch (error) {
+    console.error({
+      message: 'JobSprint: Error getting sheet schema',
+      requestId: requestId,
+      error: error.toString()
+    });
+
+    return createJsonResponse({
+      success: false,
+      error: 'Schema retrieval failed: ' + error.toString()
+    }, 500);
+  }
+}
+
+/**
+ * Get row data by row number
+ * @param {number} rowNumber - Row number to retrieve (1-indexed, must be >= 2)
+ * @param {string} targetSheetName - Sheet name to search in
+ * @param {Object} config - Server configuration
+ * @param {string} requestId - Request ID for logging
+ * @returns {Object|null} Row data as key-value pairs {header: value} or null if not found
+ */
+function getRowByNumber(rowNumber, targetSheetName, config, requestId) {
+  try {
+    // Open spreadsheet
+    var spreadsheet = SpreadsheetApp.openById(config.spreadsheetId);
+    var sheetName = targetSheetName || 'Job Applications';
+    var sheet = spreadsheet.getSheetByName(sheetName);
+
+    // If sheet doesn't exist, return null
+    if (!sheet) {
+      console.log({
+        message: 'JobSprint: Sheet does not exist',
+        requestId: requestId,
+        sheetName: sheetName
+      });
+      return null;
+    }
+
+    // Check if row exists
+    var lastRow = sheet.getLastRow();
+    if (rowNumber > lastRow) {
+      console.warn({
+        message: 'JobSprint: Row number exceeds sheet rows',
+        requestId: requestId,
+        rowNumber: rowNumber,
+        lastRow: lastRow
+      });
+      return null;
+    }
+
+    // Get headers
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+    // Get row data
+    var rowData = sheet.getRange(rowNumber, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+    // Build result object
+    var result = {
+      rowNumber: rowNumber
+    };
+
+    for (var i = 0; i < headers.length; i++) {
+      var header = headers[i];
+      var value = rowData[i];
+
+      // Convert to string if it's a date
+      if (value instanceof Date) {
+        result[header] = Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      } else {
+        result[header] = value || '';
+      }
+    }
+
+    console.info({
+      message: 'JobSprint: Row data retrieved',
+      requestId: requestId,
+      rowNumber: rowNumber,
+      fields: Object.keys(result).length
+    });
+
+    return result;
+
+  } catch (error) {
+    console.error({
+      message: 'JobSprint: Error in getRowByNumber',
+      requestId: requestId,
+      error: error.toString()
+    });
+    throw error;
+  }
+}
+
+/**
+ * Get sheet schema (column headers)
+ * @param {string} targetSheetName - Sheet name to get schema from
+ * @param {Object} config - Server configuration
+ * @param {string} requestId - Request ID for logging
+ * @returns {Object} Schema object with columns array
+ */
+function getSheetSchema(targetSheetName, config, requestId) {
+  try {
+    // Open spreadsheet
+    var spreadsheet = SpreadsheetApp.openById(config.spreadsheetId);
+    var sheetName = targetSheetName || 'Job Applications';
+    var sheet = spreadsheet.getSheetByName(sheetName);
+
+    // If sheet doesn't exist, return empty schema
+    if (!sheet) {
+      console.warn({
+        message: 'JobSprint: Sheet does not exist',
+        requestId: requestId,
+        sheetName: sheetName
+      });
+      return {
+        sheetName: sheetName,
+        columns: [],
+        exists: false
+      };
+    }
+
+    // Get headers from first row
+    var lastColumn = sheet.getLastColumn();
+    if (lastColumn === 0) {
+      // Empty sheet
+      return {
+        sheetName: sheetName,
+        columns: [],
+        exists: true
+      };
+    }
+
+    var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+
+    // Build columns array
+    var columns = [];
+    for (var i = 0; i < headers.length; i++) {
+      if (headers[i]) { // Only include non-empty headers
+        columns.push({
+          index: i,
+          name: headers[i].toString(),
+          position: i + 1 // 1-indexed position
+        });
+      }
+    }
+
+    console.info({
+      message: 'JobSprint: Sheet schema retrieved',
+      requestId: requestId,
+      sheetName: sheetName,
+      columnCount: columns.length
+    });
+
+    return {
+      sheetName: sheetName,
+      columns: columns,
+      exists: true
+    };
+
+  } catch (error) {
+    console.error({
+      message: 'JobSprint: Error in getSheetSchema',
+      requestId: requestId,
+      error: error.toString()
+    });
+    throw error;
   }
 }
 
@@ -614,6 +885,7 @@ function logJobToSheet(jobData, config, requestId) {
 
     // Get sheet name from config, default to "Job Applications"
     var sheetName = jobData.targetSheetName || 'Job Applications';
+    delete jobData.targetSheetName; // Remove targetSheetName from data to be written
 
     // Get or create the target sheet
     sheet = spreadsheet.getSheetByName(sheetName);
@@ -674,9 +946,8 @@ function logJobToSheet(jobData, config, requestId) {
     console.info({
       message: 'JobSprint: Job logged to sheet successfully',
       requestId: requestId,
-      jobTitle: jobData.title || '(No title)',
-      company: jobData.company || '(No company)',
-      newRowNumber: sheet.getLastRow()
+      newRowNumber: sheet.getLastRow(),
+      columnsUsed: headers.length
     });
 
     return { success: true };

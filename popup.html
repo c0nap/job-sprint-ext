@@ -142,6 +142,31 @@
         <!-- Error message container -->
         <div id="manualEntryError" class="modal-error" style="display: none;"></div>
 
+        <!-- Manual row number input -->
+        <div style="margin: 12px 0; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+          <label for="manualRowNumber" style="display: block; margin-bottom: 8px; font-weight: 500; font-size: 13px; color: #333;">
+            Find Existing Row by Number:
+          </label>
+          <div style="display: flex; gap: 8px;">
+            <input type="number" id="manualRowNumber" placeholder="Enter row number (e.g., 25)" min="2" style="flex: 1; padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;">
+            <button type="button" id="findRowBtn" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap;">
+              🔍 Find
+            </button>
+          </div>
+          <p style="font-size: 11px; color: #666; margin-top: 4px;">
+            Manually load data from a specific spreadsheet row to update or fix entries
+          </p>
+        </div>
+
+        <!-- Duplicate detection info -->
+        <div id="duplicateInfo" style="display: none; margin: 12px 0; padding: 12px; background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; font-size: 12px;">
+          <strong style="color: #0c5460;">ℹ️ Existing Entry Found</strong>
+          <div id="duplicateDetails" style="margin-top: 8px; color: #0c5460;"></div>
+        </div>
+
+        <!-- Error message container -->
+        <div id="manualEntryError" style="display: none; padding: 12px; margin: 12px 0; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; color: #721c24; font-size: 13px;"></div>
+
         <form id="manualEntryForm">
           <!-- Form fields will be dynamically generated based on schema -->
           <div id="dynamicFormFields"></div>
