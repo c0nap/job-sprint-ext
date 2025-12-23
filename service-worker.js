@@ -13,6 +13,86 @@ let configCache = {
   TARGET_SHEET_NAME: 'Job Applications'
 };
 
+// Extractor mode definitions
+// These define what types of data can be extracted and mapped to spreadsheet columns
+const EXTRACTOR_MODES = {
+  'company': {
+    label: 'Company/Employer',
+    description: 'Company or organization name',
+    category: 'basic'
+  },
+  'jobTitle': {
+    label: 'Job Title',
+    description: 'Position title or role name',
+    category: 'basic'
+  },
+  'location': {
+    label: 'Location',
+    description: 'Job location (city, state, country, or remote)',
+    category: 'basic'
+  },
+  'url': {
+    label: 'Portal Link/URL',
+    description: 'Job posting URL or application link',
+    category: 'basic'
+  },
+  'rawDescription': {
+    label: 'Raw Job Description',
+    description: 'Full page content as formatted plain text',
+    category: 'content'
+  },
+  'notes': {
+    label: 'Notes',
+    description: 'Additional notes or custom text',
+    category: 'content'
+  },
+  'status': {
+    label: 'Status',
+    description: 'Application status (default: "Queued" or "No response")',
+    category: 'tracking'
+  },
+  'appliedDate': {
+    label: 'Applied Date',
+    description: 'Date applied (auto-populated with current date)',
+    category: 'tracking'
+  },
+  'decision': {
+    label: 'Decision',
+    description: 'Final decision or outcome',
+    category: 'tracking'
+  },
+  'role': {
+    label: 'Role Category',
+    description: 'Role type (CODE, DSCI, STAT, R&D, etc.)',
+    category: 'classification'
+  },
+  'tailor': {
+    label: 'Tailor Category',
+    description: 'Resume/application tailoring category',
+    category: 'classification'
+  },
+  'compensation': {
+    label: 'Compensation Range',
+    description: 'Salary range or compensation package',
+    category: 'compensation'
+  },
+  'pay': {
+    label: 'Specific Pay',
+    description: 'Specific pay amount or hourly rate',
+    category: 'compensation'
+  },
+  'board': {
+    label: 'Job Board',
+    description: 'Source job board (Indeed, LinkedIn, Handshake, etc.)',
+    category: 'source'
+  },
+  'none': {
+    label: 'None (Ignore)',
+    description: 'Do not populate this column during extraction',
+    category: 'special'
+  }
+};
+
 // Initialize storage when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
   console.log('JobSprint Extension installed');
@@ -91,7 +171,8 @@ async function loadConfiguration() {
       'SPREADSHEET_ID',
       'PROJECT_ID',
       'ENABLE_MANUAL_ENTRY',
-      'TARGET_SHEET_NAME'
+      'TARGET_SHEET_NAME',
+      'SCHEMA_MAPPING'
     ]);
 
     // Check if we have values in storage
@@ -107,6 +188,7 @@ async function loadConfiguration() {
       configCache.ENABLE_MANUAL_ENTRY =
         storageConfig.ENABLE_MANUAL_ENTRY !== undefined ? storageConfig.ENABLE_MANUAL_ENTRY : true;
       configCache.TARGET_SHEET_NAME = storageConfig.TARGET_SHEET_NAME || 'Job Applications';
+      configCache.SCHEMA_MAPPING = storageConfig.SCHEMA_MAPPING || {};
       console.log('Configuration loaded from chrome.storage');
     } else {
       // Fallback to config.local.js
@@ -283,6 +365,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleSearchDuplicate(message.url, message.targetSheetName, sendResponse);
       return true; // Async: fetch to external endpoint
 
+    case 'getRowByNumber':
+      // Get row data by row number
+      handleGetRowByNumber(message.rowNumber, message.targetSheetName, sendResponse);
+      return true; // Async: fetch to external endpoint
+
+    case 'getSheetSchema':
+      // Get sheet schema (column headers)
+      handleGetSheetSchema(message.targetSheetName, sendResponse);
+      return true; // Async: fetch to external endpoint
+
     case 'findSimilarAnswer':
       // Find similar Q&A pair from database for autofill
       handleFindSimilarAnswer(message.question, sendResponse);
@@ -307,6 +399,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({
         success: true,
         config: configCache
+      });
+      return false; // Synchronous
+
+    case 'getExtractorModes':
+      // Get available extractor modes for schema mapping
+      sendResponse({
+        success: true,
+        modes: EXTRACTOR_MODES
       });
       return false; // Synchronous
 
@@ -532,6 +632,71 @@ async function fetchWithRetry(url, options, maxRetries = 2) {
 }
 
 /**
+ * Transform job data from extractor keys to column names using schema mapping
+ * @param {Object} data - Job data with extractor keys (e.g., {company: "Google", jobTitle: "Engineer"})
+ * @returns {Object} Data with column names (e.g., {Employer: "Google", "Job Title": "Engineer"})
+ */
+function transformDataToColumns(data) {
+  const schemaMapping = configCache.SCHEMA_MAPPING || {};
+
+  // Legacy field name mappings (for backwards compatibility with existing popup code)
+  const legacyFieldMap = {
+    'title': 'jobTitle',
+    'description': 'notes',
+    'source': 'board'
+    // 'company' stays as 'company'
+    // 'location' stays as 'location'
+    // 'url' stays as 'url'
+    // 'compensation' stays as 'compensation'
+    // 'pay' stays as 'pay'
+    // 'role' stays as 'role'
+    // 'tailor' stays as 'tailor'
+  };
+
+  // Normalize data: convert legacy field names to extractor keys
+  const normalizedData = {};
+  Object.entries(data).forEach(([key, value]) => {
+    const normalizedKey = legacyFieldMap[key] || key;
+    normalizedData[normalizedKey] = value;
+  });
+
+  // If no schema mapping exists, return normalized data (fallback for backwards compatibility)
+  if (!schemaMapping || Object.keys(schemaMapping).length === 0) {
+    console.warn('No schema mapping configured. Using normalized data as-is.');
+    return normalizedData;
+  }
+
+  // Create reverse mapping: extractorKey -> columnName
+  const reverseMapping = {};
+  Object.entries(schemaMapping).forEach(([columnName, extractorKey]) => {
+    if (extractorKey && extractorKey !== 'none') {
+      reverseMapping[extractorKey] = columnName;
+    }
+  });
+
+  // Transform data using reverse mapping
+  const transformedData = {};
+  Object.entries(normalizedData).forEach(([key, value]) => {
+    // Check if this key is an extractor mode that has a column mapping
+    if (reverseMapping[key]) {
+      transformedData[reverseMapping[key]] = value;
+    } else {
+      // If no mapping exists, use the original key (for backwards compatibility)
+      transformedData[key] = value;
+    }
+  });
+
+  console.log('Data transformation:', {
+    originalKeys: Object.keys(data),
+    normalizedKeys: Object.keys(normalizedData),
+    transformedKeys: Object.keys(transformedData),
+    mappingUsed: Object.keys(reverseMapping).length > 0
+  });
+
+  return transformedData;
+}
+
+/**
  * Log job data to Google Sheets via Apps Script endpoint
  * Includes retry logic for transient network failures
  * @param {Object} data - Job data to log
@@ -568,9 +733,12 @@ function handleLogJobData(data, sendResponse) {
   // 1. Settings UI display and "Open Sheet" link
   // 2. User convenience (remembering configuration)
 
+  // Transform data from extractor keys to column names using schema mapping
+  const transformedData = transformDataToColumns(data);
+
   // Add target sheet name to the data
   const dataWithSheetName = {
-    ...data,
+    ...transformedData,
     targetSheetName: configCache.TARGET_SHEET_NAME || 'Job Applications'
   };
 
@@ -722,6 +890,141 @@ function handleSearchDuplicate(url, targetSheetName, sendResponse) {
       sendResponse({
         success: false,
         error: 'Duplicate search failed: ' + error.message
+      });
+    });
+}
+
+/**
+ * Handle get row by number request
+ * @param {number} rowNumber - Row number to retrieve
+ * @param {string} targetSheetName - Target sheet name
+ * @param {function} sendResponse - Response callback
+ */
+function handleGetRowByNumber(rowNumber, targetSheetName, sendResponse) {
+  const endpoint = getAppsScriptEndpoint();
+
+  // Check if endpoint is configured
+  if (!endpoint || endpoint === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    console.warn('Apps Script endpoint not configured');
+    sendResponse({
+      success: false,
+      error: 'Apps Script endpoint not configured. Please set up your Google Apps Script URL.'
+    });
+    return;
+  }
+
+  // Validate row number
+  if (!rowNumber || rowNumber < 2) {
+    sendResponse({
+      success: false,
+      error: 'Valid row number (>= 2) is required'
+    });
+    return;
+  }
+
+  // Send request to endpoint
+  const requestData = {
+    action: 'getRowByNumber',
+    rowNumber: parseInt(rowNumber),
+    targetSheetName: targetSheetName || configCache.TARGET_SHEET_NAME || 'Job Applications'
+  };
+
+  fetchWithRetry(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestData),
+    signal: AbortSignal.timeout(15000) // 15 second timeout
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} error during row retrieval`);
+      }
+      return response.json();
+    })
+    .then((responseData) => {
+      if (responseData.success) {
+        console.log('Row retrieval completed:', responseData.rowData);
+        sendResponse({
+          success: true,
+          rowData: responseData.rowData
+        });
+      } else {
+        console.error('Row retrieval error:', responseData.error);
+        sendResponse({
+          success: false,
+          error: responseData.error || 'Unknown error during row retrieval'
+        });
+      }
+    })
+    .catch((error) => {
+      console.error('Failed to get row by number:', error);
+      sendResponse({
+        success: false,
+        error: 'Row retrieval failed: ' + error.message
+      });
+    });
+}
+
+/**
+ * Handle get sheet schema request
+ * @param {string} targetSheetName - Target sheet name
+ * @param {function} sendResponse - Response callback
+ */
+function handleGetSheetSchema(targetSheetName, sendResponse) {
+  const endpoint = getAppsScriptEndpoint();
+
+  // Check if endpoint is configured
+  if (!endpoint || endpoint === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    console.warn('Apps Script endpoint not configured');
+    sendResponse({
+      success: false,
+      error: 'Apps Script endpoint not configured. Please set up your Google Apps Script URL.'
+    });
+    return;
+  }
+
+  // Send request to endpoint
+  const requestData = {
+    action: 'getSheetSchema',
+    targetSheetName: targetSheetName || configCache.TARGET_SHEET_NAME || 'Job Applications'
+  };
+
+  fetchWithRetry(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestData),
+    signal: AbortSignal.timeout(15000) // 15 second timeout
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} error during schema retrieval`);
+      }
+      return response.json();
+    })
+    .then((responseData) => {
+      if (responseData.success) {
+        console.log('Schema retrieval completed:', responseData.schema);
+        sendResponse({
+          success: true,
+          schema: responseData.schema
+        });
+      } else {
+        console.error('Schema retrieval error:', responseData.error);
+        sendResponse({
+          success: false,
+          error: responseData.error || 'Unknown error during schema retrieval'
+        });
+      }
+    })
+    .catch((error) => {
+      console.error('Failed to get sheet schema:', error);
+      sendResponse({
+        success: false,
+        error: 'Schema retrieval failed: ' + error.message
       });
     });
 }

@@ -1790,6 +1790,14 @@ function initializeManualEntryModal() {
     });
   }
 
+  // Handle find row button
+  const findRowBtn = document.getElementById('findRowBtn');
+  if (findRowBtn) {
+    findRowBtn.addEventListener('click', () => {
+      handleFindRowClick();
+    });
+  }
+
   // Add mode selector button handlers
   setupModeSelectorButtons();
 }
@@ -2121,6 +2129,130 @@ function hideManualEntryModal() {
 
   // Clear form
   document.getElementById('manualEntryForm').reset();
+}
+
+/**
+ * Handle find row button click
+ * Retrieves row data by row number from the spreadsheet
+ */
+async function handleFindRowClick() {
+  const rowInput = document.getElementById('manualRowNumber');
+  const findRowBtn = document.getElementById('findRowBtn');
+  const duplicateInfo = document.getElementById('duplicateInfo');
+  const duplicateDetails = document.getElementById('duplicateDetails');
+  const errorContainer = document.getElementById('manualEntryError');
+
+  // Clear previous errors
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+  }
+  if (duplicateInfo) {
+    duplicateInfo.style.display = 'none';
+  }
+
+  const rowNumber = parseInt(rowInput.value);
+
+  // Validate row number
+  if (!rowNumber || rowNumber < 2) {
+    if (errorContainer) {
+      errorContainer.innerHTML = '<strong>✗ Error</strong><div style="margin-top: 8px;">Please enter a valid row number (2 or greater)</div>';
+      errorContainer.style.display = 'block';
+    }
+    return;
+  }
+
+  try {
+    // Disable button while searching
+    if (findRowBtn) {
+      findRowBtn.disabled = true;
+      findRowBtn.textContent = '⏳ Finding...';
+    }
+
+    log(`[FindRow] Searching for row ${rowNumber}...`);
+
+    // Send request to service worker
+    chrome.runtime.sendMessage(
+      { action: 'getRowByNumber', rowNumber: rowNumber },
+      (response) => {
+        // Re-enable button
+        if (findRowBtn) {
+          findRowBtn.disabled = false;
+          findRowBtn.textContent = '🔍 Find';
+        }
+
+        if (chrome.runtime.lastError) {
+          logError(`[FindRow] Runtime error: ${chrome.runtime.lastError.message}`);
+          if (errorContainer) {
+            errorContainer.innerHTML = `<strong>✗ Error</strong><div style="margin-top: 8px;">${chrome.runtime.lastError.message}</div>`;
+            errorContainer.style.display = 'block';
+          }
+          return;
+        }
+
+        if (!response || !response.success) {
+          const errorMsg = response?.error || 'Failed to retrieve row data';
+          logError(`[FindRow] Error: ${errorMsg}`);
+          if (errorContainer) {
+            errorContainer.innerHTML = `<strong>✗ Error</strong><div style="margin-top: 8px;">${errorMsg}</div>`;
+            errorContainer.style.display = 'block';
+          }
+          return;
+        }
+
+        const rowData = response.rowData;
+        if (!rowData) {
+          if (errorContainer) {
+            errorContainer.innerHTML = `<strong>✗ Error</strong><div style="margin-top: 8px;">Row ${rowNumber} not found or is empty</div>`;
+            errorContainer.style.display = 'block';
+          }
+          return;
+        }
+
+        log(`[FindRow] Row data retrieved:`, rowData);
+
+        // Display row info
+        if (duplicateInfo && duplicateDetails) {
+          const status = rowData['Status'] || 'Unknown';
+          const appliedDate = rowData['Applied'] || 'Not set';
+          const url = rowData['Portal Link'] || '';
+
+          duplicateDetails.innerHTML = `
+            <div><strong>Row:</strong> ${rowNumber}</div>
+            <div><strong>Status:</strong> ${status}</div>
+            <div><strong>Date:</strong> ${appliedDate}</div>
+            ${url ? `<div><strong>URL:</strong> <a href="${url}" target="_blank" style="color: #0c5460; text-decoration: underline;">${url.substring(0, 60)}...</a></div>` : ''}
+          `;
+          duplicateInfo.style.display = 'block';
+        }
+
+        // Populate form fields with row data
+        if (rowData['Employer']) document.getElementById('manualCompany').value = rowData['Employer'];
+        if (rowData['Job Title']) document.getElementById('manualJobTitle').value = rowData['Job Title'];
+        if (rowData['Location']) document.getElementById('manualLocation').value = rowData['Location'];
+        if (rowData['Role']) document.getElementById('manualRole').value = rowData['Role'];
+        if (rowData['Tailor']) document.getElementById('manualTailor').value = rowData['Tailor'];
+        if (rowData['Notes']) document.getElementById('manualNotes').value = rowData['Notes'];
+        if (rowData['Compensation']) document.getElementById('manualCompensation').value = rowData['Compensation'];
+        if (rowData['Pay']) document.getElementById('manualPay').value = rowData['Pay'];
+        if (rowData['Portal Link']) document.getElementById('manualUrl').value = rowData['Portal Link'];
+        if (rowData['Board']) document.getElementById('manualBoard').value = rowData['Board'];
+
+        log('[FindRow] Form fields populated with row data');
+      }
+    );
+  } catch (error) {
+    logError(`[FindRow] Error: ${error.message}`);
+    if (errorContainer) {
+      errorContainer.innerHTML = `<strong>✗ Error</strong><div style="margin-top: 8px;">${error.message}</div>`;
+      errorContainer.style.display = 'block';
+    }
+
+    // Reset button
+    if (findRowBtn) {
+      findRowBtn.disabled = false;
+      findRowBtn.textContent = '🔍 Find';
+    }
+  }
 }
 
 /**
