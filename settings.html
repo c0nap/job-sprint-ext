@@ -797,24 +797,7 @@
             </h3>
 
             <div class="alert alert-info">
-                Configure keyboard shortcuts for the interactive mouse tracking feature. Press these modifier keys while hovering over text to control extraction scope.
-            </div>
-
-            <div class="form-group">
-                <label for="sentenceModifier">
-                    Smart Extraction Modifier
-                    <span class="tooltip">
-                        <span class="help-icon">?</span>
-                        <span class="tooltip-text">Modifier key that activates smart field-aware extraction. Default: Shift key uses intelligent extraction based on the field being filled.</span>
-                    </span>
-                </label>
-                <select id="sentenceModifier" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
-                    <option value="shift">Shift</option>
-                    <option value="ctrl">Ctrl/Cmd</option>
-                    <option value="alt">Alt</option>
-                    <option value="none">None (Default mode)</option>
-                </select>
-                <small>Press this key to activate smart field-aware extraction mode</small>
+                Configure mouse tracking modes using the mode selector buttons in the manual entry modal. The modes are: Disabled, Words, and Characters.
             </div>
 
             <div class="form-group">
@@ -879,26 +862,6 @@
                 <small>Distance in pixels per arrow key press (5-100)</small>
             </div>
 
-            <div class="form-group">
-                <label for="smartModeStrength">
-                    Smart Mode Aggressiveness
-                    <span class="tooltip">
-                        <span class="help-icon">?</span>
-                        <span class="tooltip-text">Controls how aggressively smart mode searches for patterns using existing field extractors. Level 1 searches only the hovered element, levels 2-3 include parent elements, level 4 adds siblings, and level 5 searches grandparents. Higher levels find patterns even when the mouse is far away.</span>
-                    </span>
-                </label>
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <input type="range" id="smartModeStrength" min="1" max="5" step="1" value="2" style="flex: 1;">
-                    <span id="smartModeStrengthValue" style="font-weight: 600; min-width: 80px;">Medium (2)</span>
-                </div>
-                <small>
-                    <strong>Minimal (1):</strong> Only hovered element &nbsp;|&nbsp;
-                    <strong>Low (2-3):</strong> + Parent element &nbsp;|&nbsp;
-                    <strong>High (4):</strong> + Sibling elements &nbsp;|&nbsp;
-                    <strong>Maximum (5):</strong> + Grandparent element
-                </small>
-            </div>
-
             <div class="alert alert-warning">
                 <strong>⚠️ Note:</strong> Ensure each modifier is assigned to a different mode to avoid conflicts. If conflicts exist, the extension will use default settings.
             </div>
@@ -923,18 +886,6 @@
                     </label>
                     <input type="color" id="wordModeColor" value="#2ecc71" style="width: 60px; height: 40px; border: 1px solid #cbd5e0; border-radius: 4px; cursor: pointer;">
                     <small style="margin-left: 10px; vertical-align: middle;">Default: Green (#2ecc71)</small>
-                </div>
-
-                <div class="form-group">
-                    <label for="sentenceModeColor">
-                        Smart Mode Color
-                        <span class="tooltip">
-                            <span class="help-icon">?</span>
-                            <span class="tooltip-text">Color for smart field-aware extraction mode</span>
-                        </span>
-                    </label>
-                    <input type="color" id="sentenceModeColor" value="#3498db" style="width: 60px; height: 40px; border: 1px solid #cbd5e0; border-radius: 4px; cursor: pointer;">
-                    <small style="margin-left: 10px; vertical-align: middle;">Default: Blue (#3498db)</small>
                 </div>
 
                 <div class="form-group">

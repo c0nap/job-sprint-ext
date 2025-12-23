@@ -9,12 +9,10 @@ const DEFAULT_CONFIG = {
   ENABLE_MANUAL_ENTRY: true,
   TARGET_SHEET_NAME: 'Job Applications',
   // Mouse tracking settings
-  SENTENCE_MODIFIER: 'none',       // Modifier for smart field-aware extraction
   CHAR_MODIFIER: 'ctrl',           // Modifier for character extraction
   WORD_MODIFIER: 'shift',          // Modifier for word extraction
   OVERLAY_MOVE_MODIFIER: 'alt',   // Modifier for moving overlay
   OVERLAY_MOVE_STEP: 20,           // Pixels to move overlay per keypress
-  SMART_MODE_STRENGTH: 2,          // Smart mode aggressiveness (1-5, default: 2)
   // Mode colors
   DISABLED_MODE_COLOR: '#6c757d'   // Grey color for disabled mode
 };
