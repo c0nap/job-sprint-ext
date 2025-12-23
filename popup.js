@@ -1374,7 +1374,15 @@ function submitJobData(button, statusDiv, jobData, fromModal = false) {
         if (fromModal) {
           const errorContainer = document.getElementById('manualEntryError');
           if (errorContainer) {
-            errorContainer.innerHTML = await generateModalErrorMessage(errorMsg);
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Extraction Failed', errorMsg)
+              );
+            } else {
+              errorContainer.textContent = `✗ Extraction Failed: ${errorMsg}`;
+            }
             errorContainer.style.display = 'block';
           }
         } else {
@@ -1637,7 +1645,13 @@ function generateDynamicFormFields() {
   container.innerHTML = '';
 
   if (!jobDataSchema || !jobDataSchema.columns || jobDataSchema.columns.length === 0) {
-    container.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">No form fields configured. Please configure the schema in Settings.</p>';
+    // CSP-compliant: Use DOM creation instead of innerHTML
+    const emptyMessage = document.createElement('p');
+    emptyMessage.textContent = 'No form fields configured. Please configure the schema in Settings.';
+    emptyMessage.style.textAlign = 'center';
+    emptyMessage.style.color = '#999';
+    emptyMessage.style.padding = '20px';
+    container.appendChild(emptyMessage);
     return;
   }
 
@@ -1920,7 +1934,16 @@ async function handleAutoExtractClick() {
 function showAutoExtractError(message) {
   const errorContainer = document.getElementById('manualEntryError');
   if (errorContainer) {
-    errorContainer.innerHTML = `<strong>✗ Auto-Extract Failed</strong><div style="margin-top: 8px;">${message}</div>`;
+    // CSP-compliant: Use DOM helpers instead of innerHTML
+    if (typeof window.DOMHelpers !== 'undefined') {
+      window.DOMHelpers.clearElement(errorContainer);
+      errorContainer.appendChild(
+        window.DOMHelpers.createErrorMessage('✗ Auto-Extract Failed', message)
+      );
+    } else {
+      // Fallback: Use textContent
+      errorContainer.textContent = `✗ Auto-Extract Failed: ${message}`;
+    }
     errorContainer.style.display = 'block';
   }
 }
@@ -2099,11 +2122,24 @@ function checkAndDisplayDuplicate(url) {
         const duplicateDetails = document.getElementById('duplicateDetails');
 
         if (duplicateInfo && duplicateDetails) {
-          duplicateDetails.innerHTML = `
-            <strong>Row:</strong> ${duplicate.rowNumber}<br>
-            <strong>Status:</strong> ${duplicate.status || 'N/A'}<br>
-            <strong>Date Recorded:</strong> ${duplicate.appliedDate || 'N/A'}
-          `;
+          // CSP-compliant: Use DOM helpers instead of innerHTML
+          if (typeof window.DOMHelpers !== 'undefined') {
+            window.DOMHelpers.clearElement(duplicateDetails);
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Row', duplicate.rowNumber.toString())
+            );
+            duplicateDetails.appendChild(document.createElement('br'));
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Status', duplicate.status || 'N/A')
+            );
+            duplicateDetails.appendChild(document.createElement('br'));
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Date Recorded', duplicate.appliedDate || 'N/A')
+            );
+          } else {
+            // Fallback: Use textContent
+            duplicateDetails.textContent = `Row: ${duplicate.rowNumber}, Status: ${duplicate.status || 'N/A'}, Date Recorded: ${duplicate.appliedDate || 'N/A'}`;
+          }
           duplicateInfo.style.display = 'block';
 
           log('[DuplicateCheck] Duplicate found and displayed:', duplicate);
@@ -2155,7 +2191,15 @@ async function handleFindRowClick() {
   // Validate row number
   if (!rowNumber || rowNumber < 2) {
     if (errorContainer) {
-      errorContainer.innerHTML = '<strong>✗ Error</strong><div style="margin-top: 8px;">Please enter a valid row number (2 or greater)</div>';
+      // CSP-compliant: Use DOM helpers instead of innerHTML
+      if (typeof window.DOMHelpers !== 'undefined') {
+        window.DOMHelpers.clearElement(errorContainer);
+        errorContainer.appendChild(
+          window.DOMHelpers.createErrorMessage('✗ Error', 'Please enter a valid row number (2 or greater)')
+        );
+      } else {
+        errorContainer.textContent = '✗ Error: Please enter a valid row number (2 or greater)';
+      }
       errorContainer.style.display = 'block';
     }
     return;
@@ -2183,7 +2227,15 @@ async function handleFindRowClick() {
         if (chrome.runtime.lastError) {
           logError(`[FindRow] Runtime error: ${chrome.runtime.lastError.message}`);
           if (errorContainer) {
-            errorContainer.innerHTML = `<strong>✗ Error</strong><div style="margin-top: 8px;">${chrome.runtime.lastError.message}</div>`;
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Error', chrome.runtime.lastError.message)
+              );
+            } else {
+              errorContainer.textContent = `✗ Error: ${chrome.runtime.lastError.message}`;
+            }
             errorContainer.style.display = 'block';
           }
           return;
@@ -2193,7 +2245,15 @@ async function handleFindRowClick() {
           const errorMsg = response?.error || 'Failed to retrieve row data';
           logError(`[FindRow] Error: ${errorMsg}`);
           if (errorContainer) {
-            errorContainer.innerHTML = `<strong>✗ Error</strong><div style="margin-top: 8px;">${errorMsg}</div>`;
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Error', errorMsg)
+              );
+            } else {
+              errorContainer.textContent = `✗ Error: ${errorMsg}`;
+            }
             errorContainer.style.display = 'block';
           }
           return;
@@ -2202,7 +2262,15 @@ async function handleFindRowClick() {
         const rowData = response.rowData;
         if (!rowData) {
           if (errorContainer) {
-            errorContainer.innerHTML = `<strong>✗ Error</strong><div style="margin-top: 8px;">Row ${rowNumber} not found or is empty</div>`;
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Error', `Row ${rowNumber} not found or is empty`)
+              );
+            } else {
+              errorContainer.textContent = `✗ Error: Row ${rowNumber} not found or is empty`;
+            }
             errorContainer.style.display = 'block';
           }
           return;
@@ -2216,26 +2284,94 @@ async function handleFindRowClick() {
           const appliedDate = rowData['Applied'] || 'Not set';
           const url = rowData['Portal Link'] || '';
 
-          duplicateDetails.innerHTML = `
-            <div><strong>Row:</strong> ${rowNumber}</div>
-            <div><strong>Status:</strong> ${status}</div>
-            <div><strong>Date:</strong> ${appliedDate}</div>
-            ${url ? `<div><strong>URL:</strong> <a href="${url}" target="_blank" style="color: #0c5460; text-decoration: underline;">${url.substring(0, 60)}...</a></div>` : ''}
-          `;
+          // CSP-compliant: Use DOM helpers instead of innerHTML
+          if (typeof window.DOMHelpers !== 'undefined') {
+            window.DOMHelpers.clearElement(duplicateDetails);
+
+            // Row number
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Row', rowNumber.toString())
+            );
+
+            // Status
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Status', status)
+            );
+
+            // Date
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Date', appliedDate)
+            );
+
+            // URL (if present)
+            if (url) {
+              const urlContainer = document.createElement('div');
+              const urlLabel = document.createElement('strong');
+              urlLabel.textContent = 'URL: ';
+
+              const urlLink = window.DOMHelpers.createLink(
+                url,
+                url.substring(0, 60) + '...',
+                ['duplicate-url-link']
+              );
+              urlLink.target = '_blank';
+
+              urlContainer.appendChild(urlLabel);
+              urlContainer.appendChild(urlLink);
+              duplicateDetails.appendChild(urlContainer);
+            }
+          } else {
+            // Fallback: Use textContent
+            duplicateDetails.textContent = `Row: ${rowNumber}, Status: ${status}, Date: ${appliedDate}`;
+            if (url) {
+              duplicateDetails.textContent += `, URL: ${url}`;
+            }
+          }
           duplicateInfo.style.display = 'block';
         }
 
         // Populate form fields with row data
-        if (rowData['Employer']) document.getElementById('manualCompany').value = rowData['Employer'];
-        if (rowData['Job Title']) document.getElementById('manualJobTitle').value = rowData['Job Title'];
-        if (rowData['Location']) document.getElementById('manualLocation').value = rowData['Location'];
-        if (rowData['Role']) document.getElementById('manualRole').value = rowData['Role'];
-        if (rowData['Tailor']) document.getElementById('manualTailor').value = rowData['Tailor'];
-        if (rowData['Notes']) document.getElementById('manualNotes').value = rowData['Notes'];
-        if (rowData['Compensation']) document.getElementById('manualCompensation').value = rowData['Compensation'];
-        if (rowData['Pay']) document.getElementById('manualPay').value = rowData['Pay'];
-        if (rowData['Portal Link']) document.getElementById('manualUrl').value = rowData['Portal Link'];
-        if (rowData['Board']) document.getElementById('manualBoard').value = rowData['Board'];
+        // Prompt 4 Fix: Use correct field IDs with 'manual_' prefix
+        if (rowData['Employer']) {
+          const field = document.getElementById('manual_company');
+          if (field) field.value = rowData['Employer'];
+        }
+        if (rowData['Job Title']) {
+          const field = document.getElementById('manual_title');
+          if (field) field.value = rowData['Job Title'];
+        }
+        if (rowData['Location']) {
+          const field = document.getElementById('manual_location');
+          if (field) field.value = rowData['Location'];
+        }
+        if (rowData['Role']) {
+          const field = document.getElementById('manual_role');
+          if (field) field.value = rowData['Role'];
+        }
+        if (rowData['Tailor']) {
+          const field = document.getElementById('manual_tailor');
+          if (field) field.value = rowData['Tailor'];
+        }
+        if (rowData['Notes']) {
+          const field = document.getElementById('manual_description');
+          if (field) field.value = rowData['Notes'];
+        }
+        if (rowData['Compensation']) {
+          const field = document.getElementById('manual_compensation');
+          if (field) field.value = rowData['Compensation'];
+        }
+        if (rowData['Pay']) {
+          const field = document.getElementById('manual_pay');
+          if (field) field.value = rowData['Pay'];
+        }
+        if (rowData['Portal Link']) {
+          const field = document.getElementById('manual_url');
+          if (field) field.value = rowData['Portal Link'];
+        }
+        if (rowData['Board']) {
+          const field = document.getElementById('manual_source');
+          if (field) field.value = rowData['Board'];
+        }
 
         log('[FindRow] Form fields populated with row data');
       }
@@ -2243,7 +2379,15 @@ async function handleFindRowClick() {
   } catch (error) {
     logError(`[FindRow] Error: ${error.message}`);
     if (errorContainer) {
-      errorContainer.innerHTML = `<strong>✗ Error</strong><div style="margin-top: 8px;">${error.message}</div>`;
+      // CSP-compliant: Use DOM helpers instead of innerHTML
+      if (typeof window.DOMHelpers !== 'undefined') {
+        window.DOMHelpers.clearElement(errorContainer);
+        errorContainer.appendChild(
+          window.DOMHelpers.createErrorMessage('✗ Error', error.message)
+        );
+      } else {
+        errorContainer.textContent = `✗ Error: ${error.message}`;
+      }
       errorContainer.style.display = 'block';
     }
 

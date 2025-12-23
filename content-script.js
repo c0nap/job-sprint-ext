@@ -130,33 +130,42 @@ function pasteTextToActiveField(text) {
  *
  * @returns {Object} Extracted job data with title, company, location, url, timestamp, and source
  */
+/**
+ * Extract simplified job data (bare-bones automatic extraction)
+ * Prompt 1 Fix: This is now truly simplified - just URL + content
+ * @returns {Object} Simplified job data with url, description, source, timestamp
+ */
 function extractJobData() {
   try {
-    // Check if extraction engine is loaded
-    if (typeof window.ExtractionEngine !== 'undefined') {
-      console.log('JobSprint: Using context-aware extraction');
-      return window.ExtractionEngine.extractJobDataContextAware();
+    // Use the simplified extraction API
+    if (typeof window.ExtractionAPI !== 'undefined') {
+      console.log('JobSprint: Using simplified extraction (URL + content)');
+      return window.ExtractionAPI.extractSimplified();
     } else {
-      console.warn('JobSprint: Extraction engine not loaded, using legacy extraction');
-      return extractJobDataLegacy();
+      console.warn('JobSprint: ExtractionAPI not loaded, using fallback');
+      return extractJobDataFallback();
     }
   } catch (error) {
-    console.error('JobSprint: Error in extraction, falling back to legacy:', error);
-    return extractJobDataLegacy();
+    console.error('JobSprint: Error in extraction, using fallback:', error);
+    return extractJobDataFallback();
   }
 }
 
 /**
- * Legacy extraction (fallback when context-aware extraction not available)
+ * Fallback extraction when ExtractionAPI not available
  * @returns {Object} Extracted job data
  */
-function extractJobDataLegacy() {
+function extractJobDataFallback() {
   try {
     const data = {
       url: window.location.href,
-      description: extractPageContentAsPlainText(),
+      description: window.TextFormatter ?
+        window.TextFormatter.extractPageContentAsPlainText() :
+        document.body.innerText,
       timestamp: new Date().toISOString(),
-      source: extractSource(window.location.href)
+      source: window.TextFormatter ?
+        window.TextFormatter.extractSource(window.location.href) :
+        'Unknown'
     };
 
     console.log('Extracted simplified job data (URL + content):', { url: data.url, contentLength: data.description.length });
@@ -167,7 +176,7 @@ function extractJobDataLegacy() {
       url: window.location.href,
       description: 'Error extracting page content: ' + error.message,
       timestamp: new Date().toISOString(),
-      source: extractSource(window.location.href),
+      source: 'Unknown',
       error: error.message
     };
   }
@@ -175,10 +184,30 @@ function extractJobDataLegacy() {
 
 /**
  * Extract detailed job posting data from the current page (for manual entry auto-fill)
- * Uses intelligent field-aware extractors (same logic as interactive mouse tracking)
- * @returns {Object} Extracted job data with all fields: title, company, location, compensation, pay, description, url, timestamp, and source
+ * Uses context-aware extraction for better accuracy
+ * @returns {Object} Extracted job data with all fields
  */
 function extractJobDataDetailed() {
+  try {
+    // Use the detailed extraction API (context-aware)
+    if (typeof window.ExtractionAPI !== 'undefined') {
+      console.log('JobSprint: Using detailed extraction (context-aware)');
+      return window.ExtractionAPI.extractDetailed();
+    } else {
+      console.warn('JobSprint: ExtractionAPI not loaded, using fallback');
+      return extractJobDataDetailedFallback();
+    }
+  } catch (error) {
+    console.error('Error extracting detailed job data:', error);
+    return extractJobDataDetailedFallback();
+  }
+}
+
+/**
+ * Fallback detailed extraction when ExtractionAPI not available
+ * @returns {Object} Extracted job data
+ */
+function extractJobDataDetailedFallback() {
   try {
     const data = {
       title: '',
@@ -189,7 +218,9 @@ function extractJobDataDetailed() {
       description: '',
       url: window.location.href,
       timestamp: new Date().toISOString(),
-      source: extractSource(window.location.href)
+      source: window.TextFormatter ?
+        window.TextFormatter.extractSource(window.location.href) :
+        'Unknown'
     };
 
     // Use intelligent extractors (same as mouse tracking feature)
@@ -236,7 +267,7 @@ function extractJobDataDetailed() {
       console.warn('JobSprint: Could not extract meaningful job data from this page');
     }
 
-    console.log('Extracted job data (legacy):', data);
+    console.log('Extracted detailed job data (fallback):', data);
     return data;
   } catch (error) {
     console.error('Error extracting detailed job data:', error);
@@ -287,162 +318,8 @@ function cleanText(text) {
  * @param {string} url - Current page URL
  * @returns {string} Source name (e.g., 'LinkedIn', 'Indeed') or hostname
  */
-function extractSource(url) {
-  try {
-    const hostname = new URL(url).hostname;
-    if (hostname.includes('linkedin.com')) return 'LinkedIn';
-    if (hostname.includes('indeed.com')) return 'Indeed';
-    if (hostname.includes('glassdoor.com')) return 'Glassdoor';
-    if (hostname.includes('greenhouse.io')) return 'Greenhouse';
-    if (hostname.includes('lever.co')) return 'Lever';
-    if (hostname.includes('myworkdayjobs.com')) return 'Workday';
-    return hostname;
-  } catch {
-    return 'Unknown';
-  }
-}
-
-/**
- * Extract main page content as plain text while preserving formatting
- * Respects paragraphs, bullets, and headers
- * @returns {string} Formatted plain text content
- */
-function extractPageContentAsPlainText() {
-  try {
-    // Try to find the main content area
-    let contentContainer = document.querySelector('main, article, [role="main"], .job-description, .description');
-
-    // If no main content area found, use body but filter out navigation, headers, footers
-    if (!contentContainer) {
-      contentContainer = document.body;
-    }
-
-    // Clone the container to avoid modifying the actual DOM
-    const clone = contentContainer.cloneNode(true);
-
-    // Remove unwanted elements (scripts, styles, nav, header, footer, ads)
-    const unwantedSelectors = [
-      'script', 'style', 'nav', 'header', 'footer',
-      '.navigation', '.navbar', '.nav', '.menu',
-      '.advertisement', '.ad', '.ads', '.sidebar',
-      'iframe', 'noscript', '[role="navigation"]',
-      '[role="banner"]', '[role="complementary"]'
-    ];
-
-    unwantedSelectors.forEach(selector => {
-      const elements = clone.querySelectorAll(selector);
-      elements.forEach(el => el.remove());
-    });
-
-    // Process the DOM tree and build formatted text
-    const lines = [];
-
-    function processNode(node, indent = 0) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent.trim();
-        if (text) {
-          return text;
-        }
-        return '';
-      }
-
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const tagName = node.tagName.toLowerCase();
-
-        // Headers - add with blank line before and after
-        if (/^h[1-6]$/.test(tagName)) {
-          const text = getTextContent(node).trim();
-          if (text) {
-            lines.push('');
-            lines.push(text);
-            lines.push('');
-          }
-          return '';
-        }
-
-        // Paragraphs - add with blank line after
-        if (tagName === 'p') {
-          const text = getTextContent(node).trim();
-          if (text) {
-            lines.push(text);
-            lines.push('');
-          }
-          return '';
-        }
-
-        // Lists - process each item
-        if (tagName === 'ul' || tagName === 'ol') {
-          const items = node.querySelectorAll('li');
-          items.forEach((item, index) => {
-            const text = getTextContent(item).trim();
-            if (text) {
-              const bullet = tagName === 'ul' ? '•' : `${index + 1}.`;
-              lines.push(`${bullet} ${text}`);
-            }
-          });
-          lines.push('');
-          return '';
-        }
-
-        // Line breaks
-        if (tagName === 'br') {
-          lines.push('');
-          return '';
-        }
-
-        // Divs and sections - process children
-        if (tagName === 'div' || tagName === 'section') {
-          for (const child of node.childNodes) {
-            processNode(child, indent);
-          }
-          return '';
-        }
-
-        // For other elements, just get text content
-        const text = getTextContent(node).trim();
-        if (text && !hasBlockChildren(node)) {
-          return text;
-        }
-      }
-
-      return '';
-    }
-
-    // Helper to get clean text content
-    function getTextContent(node) {
-      return node.textContent.replace(/\s+/g, ' ').trim();
-    }
-
-    // Helper to check if node has block-level children
-    function hasBlockChildren(node) {
-      const blockTags = ['p', 'div', 'section', 'article', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li'];
-      for (const child of node.children || []) {
-        if (blockTags.includes(child.tagName.toLowerCase())) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    // Start processing from root
-    for (const child of clone.childNodes) {
-      const text = processNode(child);
-      if (text) {
-        lines.push(text);
-      }
-    }
-
-    // Join lines and clean up excessive blank lines
-    let result = lines.join('\n');
-    result = result.replace(/\n{3,}/g, '\n\n'); // Max 2 consecutive newlines
-    result = result.trim();
-
-    return result || 'No content extracted from page';
-  } catch (error) {
-    console.error('Error extracting page content:', error);
-    return 'Error extracting page content: ' + error.message;
-  }
-}
+// NOTE: extractSource and extractPageContentAsPlainText are now in extraction/utils/text-formatter.js
+// They are available via window.TextFormatter
 
 // ============ PAGE-WIDE INTELLIGENT EXTRACTORS ============
 // These wrappers use the same intelligent extraction logic as mouse tracking,
@@ -1332,7 +1209,7 @@ function hexToRgba(hex, alpha) {
  * Start interactive mouse tracking for field auto-fill
  * When user hovers over text elements, their content is extracted and sent to the extension
  * @param {string} fieldId - ID of the field being filled
- * @param {string} mode - Initial mode to use ('words', 'smart', 'chars')
+ * @param {string} mode - Initial mode to use ('words', 'chars')
  */
 async function startMouseTracking(fieldId, mode = 'words') {
   console.log('[MouseTracking] Starting mouse tracking for field:', fieldId, 'with mode:', mode);
@@ -1428,18 +1305,15 @@ function handleRelayedKeyboardEvent(eventData) {
     let newMode = null;
     if (eventData.key === 'Shift') {
       // Check if Shift is configured for any mode
-      if (mouseTrackingSettings.smartModifier === 'shift') newMode = 'smart';
-      else if (mouseTrackingSettings.wordModifier === 'shift') newMode = 'words';
+      if (mouseTrackingSettings.wordModifier === 'shift') newMode = 'words';
       else if (mouseTrackingSettings.charModifier === 'shift') newMode = 'chars';
     } else if (eventData.key === 'Control' || eventData.key === 'Meta') {
       // Check if Ctrl is configured for any mode
-      if (mouseTrackingSettings.smartModifier === 'ctrl') newMode = 'smart';
-      else if (mouseTrackingSettings.wordModifier === 'ctrl') newMode = 'words';
+      if (mouseTrackingSettings.wordModifier === 'ctrl') newMode = 'words';
       else if (mouseTrackingSettings.charModifier === 'ctrl') newMode = 'chars';
     } else if (eventData.key === 'Alt') {
       // Check if Alt is configured for any mode (not overlay move)
-      if (mouseTrackingSettings.smartModifier === 'alt') newMode = 'smart';
-      else if (mouseTrackingSettings.wordModifier === 'alt') newMode = 'words';
+      if (mouseTrackingSettings.wordModifier === 'alt') newMode = 'words';
       else if (mouseTrackingSettings.charModifier === 'alt') newMode = 'chars';
     }
 
@@ -1483,7 +1357,7 @@ function handleRelayedKeyboardEvent(eventData) {
 
 /**
  * Handle manual mode change from popup button click
- * @param {string} mode - Mode to switch to: 'words', 'smart', 'chars'
+ * @param {string} mode - Mode to switch to: 'words', 'chars'
  */
 function handleManualModeChange(mode) {
   if (!mouseTrackingActive) return;
@@ -1631,15 +1505,12 @@ function handleEscapeKey(event) {
 }
 
 /**
- * Handle arrow key presses to adjust extraction granularity or smart mode strength
+ * Handle arrow key presses to adjust extraction granularity
  * Supports directional control for words and chars modes:
  * - ArrowUp: Extend both sides (increase left and right)
  * - ArrowDown: Reduce both sides (decrease left and right)
  * - ArrowLeft: Extend left only (increase left, keep right)
  * - ArrowRight: Extend right only (keep left, increase right)
- * For smart mode:
- * - ArrowUp/ArrowRight: Increase aggressiveness level
- * - ArrowDown/ArrowLeft: Decrease aggressiveness level
  * @param {KeyboardEvent} event - Keyboard event
  */
 function handleGranularityChange(event) {
@@ -1651,10 +1522,7 @@ function handleGranularityChange(event) {
   const increment = (event.key === 'ArrowUp' || event.key === 'ArrowRight') ? 1 : -1;
 
   // Update granularity based on current mode and direction
-  if (mode === 'smart') {
-    // Smart mode: adjust aggressiveness level (1-5)
-    smartModeStrength = Math.max(1, Math.min(5, smartModeStrength + increment));
-  } else if (mode === 'chars') {
+  if (mode === 'chars') {
     // Character mode: adjust character granularity
     if (isVertical) {
       // Up/Down: adjust both sides symmetrically
@@ -1682,7 +1550,7 @@ function handleGranularityChange(event) {
     }
   }
 
-  console.log('[GranularityChange] New granularity:', mode, JSON.stringify(currentGranularity), 'Smart strength:', smartModeStrength);
+  console.log('[GranularityChange] New granularity:', mode, JSON.stringify(currentGranularity));
 
   // Update overlay to show current granularity/strength
   updateOverlayMode(mode);
@@ -1832,7 +1700,7 @@ function checkModifierKey(event, modifier) {
  * Handles various element types and nested structures
  * @param {HTMLElement} element - Element to extract text from
  * @param {MouseEvent} event - Mouse event for cursor position
- * @param {string} mode - Extraction mode: 'chars', 'words', or 'smart'
+ * @param {string} mode - Extraction mode: 'chars' or 'words'
  * @returns {string} Extracted text
  */
 function extractTextFromElement(element, event, mode = 'words') {
@@ -1876,102 +1744,7 @@ function extractTextFromElement(element, event, mode = 'words') {
 }
 
 /**
- * Smart mode extraction with configurable aggressiveness
- * Aggressively searches for patterns based on field type and strength setting
- * Reuses existing field-specific extraction functions with expanded search scope
- * @param {HTMLElement} element - Element being hovered over
- * @param {MouseEvent} event - Mouse event
- * @param {string} fullText - Full text of element
- * @returns {string} Extracted text
- */
-function extractSmartMode(element, event, fullText) {
-  const fieldId = currentTrackedFieldId;
-
-  // Try extraction with increasing scope based on strength level
-  let result = null;
-
-  // Level 1: Just the hovered element (same as field-aware mode)
-  if (fieldId === 'manualPay') {
-    result = extractPayAmount(element, fullText);
-  } else if (fieldId === 'manualCompensation') {
-    result = extractCompensationRange(element, fullText);
-  } else if (fieldId === 'manualLocation') {
-    result = extractLocation(element, fullText);
-  } else if (fieldId === 'manualJobTitle') {
-    result = extractJobTitle(element);
-  } else if (fieldId === 'manualCompany') {
-    result = extractCompanyName(element);
-  } else if (fieldId === 'manualNotes') {
-    result = extractLargeTextBlock(element) || fullText;
-  }
-
-  // If found at level 1, return it
-  if (result) return result;
-
-  // Level 2+: Search parent elements based on strength
-  if (smartModeStrength >= 2) {
-    result = searchNearbyElements(element, fieldId);
-    if (result) return result;
-  }
-
-  // Fallback to basic field-aware extraction
-  return extractFieldAware(element, event, fullText, currentGranularity.words.left, currentGranularity.words.right);
-}
-
-/**
- * Search nearby elements (parent, siblings) using field-specific extractors
- * Reuses existing extraction functions for consistency
- * @param {HTMLElement} element - Starting element
- * @param {string} fieldId - Field being filled
- * @returns {string|null} Extracted value or null
- */
-function searchNearbyElements(element, fieldId) {
-  const elementsToSearch = [];
-
-  // Add parent element (strength >= 2)
-  if (smartModeStrength >= 2 && element.parentElement) {
-    elementsToSearch.push(element.parentElement);
-  }
-
-  // Add siblings (strength >= 4)
-  if (smartModeStrength >= 4 && element.parentElement) {
-    const siblings = Array.from(element.parentElement.children);
-    elementsToSearch.push(...siblings.filter(s => s !== element));
-  }
-
-  // Add grandparent (strength >= 5 - maximum)
-  if (smartModeStrength >= 5 && element.parentElement?.parentElement) {
-    elementsToSearch.push(element.parentElement.parentElement);
-  }
-
-  // Try extraction on each element in scope
-  for (const el of elementsToSearch) {
-    const text = cleanText(el.textContent || '');
-    let result = null;
-
-    // Apply field-specific extractor
-    if (fieldId === 'manualPay') {
-      result = extractPayAmount(el, text);
-    } else if (fieldId === 'manualCompensation') {
-      result = extractCompensationRange(el, text);
-    } else if (fieldId === 'manualLocation') {
-      result = extractLocation(el, text);
-    } else if (fieldId === 'manualJobTitle') {
-      result = extractJobTitle(el);
-    } else if (fieldId === 'manualCompany') {
-      result = extractCompanyName(el);
-    } else if (fieldId === 'manualNotes') {
-      result = extractLargeTextBlock(el);
-    }
-
-    if (result) return result;
-  }
-
-  return null;
-}
-
-/**
- * Field-aware intelligent extraction (less aggressive than smart mode)
+ * Field-aware intelligent extraction
  * Uses context from the focused field to intelligently extract relevant data
  * @param {HTMLElement} element - Element being hovered over
  * @param {MouseEvent} event - Mouse event
@@ -3129,7 +2902,7 @@ function highlightFirstOccurrence(element, searchText, elementText, bgColor, sha
 
 /**
  * Get colors for a specific mode
- * @param {string} mode - Mode name: 'words', 'smart', 'chars'
+ * @param {string} mode - Mode name: 'words', 'chars', 'disabled'
  * @returns {Object} Object with solid and transparent color values
  */
 function getModeColors(mode) {
@@ -3242,7 +3015,7 @@ function setupModeButtons() {
 
 /**
  * Switch to a different extraction mode
- * @param {string} mode - Mode to switch to: 'smart', 'sentence', 'words', 'chars'
+ * @param {string} mode - Mode to switch to: 'sentence', 'words', 'chars'
  */
 function switchMode(mode) {
   currentModifierMode = mode;
@@ -3443,7 +3216,7 @@ function updateOverlayPosition() {
 
 /**
  * Update overlay to show current extraction mode and granularity
- * @param {string} mode - Current mode: 'smart', 'words', 'sentence', or 'chars'
+ * @param {string} mode - Current mode: 'words', 'sentence', or 'chars'
  */
 function updateOverlayMode(mode) {
   if (!mouseTrackingOverlay) return;
@@ -3529,7 +3302,7 @@ function sendTextToPopup(text, confirm = false) {
 /**
  * Notify popup about mode change
  * This allows the popup to update button states when mode changes via keyboard modifiers
- * @param {string} mode - New mode: 'words', 'smart', 'chars'
+ * @param {string} mode - New mode: 'words', 'chars'
  */
 function notifyPopupModeChange(mode) {
   // Check if extension context is valid before attempting to send message

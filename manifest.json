@@ -18,10 +18,14 @@
     {
       "matches": ["<all_urls>"],
       "js": [
-        "extraction-types.js",
-        "document-parser.js",
-        "context-aware-extractor.js",
-        "extraction-engine.js",
+        "extraction/utils/text-formatter.js",
+        "extraction/utils/dom-helpers.js",
+        "extraction/types/extractor-config.js",
+        "extraction/core/parser.js",
+        "extraction/core/context-aware.js",
+        "extraction/extractors/field-extractors.js",
+        "extraction/core/engine.js",
+        "extraction/index.js",
         "content-script.js"
       ],
       "run_at": "document_idle"
