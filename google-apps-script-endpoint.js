@@ -823,7 +823,9 @@ function createRowData(headers, jobData, fieldLabelMap) {
 
     // Handle system columns
     if (header === 'Status') {
-      rowData.push('No response');
+      // Prompt 3 Fix: Changed default status from 'No response' to 'Queued'
+      // This ensures duplicate detection logic works correctly
+      rowData.push('Queued');
     } else if (header === 'Applied') {
       rowData.push(appliedDate);
     } else if (header === 'Decision') {

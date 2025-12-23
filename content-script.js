@@ -130,33 +130,42 @@ function pasteTextToActiveField(text) {
  *
  * @returns {Object} Extracted job data with title, company, location, url, timestamp, and source
  */
+/**
+ * Extract simplified job data (bare-bones automatic extraction)
+ * Prompt 1 Fix: This is now truly simplified - just URL + content
+ * @returns {Object} Simplified job data with url, description, source, timestamp
+ */
 function extractJobData() {
   try {
-    // Check if extraction engine is loaded
-    if (typeof window.ExtractionEngine !== 'undefined') {
-      console.log('JobSprint: Using context-aware extraction');
-      return window.ExtractionEngine.extractJobDataContextAware();
+    // Use the simplified extraction API
+    if (typeof window.ExtractionAPI !== 'undefined') {
+      console.log('JobSprint: Using simplified extraction (URL + content)');
+      return window.ExtractionAPI.extractSimplified();
     } else {
-      console.warn('JobSprint: Extraction engine not loaded, using legacy extraction');
-      return extractJobDataLegacy();
+      console.warn('JobSprint: ExtractionAPI not loaded, using fallback');
+      return extractJobDataFallback();
     }
   } catch (error) {
-    console.error('JobSprint: Error in extraction, falling back to legacy:', error);
-    return extractJobDataLegacy();
+    console.error('JobSprint: Error in extraction, using fallback:', error);
+    return extractJobDataFallback();
   }
 }
 
 /**
- * Legacy extraction (fallback when context-aware extraction not available)
+ * Fallback extraction when ExtractionAPI not available
  * @returns {Object} Extracted job data
  */
-function extractJobDataLegacy() {
+function extractJobDataFallback() {
   try {
     const data = {
       url: window.location.href,
-      description: extractPageContentAsPlainText(),
+      description: window.TextFormatter ?
+        window.TextFormatter.extractPageContentAsPlainText() :
+        document.body.innerText,
       timestamp: new Date().toISOString(),
-      source: extractSource(window.location.href)
+      source: window.TextFormatter ?
+        window.TextFormatter.extractSource(window.location.href) :
+        'Unknown'
     };
 
     console.log('Extracted simplified job data (URL + content):', { url: data.url, contentLength: data.description.length });
@@ -167,7 +176,7 @@ function extractJobDataLegacy() {
       url: window.location.href,
       description: 'Error extracting page content: ' + error.message,
       timestamp: new Date().toISOString(),
-      source: extractSource(window.location.href),
+      source: 'Unknown',
       error: error.message
     };
   }
@@ -175,10 +184,30 @@ function extractJobDataLegacy() {
 
 /**
  * Extract detailed job posting data from the current page (for manual entry auto-fill)
- * Uses intelligent field-aware extractors (same logic as interactive mouse tracking)
- * @returns {Object} Extracted job data with all fields: title, company, location, compensation, pay, description, url, timestamp, and source
+ * Uses context-aware extraction for better accuracy
+ * @returns {Object} Extracted job data with all fields
  */
 function extractJobDataDetailed() {
+  try {
+    // Use the detailed extraction API (context-aware)
+    if (typeof window.ExtractionAPI !== 'undefined') {
+      console.log('JobSprint: Using detailed extraction (context-aware)');
+      return window.ExtractionAPI.extractDetailed();
+    } else {
+      console.warn('JobSprint: ExtractionAPI not loaded, using fallback');
+      return extractJobDataDetailedFallback();
+    }
+  } catch (error) {
+    console.error('Error extracting detailed job data:', error);
+    return extractJobDataDetailedFallback();
+  }
+}
+
+/**
+ * Fallback detailed extraction when ExtractionAPI not available
+ * @returns {Object} Extracted job data
+ */
+function extractJobDataDetailedFallback() {
   try {
     const data = {
       title: '',
@@ -189,7 +218,9 @@ function extractJobDataDetailed() {
       description: '',
       url: window.location.href,
       timestamp: new Date().toISOString(),
-      source: extractSource(window.location.href)
+      source: window.TextFormatter ?
+        window.TextFormatter.extractSource(window.location.href) :
+        'Unknown'
     };
 
     // Use intelligent extractors (same as mouse tracking feature)
@@ -236,7 +267,7 @@ function extractJobDataDetailed() {
       console.warn('JobSprint: Could not extract meaningful job data from this page');
     }
 
-    console.log('Extracted job data (legacy):', data);
+    console.log('Extracted detailed job data (fallback):', data);
     return data;
   } catch (error) {
     console.error('Error extracting detailed job data:', error);
@@ -287,162 +318,8 @@ function cleanText(text) {
  * @param {string} url - Current page URL
  * @returns {string} Source name (e.g., 'LinkedIn', 'Indeed') or hostname
  */
-function extractSource(url) {
-  try {
-    const hostname = new URL(url).hostname;
-    if (hostname.includes('linkedin.com')) return 'LinkedIn';
-    if (hostname.includes('indeed.com')) return 'Indeed';
-    if (hostname.includes('glassdoor.com')) return 'Glassdoor';
-    if (hostname.includes('greenhouse.io')) return 'Greenhouse';
-    if (hostname.includes('lever.co')) return 'Lever';
-    if (hostname.includes('myworkdayjobs.com')) return 'Workday';
-    return hostname;
-  } catch {
-    return 'Unknown';
-  }
-}
-
-/**
- * Extract main page content as plain text while preserving formatting
- * Respects paragraphs, bullets, and headers
- * @returns {string} Formatted plain text content
- */
-function extractPageContentAsPlainText() {
-  try {
-    // Try to find the main content area
-    let contentContainer = document.querySelector('main, article, [role="main"], .job-description, .description');
-
-    // If no main content area found, use body but filter out navigation, headers, footers
-    if (!contentContainer) {
-      contentContainer = document.body;
-    }
-
-    // Clone the container to avoid modifying the actual DOM
-    const clone = contentContainer.cloneNode(true);
-
-    // Remove unwanted elements (scripts, styles, nav, header, footer, ads)
-    const unwantedSelectors = [
-      'script', 'style', 'nav', 'header', 'footer',
-      '.navigation', '.navbar', '.nav', '.menu',
-      '.advertisement', '.ad', '.ads', '.sidebar',
-      'iframe', 'noscript', '[role="navigation"]',
-      '[role="banner"]', '[role="complementary"]'
-    ];
-
-    unwantedSelectors.forEach(selector => {
-      const elements = clone.querySelectorAll(selector);
-      elements.forEach(el => el.remove());
-    });
-
-    // Process the DOM tree and build formatted text
-    const lines = [];
-
-    function processNode(node, indent = 0) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent.trim();
-        if (text) {
-          return text;
-        }
-        return '';
-      }
-
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const tagName = node.tagName.toLowerCase();
-
-        // Headers - add with blank line before and after
-        if (/^h[1-6]$/.test(tagName)) {
-          const text = getTextContent(node).trim();
-          if (text) {
-            lines.push('');
-            lines.push(text);
-            lines.push('');
-          }
-          return '';
-        }
-
-        // Paragraphs - add with blank line after
-        if (tagName === 'p') {
-          const text = getTextContent(node).trim();
-          if (text) {
-            lines.push(text);
-            lines.push('');
-          }
-          return '';
-        }
-
-        // Lists - process each item
-        if (tagName === 'ul' || tagName === 'ol') {
-          const items = node.querySelectorAll('li');
-          items.forEach((item, index) => {
-            const text = getTextContent(item).trim();
-            if (text) {
-              const bullet = tagName === 'ul' ? '•' : `${index + 1}.`;
-              lines.push(`${bullet} ${text}`);
-            }
-          });
-          lines.push('');
-          return '';
-        }
-
-        // Line breaks
-        if (tagName === 'br') {
-          lines.push('');
-          return '';
-        }
-
-        // Divs and sections - process children
-        if (tagName === 'div' || tagName === 'section') {
-          for (const child of node.childNodes) {
-            processNode(child, indent);
-          }
-          return '';
-        }
-
-        // For other elements, just get text content
-        const text = getTextContent(node).trim();
-        if (text && !hasBlockChildren(node)) {
-          return text;
-        }
-      }
-
-      return '';
-    }
-
-    // Helper to get clean text content
-    function getTextContent(node) {
-      return node.textContent.replace(/\s+/g, ' ').trim();
-    }
-
-    // Helper to check if node has block-level children
-    function hasBlockChildren(node) {
-      const blockTags = ['p', 'div', 'section', 'article', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li'];
-      for (const child of node.children || []) {
-        if (blockTags.includes(child.tagName.toLowerCase())) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    // Start processing from root
-    for (const child of clone.childNodes) {
-      const text = processNode(child);
-      if (text) {
-        lines.push(text);
-      }
-    }
-
-    // Join lines and clean up excessive blank lines
-    let result = lines.join('\n');
-    result = result.replace(/\n{3,}/g, '\n\n'); // Max 2 consecutive newlines
-    result = result.trim();
-
-    return result || 'No content extracted from page';
-  } catch (error) {
-    console.error('Error extracting page content:', error);
-    return 'Error extracting page content: ' + error.message;
-  }
-}
+// NOTE: extractSource and extractPageContentAsPlainText are now in extraction/utils/text-formatter.js
+// They are available via window.TextFormatter
 
 // ============ PAGE-WIDE INTELLIGENT EXTRACTORS ============
 // These wrappers use the same intelligent extraction logic as mouse tracking,
