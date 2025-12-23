@@ -200,14 +200,11 @@ async function loadSettings() {
       'clipboardMacros',
       'maxSearchResults',
       'debugConsoleEnabled',
-      'SENTENCE_MODIFIER',
       'CHAR_MODIFIER',
       'WORD_MODIFIER',
       'OVERLAY_MOVE_MODIFIER',
       'OVERLAY_MOVE_STEP',
-      'SMART_MODE_STRENGTH',
       'WORD_MODE_COLOR',
-      'SENTENCE_MODE_COLOR',
       'CHAR_MODE_COLOR',
       'DISABLED_MODE_COLOR'
     ]);
@@ -228,20 +225,13 @@ async function loadSettings() {
     document.getElementById('debugConsoleEnabled').checked = result.debugConsoleEnabled || false;
 
     // Populate mouse tracking settings
-    document.getElementById('sentenceModifier').value = result.SENTENCE_MODIFIER || 'none';
     document.getElementById('charModifier').value = result.CHAR_MODIFIER || 'ctrl';
     document.getElementById('wordModifier').value = result.WORD_MODIFIER || 'shift';
     document.getElementById('overlayMoveModifier').value = result.OVERLAY_MOVE_MODIFIER || 'alt';
     document.getElementById('overlayMoveStep').value = result.OVERLAY_MOVE_STEP || 20;
 
-    // Populate smart mode strength slider
-    const smartModeStrength = result.SMART_MODE_STRENGTH || 2;
-    document.getElementById('smartModeStrength').value = smartModeStrength;
-    updateSmartModeStrengthLabel(smartModeStrength);
-
     // Populate mode colors
     document.getElementById('wordModeColor').value = result.WORD_MODE_COLOR || '#2ecc71';
-    document.getElementById('sentenceModeColor').value = result.SENTENCE_MODE_COLOR || '#3498db';
     document.getElementById('charModeColor').value = result.CHAR_MODE_COLOR || '#9b59b6';
     document.getElementById('disabledModeColor').value = result.DISABLED_MODE_COLOR || '#6c757d';
 
@@ -522,15 +512,12 @@ async function saveSettings() {
     ENABLE_MANUAL_ENTRY: document.getElementById('enableManualEntry').checked,
     TARGET_SHEET_NAME: document.getElementById('targetSheetName').value.trim() || 'Job Applications',
     // Mouse tracking settings
-    SENTENCE_MODIFIER: document.getElementById('sentenceModifier').value,
     CHAR_MODIFIER: document.getElementById('charModifier').value,
     WORD_MODIFIER: document.getElementById('wordModifier').value,
     OVERLAY_MOVE_MODIFIER: document.getElementById('overlayMoveModifier').value,
     OVERLAY_MOVE_STEP: parseInt(document.getElementById('overlayMoveStep').value) || 20,
-    SMART_MODE_STRENGTH: parseInt(document.getElementById('smartModeStrength').value) || 2,
     // Mode colors
     WORD_MODE_COLOR: document.getElementById('wordModeColor').value,
-    SENTENCE_MODE_COLOR: document.getElementById('sentenceModeColor').value,
     CHAR_MODE_COLOR: document.getElementById('charModeColor').value,
     DISABLED_MODE_COLOR: document.getElementById('disabledModeColor').value
   };
