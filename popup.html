@@ -50,7 +50,10 @@
     <!-- Data Extraction Section -->
     <section class="feature-section">
       <h2>Job Data Extraction</h2>
-      <button class="primary-btn" id="extractBtn">Extract & Log Job Data</button>
+      <div class="button-group">
+        <button class="primary-btn" id="extractBtn">Quick Save (URL + Content)</button>
+        <button class="primary-btn" id="manualEntryBtn">Manual Entry</button>
+      </div>
       <div id="extractionStatus" class="status-message"></div>
     </section>
 
@@ -84,83 +87,89 @@
   <div id="manualEntryModal" class="modal" style="display: none;">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>Review Job Data</h3>
+        <h3 id="modalTitle">Add Job Details</h3>
         <button class="modal-close" id="closeModal">&times;</button>
       </div>
       <div class="modal-body">
-        <p class="modal-info">Some job details couldn't be extracted automatically. Please review and fill in the missing information:</p>
+        <p class="modal-info" id="modalInfo">Please fill in the job details below:</p>
+        <p class="modal-hint" style="background: #fff9e6; border-left: 3px solid #FF6B6B; padding: 8px 12px; margin: 12px 0; font-size: 13px; border-radius: 4px;">
+          💡 <strong>Tip:</strong> Click in a field, then hover your mouse over any text on the job page to auto-fill it.<br>
+          <span style="font-size: 12px; opacity: 0.9; margin-top: 4px; display: inline-block;">
+            • <strong>Shift</strong>=Smart, <strong>Ctrl</strong>=Characters, <strong>None</strong>=Words<br>
+            • Use <strong>↑↓ arrows</strong> to adjust granularity (expand/reduce selection)<br>
+            • Use <strong>←→ arrows</strong> to extend selection left or right only<br>
+            • Use <strong>Alt+Arrows</strong> to move the overlay if it's blocking content<br>
+            • <strong>Click</strong> to confirm • <strong>ESC</strong> to cancel
+          </span>
+        </p>
+
+        <div class="mode-selector" style="margin: 12px 0; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: 500; font-size: 13px; color: #333;">
+            Mouse Tracking Mode:
+          </label>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="mode-btn" data-mode="disabled" style="flex: 1; padding: 8px 12px; border: 2px solid #6c757d; background: #fff; color: #6c757d; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; line-height: 1.3;">
+              <span style="font-size: 16px;">🚫</span>
+              <span>Disabled</span>
+            </button>
+            <button type="button" class="mode-btn" data-mode="words" style="flex: 1; padding: 8px 12px; border: 2px solid #46a049; background: #46a049; color: white; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; line-height: 1.3;">
+              <span style="font-size: 16px;">✂️</span>
+              <span>Words</span>
+            </button>
+            <button type="button" class="mode-btn" data-mode="chars" style="flex: 1; padding: 8px 12px; border: 2px solid #9b59b6; background: #fff; color: #9b59b6; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; line-height: 1.3;">
+              <span style="font-size: 16px;">🔍</span>
+              <span>Characters</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Auto-extract button -->
+        <div style="margin: 12px 0;">
+          <button type="button" id="autoExtractBtn" class="btn-auto-extract" style="width: 100%; padding: 10px; background: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+            🔄 Auto-Extract from Page
+          </button>
+          <p style="font-size: 11px; color: #666; margin-top: 4px; text-align: center;">
+            Automatically reconnect and fill fields with detected job information
+          </p>
+        </div>
+
+        <!-- Duplicate detection info -->
+        <div id="duplicateInfo" style="display: none; margin: 12px 0; padding: 12px; background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; font-size: 12px;">
+          <strong style="color: #0c5460;">ℹ️ Existing Entry Found</strong>
+          <div id="duplicateDetails" style="margin-top: 8px; color: #0c5460;"></div>
+        </div>
+
+        <!-- Error message container -->
+        <div id="manualEntryError" class="modal-error" style="display: none;"></div>
+
+        <!-- Manual row number input -->
+        <div style="margin: 12px 0; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+          <label for="manualRowNumber" style="display: block; margin-bottom: 8px; font-weight: 500; font-size: 13px; color: #333;">
+            Find Existing Row by Number:
+          </label>
+          <div style="display: flex; gap: 8px;">
+            <input type="number" id="manualRowNumber" placeholder="Enter row number (e.g., 25)" min="2" style="flex: 1; padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;">
+            <button type="button" id="findRowBtn" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap;">
+              🔍 Find
+            </button>
+          </div>
+          <p style="font-size: 11px; color: #666; margin-top: 4px;">
+            Manually load data from a specific spreadsheet row to update or fix entries
+          </p>
+        </div>
+
+        <!-- Duplicate detection info -->
+        <div id="duplicateInfo" style="display: none; margin: 12px 0; padding: 12px; background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; font-size: 12px;">
+          <strong style="color: #0c5460;">ℹ️ Existing Entry Found</strong>
+          <div id="duplicateDetails" style="margin-top: 8px; color: #0c5460;"></div>
+        </div>
+
+        <!-- Error message container -->
+        <div id="manualEntryError" style="display: none; padding: 12px; margin: 12px 0; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; color: #721c24; font-size: 13px;"></div>
 
         <form id="manualEntryForm">
-          <div class="form-field">
-            <label for="manualCompany">Employer</label>
-            <input type="text" id="manualCompany" placeholder="e.g., Google">
-          </div>
-
-          <div class="form-field">
-            <label for="manualJobTitle">Job Title</label>
-            <input type="text" id="manualJobTitle" placeholder="e.g., Software Engineer">
-          </div>
-
-          <div class="form-field">
-            <label for="manualLocation">Location</label>
-            <input type="text" id="manualLocation" placeholder="e.g., San Francisco, CA">
-          </div>
-
-          <div class="form-field">
-            <label for="manualRole">Role</label>
-            <select id="manualRole">
-              <option value="">Auto-detect from title</option>
-              <option value="CODE">CODE</option>
-              <option value="DSCI">DSCI</option>
-              <option value="STAT">STAT</option>
-              <option value="R&D">R&D</option>
-            </select>
-          </div>
-
-          <div class="form-field">
-            <label for="manualTailor">Tailor</label>
-            <select id="manualTailor">
-              <option value="">Same as Role</option>
-              <option value="CODE">CODE</option>
-              <option value="DSCI">DSCI</option>
-              <option value="STAT">STAT</option>
-              <option value="R&D">R&D</option>
-            </select>
-          </div>
-
-          <div class="form-field">
-            <label for="manualNotes">Notes</label>
-            <textarea id="manualNotes" rows="3" placeholder="Additional notes or job description"></textarea>
-          </div>
-
-          <div class="form-field">
-            <label for="manualCompensation">Compensation</label>
-            <input type="text" id="manualCompensation" placeholder="e.g., $65.00 - $75.00 / hour">
-          </div>
-
-          <div class="form-field">
-            <label for="manualPay">Pay</label>
-            <input type="text" id="manualPay" placeholder="e.g., $70.00">
-          </div>
-
-          <div class="form-field">
-            <label for="manualUrl">Portal Link</label>
-            <input type="url" id="manualUrl" placeholder="https://..." readonly>
-          </div>
-
-          <div class="form-field">
-            <label for="manualBoard">Board</label>
-            <select id="manualBoard">
-              <option value="">Auto-detect from URL</option>
-              <option value="Indeed">Indeed</option>
-              <option value="Handshake">Handshake</option>
-              <option value="Symplicity">Symplicity</option>
-              <option value="Google">Google</option>
-              <option value="LinkedIn">LinkedIn</option>
-              <option value="Website">Website</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
+          <!-- Form fields will be dynamically generated based on schema -->
+          <div id="dynamicFormFields"></div>
 
           <div class="modal-actions">
             <button type="submit" class="btn-submit">Submit Job Data</button>

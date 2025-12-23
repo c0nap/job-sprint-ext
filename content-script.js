@@ -5,6 +5,10 @@
 
 console.log('JobSprint Content Script loaded');
 
+// Track popup connection for cleanup on disconnect
+let popupPort = null;
+let popupAliveCheckInterval = null;
+
 /**
  * Message listener for commands from popup and service worker
  * Handles: pasteText, extractJobData, startAutofill
@@ -17,6 +21,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Content Script received message:', message);
 
   switch (message.action) {
+    case 'popupOpened':
+      // Popup has opened - establish connection and start monitoring
+      console.log('[ContentScript] Popup opened notification received');
+      handlePopupOpened();
+      sendResponse({ success: true });
+      return false; // Synchronous response
+
     case 'pasteText':
       // Paste clipboard macro to active input field
       pasteTextToActiveField(message.text);
@@ -24,14 +35,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false; // Synchronous response
 
     case 'extractJobData':
-      // Extract job posting data from current page
+      // Extract job posting data from current page (simplified: URL + content only)
       const jobData = extractJobData();
       sendResponse({ success: true, data: jobData });
+      return false; // Synchronous response
+
+    case 'extractJobDataDetailed':
+      // Extract detailed job posting data for manual entry auto-fill
+      const detailedJobData = extractJobDataDetailed();
+      sendResponse({ success: true, data: detailedJobData });
       return false; // Synchronous response
 
     case 'startAutofill':
       // Start semi-supervised form autofill process
       startAutofillProcess();
+      sendResponse({ success: true });
+      return false; // Synchronous response
+
+    case 'startMouseTracking':
+      // Start interactive mouse tracking for field auto-fill
+      console.log('[ContentScript] Received startMouseTracking for field:', message.fieldId, 'with mode:', message.mode);
+      startMouseTracking(message.fieldId, message.mode);
+      sendResponse({ success: true });
+      return false; // Synchronous response
+
+    case 'stopMouseTracking':
+      // Stop interactive mouse tracking
+      console.log('[ContentScript] Received stopMouseTracking');
+      stopMouseTracking();
+      sendResponse({ success: true });
+      return false; // Synchronous response
+
+    case 'relayKeyboardEvent':
+      // Handle keyboard event relayed from popup
+      console.log('[ContentScript] Received relayed keyboard event:', message.event);
+      handleRelayedKeyboardEvent(message.event);
+      sendResponse({ success: true });
+      return false; // Synchronous response
+
+    case 'changeExtractionMode':
+      // Manually change extraction mode from popup buttons
+      console.log('[ContentScript] Received mode change request:', message.mode);
+      handleManualModeChange(message.mode);
       sendResponse({ success: true });
       return false; // Synchronous response
 
@@ -76,63 +121,163 @@ function pasteTextToActiveField(text) {
 }
 
 // ============ EXTRACTION FEATURE ============
-// Note: Core extraction logic is in content-script-testable.js for better testability
-// These functions are duplicated here since browser extensions can't use ES6 imports in content scripts
+// Uses the context-aware extraction engine loaded via extraction-engine.js
 
 /**
  * Extract job posting data from the current page
+ * Uses context-aware extraction with document parsing and section-based search
+ * Falls back to legacy extraction if context-aware extraction fails
+ *
  * @returns {Object} Extracted job data with title, company, location, url, timestamp, and source
  */
+/**
+ * Extract simplified job data (bare-bones automatic extraction)
+ * Prompt 1 Fix: This is now truly simplified - just URL + content
+ * @returns {Object} Simplified job data with url, description, source, timestamp
+ */
 function extractJobData() {
+  try {
+    // Use the simplified extraction API
+    if (typeof window.ExtractionAPI !== 'undefined') {
+      console.log('JobSprint: Using simplified extraction (URL + content)');
+      return window.ExtractionAPI.extractSimplified();
+    } else {
+      console.warn('JobSprint: ExtractionAPI not loaded, using fallback');
+      return extractJobDataFallback();
+    }
+  } catch (error) {
+    console.error('JobSprint: Error in extraction, using fallback:', error);
+    return extractJobDataFallback();
+  }
+}
+
+/**
+ * Fallback extraction when ExtractionAPI not available
+ * @returns {Object} Extracted job data
+ */
+function extractJobDataFallback() {
+  try {
+    const data = {
+      url: window.location.href,
+      description: window.TextFormatter ?
+        window.TextFormatter.extractPageContentAsPlainText() :
+        document.body.innerText,
+      timestamp: new Date().toISOString(),
+      source: window.TextFormatter ?
+        window.TextFormatter.extractSource(window.location.href) :
+        'Unknown'
+    };
+
+    console.log('Extracted simplified job data (URL + content):', { url: data.url, contentLength: data.description.length });
+    return data;
+  } catch (error) {
+    console.error('Error extracting job data:', error);
+    return {
+      url: window.location.href,
+      description: 'Error extracting page content: ' + error.message,
+      timestamp: new Date().toISOString(),
+      source: 'Unknown',
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Extract detailed job posting data from the current page (for manual entry auto-fill)
+ * Uses context-aware extraction for better accuracy
+ * @returns {Object} Extracted job data with all fields
+ */
+function extractJobDataDetailed() {
+  try {
+    // Use the detailed extraction API (context-aware)
+    if (typeof window.ExtractionAPI !== 'undefined') {
+      console.log('JobSprint: Using detailed extraction (context-aware)');
+      return window.ExtractionAPI.extractDetailed();
+    } else {
+      console.warn('JobSprint: ExtractionAPI not loaded, using fallback');
+      return extractJobDataDetailedFallback();
+    }
+  } catch (error) {
+    console.error('Error extracting detailed job data:', error);
+    return extractJobDataDetailedFallback();
+  }
+}
+
+/**
+ * Fallback detailed extraction when ExtractionAPI not available
+ * @returns {Object} Extracted job data
+ */
+function extractJobDataDetailedFallback() {
   try {
     const data = {
       title: '',
       company: '',
       location: '',
+      compensation: '',
+      pay: '',
+      description: '',
       url: window.location.href,
       timestamp: new Date().toISOString(),
-      source: extractSource(window.location.href)
+      source: window.TextFormatter ?
+        window.TextFormatter.extractSource(window.location.href) :
+        'Unknown'
     };
 
-    // CSS selectors for job boards (LinkedIn, Indeed, Glassdoor, Greenhouse, Lever, Workday)
-    const titleSelectors = [
-      'h1', '[data-job-title]', '.job-title', '.jobTitle',
-      '.topcard__title', '.top-card-layout__title',
-      '.jobsearch-JobInfoHeader-title',
-      '[data-test="job-title"]', '.app-title', '.posting-headline h2',
-      '[data-automation-id="jobPostingHeader"]'
-    ];
+    // Use intelligent extractors (same as mouse tracking feature)
+    data.title = searchPageForJobTitle() || '';
+    data.company = searchPageForCompany() || '';
+    data.location = searchPageForLocation() || '';
+    data.compensation = searchPageForCompensation() || '';
+    data.pay = searchPageForPay() || '';
+    data.description = searchPageForDescription() || '';
 
-    const companySelectors = [
-      '[data-company-name]', '.company-name', '.companyName', '.employer',
-      '.topcard__org-name-link', '.top-card-layout__entity-info a',
-      '[data-company-name="true"]', '[data-test="employer-name"]',
-      '.posting-categories .posting-category'
-    ];
+    // Fallback to CSS selector-based extraction if intelligent extractors fail
+    if (!data.title) {
+      const titleSelectors = [
+        'h1', '[data-job-title]', '.job-title', '.jobTitle',
+        '.topcard__title', '.top-card-layout__title',
+        '.jobsearch-JobInfoHeader-title',
+        '[data-test="job-title"]', '.app-title', '.posting-headline h2',
+        '[data-automation-id="jobPostingHeader"]'
+      ];
+      data.title = extractField(titleSelectors);
+    }
 
-    const locationSelectors = [
-      '[data-location]', '.location', '.job-location', '.jobLocation',
-      '.topcard__flavor--bullet', '.top-card-layout__second-subline',
-      '[data-testid="job-location"]', '.jobsearch-JobInfoHeader-subtitle > div',
-      '[data-test="location"]', '.posting-categories .location'
-    ];
+    if (!data.company) {
+      const companySelectors = [
+        '[data-company-name]', '.company-name', '.companyName', '.employer',
+        '.topcard__org-name-link', '.top-card-layout__entity-info a',
+        '[data-company-name="true"]', '[data-test="employer-name"]',
+        '.posting-categories .posting-category'
+      ];
+      data.company = extractField(companySelectors);
+    }
 
-    data.title = extractField(titleSelectors);
-    data.company = extractField(companySelectors);
-    data.location = extractField(locationSelectors);
+    if (!data.location) {
+      const locationSelectors = [
+        '[data-location]', '.location', '.job-location', '.jobLocation',
+        '.topcard__flavor--bullet', '.top-card-layout__second-subline',
+        '[data-testid="job-location"]', '.jobsearch-JobInfoHeader-subtitle > div',
+        '[data-test="location"]', '.posting-categories .location'
+      ];
+      data.location = extractField(locationSelectors);
+    }
 
     if (!data.title && !data.company) {
       console.warn('JobSprint: Could not extract meaningful job data from this page');
     }
 
-    console.log('Extracted job data:', data);
+    console.log('Extracted detailed job data (fallback):', data);
     return data;
   } catch (error) {
-    console.error('Error extracting job data:', error);
+    console.error('Error extracting detailed job data:', error);
     return {
       title: '',
       company: '',
       location: '',
+      compensation: '',
+      pay: '',
+      description: '',
       url: window.location.href,
       timestamp: new Date().toISOString(),
       error: error.message
@@ -173,19 +318,205 @@ function cleanText(text) {
  * @param {string} url - Current page URL
  * @returns {string} Source name (e.g., 'LinkedIn', 'Indeed') or hostname
  */
-function extractSource(url) {
-  try {
-    const hostname = new URL(url).hostname;
-    if (hostname.includes('linkedin.com')) return 'LinkedIn';
-    if (hostname.includes('indeed.com')) return 'Indeed';
-    if (hostname.includes('glassdoor.com')) return 'Glassdoor';
-    if (hostname.includes('greenhouse.io')) return 'Greenhouse';
-    if (hostname.includes('lever.co')) return 'Lever';
-    if (hostname.includes('myworkdayjobs.com')) return 'Workday';
-    return hostname;
-  } catch {
-    return 'Unknown';
+// NOTE: extractSource and extractPageContentAsPlainText are now in extraction/utils/text-formatter.js
+// They are available via window.TextFormatter
+
+// ============ PAGE-WIDE INTELLIGENT EXTRACTORS ============
+// These wrappers use the same intelligent extraction logic as mouse tracking,
+// but search the entire page instead of a specific element
+
+/**
+ * Search entire page for job title using intelligent extraction
+ * @returns {string|null} Extracted job title or null
+ */
+function searchPageForJobTitle() {
+  // Priority 1: Check for data attributes on any element
+  const dataAttrElements = document.querySelectorAll('[data-job-title], [data-title], [data-position]');
+  for (const element of dataAttrElements) {
+    const result = extractJobTitle(element);
+    if (result) return result;
   }
+
+  // Priority 2: Check headers in semantic containers
+  const semanticContainers = document.querySelectorAll('article, main, [role="main"]');
+  for (const container of semanticContainers) {
+    const headers = container.querySelectorAll('h1, h2, h3');
+    for (const header of headers) {
+      const result = extractJobTitle(header);
+      if (result) return result;
+    }
+  }
+
+  // Priority 3: Check all h1-h3 headers on page (most likely to be job title)
+  const headers = document.querySelectorAll('h1, h2, h3');
+  for (const header of headers) {
+    const result = extractJobTitle(header);
+    if (result) return result;
+  }
+
+  // Priority 4: Check common job title class names
+  const titleClassElements = document.querySelectorAll('.job-title, .jobTitle, .title, .position, .job-header');
+  for (const element of titleClassElements) {
+    const result = extractJobTitle(element);
+    if (result) return result;
+  }
+
+  return null;
+}
+
+/**
+ * Search entire page for company name using intelligent extraction
+ * @returns {string|null} Extracted company name or null
+ */
+function searchPageForCompany() {
+  // Priority 1: Check common company class names first
+  const companyClassElements = document.querySelectorAll(
+    '[data-company-name], .company, .companyName, .employer, .organization, .org-name, .org, .business'
+  );
+  for (const element of companyClassElements) {
+    const result = extractCompanyName(element);
+    if (result) return result;
+  }
+
+  // Priority 2: Check links (companies often link to their pages)
+  const links = document.querySelectorAll('a');
+  for (const link of links) {
+    const result = extractCompanyName(link);
+    if (result) return result;
+  }
+
+  // Priority 3: Check all bold text elements in top 30% of page
+  const viewportHeight = window.innerHeight;
+  const allElements = document.querySelectorAll('*');
+  for (const element of allElements) {
+    const rect = element.getBoundingClientRect();
+    if (rect.top < viewportHeight * 0.3) {
+      const style = window.getComputedStyle(element);
+      const isBold = style.fontWeight === 'bold' || parseInt(style.fontWeight) >= 600;
+      if (isBold) {
+        const result = extractCompanyName(element);
+        if (result) return result;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Search entire page for location using intelligent extraction
+ * @returns {string|null} Extracted location or null
+ */
+function searchPageForLocation() {
+  const pageText = document.body.textContent || '';
+
+  // Priority 1: Check common location class names
+  const locationClassElements = document.querySelectorAll(
+    '[data-location], .location, .job-location, .jobLocation'
+  );
+  for (const element of locationClassElements) {
+    const text = cleanText(element.textContent);
+    const result = extractLocation(element, text);
+    if (result) return result;
+  }
+
+  // Priority 2: Search semantic containers (main, article)
+  const semanticContainers = document.querySelectorAll('article, main, [role="main"]');
+  for (const container of semanticContainers) {
+    const text = cleanText(container.textContent);
+    const result = extractLocation(container, text);
+    if (result) return result;
+  }
+
+  // Priority 3: Search entire page text as last resort
+  const result = extractLocation(document.body, pageText);
+  if (result) return result;
+
+  return null;
+}
+
+/**
+ * Search entire page for compensation range using intelligent extraction
+ * @returns {string|null} Extracted compensation or null
+ */
+function searchPageForCompensation() {
+  const pageText = document.body.textContent || '';
+
+  // Priority 1: Check common salary/compensation class names
+  const salaryClassElements = document.querySelectorAll(
+    '[data-salary], [data-compensation], .salary, .compensation, .pay-range, .wage'
+  );
+  for (const element of salaryClassElements) {
+    const text = cleanText(element.textContent);
+    const result = extractCompensationRange(element, text);
+    if (result) return result;
+  }
+
+  // Priority 2: Search semantic containers
+  const semanticContainers = document.querySelectorAll('article, main, [role="main"]');
+  for (const container of semanticContainers) {
+    const text = cleanText(container.textContent);
+    const result = extractCompensationRange(container, text);
+    if (result) return result;
+  }
+
+  // Priority 3: Search entire page text
+  const result = extractCompensationRange(document.body, pageText);
+  if (result) return result;
+
+  return null;
+}
+
+/**
+ * Search entire page for single pay amount using intelligent extraction
+ * @returns {string|null} Extracted pay amount or null
+ */
+function searchPageForPay() {
+  const pageText = document.body.textContent || '';
+
+  // Priority 1: Check common pay class names
+  const payClassElements = document.querySelectorAll(
+    '[data-salary], [data-pay], .salary, .pay, .wage, .hourly-rate'
+  );
+  for (const element of payClassElements) {
+    const text = cleanText(element.textContent);
+    const result = extractPayAmount(element, text);
+    if (result) return result;
+  }
+
+  // Priority 2: Search semantic containers
+  const semanticContainers = document.querySelectorAll('article, main, [role="main"]');
+  for (const container of semanticContainers) {
+    const text = cleanText(container.textContent);
+    const result = extractPayAmount(container, text);
+    if (result) return result;
+  }
+
+  return null;
+}
+
+/**
+ * Search entire page for job description using intelligent extraction
+ * @returns {string|null} Extracted job description or null
+ */
+function searchPageForDescription() {
+  // Priority 1: Check common description class names
+  const descriptionClassElements = document.querySelectorAll(
+    '.job-description, .description, .job-details, .posting-description, [data-description]'
+  );
+  for (const element of descriptionClassElements) {
+    const result = extractLargeTextBlock(element);
+    if (result) return result;
+  }
+
+  // Priority 2: Check semantic containers
+  const semanticContainers = document.querySelectorAll('article, main, [role="main"]');
+  for (const container of semanticContainers) {
+    const result = extractLargeTextBlock(container);
+    if (result) return result;
+  }
+
+  return null;
 }
 
 // ============ AUTOFILL FEATURE ============
@@ -352,18 +683,262 @@ function showApprovalUI(input, question, answer, onApprove, onReject) {
 }
 
 /**
+ * Inject CSS stylesheet for JobSprint modal (CSP-compliant)
+ * Only injects once, uses classes instead of inline styles
+ */
+function injectJobSprintStyles() {
+  if (document.getElementById('jobsprint-modal-styles')) {
+    console.log('[Styles] JobSprint styles already injected');
+    return; // Already injected
+  }
+
+  console.log('[Styles] Injecting JobSprint styles...');
+  const style = document.createElement('style');
+  style.id = 'jobsprint-modal-styles';
+  style.textContent = `
+    @keyframes slideIn {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    #jobsprint-approval-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 999999;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .jobsprint-modal {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      animation: slideIn 0.3s ease-out;
+    }
+
+    .jobsprint-modal-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .jobsprint-modal-icon {
+      width: 32px;
+      height: 32px;
+      background: #4CAF50;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 18px;
+      margin-right: 12px;
+    }
+
+    .jobsprint-modal-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .jobsprint-data-container {
+      margin-bottom: 12px;
+      padding: 12px;
+      background: #f5f5f5;
+      border-radius: 6px;
+    }
+
+    .jobsprint-data-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #666;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .jobsprint-data-text {
+      font-size: 14px;
+      color: #333;
+      line-height: 1.4;
+    }
+
+    .jobsprint-success-container {
+      margin-bottom: 20px;
+      padding: 12px;
+      background: #e8f5e9;
+      border-radius: 6px;
+      border-left: 3px solid #4CAF50;
+    }
+
+    .jobsprint-success-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #2e7d32;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .jobsprint-success-text {
+      font-size: 14px;
+      color: #1b5e20;
+      line-height: 1.4;
+    }
+
+    .jobsprint-button-container {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    .jobsprint-btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 2px solid;
+    }
+
+    .jobsprint-btn-reject {
+      border-color: #ddd;
+      background: white;
+      color: #666;
+    }
+
+    .jobsprint-btn-reject:hover {
+      background: #f5f5f5;
+      border-color: #999;
+    }
+
+    .jobsprint-btn-approve {
+      border: none;
+      background: #4CAF50;
+      color: white;
+    }
+
+    .jobsprint-btn-approve:hover {
+      background: #45a049;
+    }
+
+    /* Mouse tracking highlight styles */
+    .jobsprint-text-highlight {
+      background-color: var(--jobsprint-highlight-bg, #ffd700);
+      color: inherit;
+      padding: 0;
+      margin: 0;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      font-weight: inherit;
+      font-size: inherit;
+      line-height: inherit;
+      letter-spacing: inherit;
+      pointer-events: none;
+      display: inline;
+    }
+
+    #jobsprint-mouse-tracking-overlay {
+      position: fixed;
+      background: rgba(255, 107, 107, 0.95);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 999998;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      pointer-events: auto;
+      animation: slideInFromRight 0.3s ease-out;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #jobsprint-tracking-title {
+      font-weight: 600;
+      margin-right: 4px;
+    }
+
+    #jobsprint-tracking-mode {
+      font-size: 11px;
+      opacity: 0.9;
+      margin-left: auto;
+    }
+
+    @keyframes slideInFromRight {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); }
+      50% { box-shadow: 0 4px 20px rgba(255, 107, 107, 0.6); }
+    }
+
+    #jobsprint-exit-btn {
+      background: rgb(220, 53, 69);
+      border: none;
+      color: white;
+      font-size: 20px;
+      font-weight: bold;
+      width: 26px;
+      height: 26px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      margin: 0 0 0 4px;
+      line-height: 1;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+      pointer-events: auto;
+      outline: none;
+      box-shadow: none;
+    }
+
+    #jobsprint-exit-btn:hover {
+      background: rgb(200, 35, 51);
+      transform: scale(1.1);
+    }
+
+    #jobsprint-exit-btn:active {
+      background: rgb(189, 33, 48);
+      transform: scale(0.95);
+    }
+  `;
+
+  try {
+    document.head.appendChild(style);
+    console.log('[Styles] JobSprint styles successfully injected');
+  } catch (error) {
+    console.error('[Styles] Error injecting styles:', error);
+  }
+}
+
+/**
  * Create the overlay backdrop
  * @returns {HTMLElement} Overlay element
  */
 function createOverlay() {
+  injectJobSprintStyles(); // Ensure styles are injected
   const overlay = document.createElement('div');
   overlay.id = 'jobsprint-approval-overlay';
-  overlay.style.cssText = `
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.7); display: flex;
-    justify-content: center; align-items: center; z-index: 999999;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  `;
   return overlay;
 }
 
@@ -373,21 +948,7 @@ function createOverlay() {
  */
 function createModal() {
   const modal = document.createElement('div');
-  modal.style.cssText = `
-    background: white; border-radius: 12px; padding: 24px;
-    max-width: 500px; width: 90%;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    animation: slideIn 0.3s ease-out;
-  `;
-
-  // Add animation
-  if (!document.getElementById('jobsprint-modal-styles')) {
-    const style = document.createElement('style');
-    style.id = 'jobsprint-modal-styles';
-    style.textContent = `@keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`;
-    document.head.appendChild(style);
-  }
-
+  modal.className = 'jobsprint-modal';
   return modal;
 }
 
@@ -397,18 +958,14 @@ function createModal() {
  */
 function createModalHeader() {
   const header = document.createElement('div');
-  header.style.cssText = 'display: flex; align-items: center; margin-bottom: 16px;';
+  header.className = 'jobsprint-modal-header';
 
   const icon = document.createElement('div');
-  icon.style.cssText = `
-    width: 40px; height: 40px; background: #4CAF50; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    margin-right: 12px; font-size: 20px; color: white;
-  `;
+  icon.className = 'jobsprint-modal-icon';
   icon.textContent = '✓';
 
   const title = document.createElement('h3');
-  title.style.cssText = 'margin: 0; font-size: 18px; font-weight: 600; color: #333;';
+  title.className = 'jobsprint-modal-title';
   title.textContent = 'Autofill Suggestion';
 
   header.appendChild(icon);
@@ -423,14 +980,14 @@ function createModalHeader() {
  */
 function createQuestionDisplay(question) {
   const container = document.createElement('div');
-  container.style.cssText = 'margin-bottom: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px;';
+  container.className = 'jobsprint-data-container';
 
   const label = document.createElement('div');
-  label.style.cssText = 'font-size: 12px; font-weight: 600; color: #666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;';
+  label.className = 'jobsprint-data-label';
   label.textContent = 'Question';
 
   const text = document.createElement('div');
-  text.style.cssText = 'font-size: 14px; color: #333; line-height: 1.4;';
+  text.className = 'jobsprint-data-text';
   text.textContent = question;
 
   container.appendChild(label);
@@ -445,14 +1002,14 @@ function createQuestionDisplay(question) {
  */
 function createAnswerDisplay(answer) {
   const container = document.createElement('div');
-  container.style.cssText = 'margin-bottom: 20px; padding: 12px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #4CAF50;';
+  container.className = 'jobsprint-success-container';
 
   const label = document.createElement('div');
-  label.style.cssText = 'font-size: 12px; font-weight: 600; color: #2e7d32; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;';
+  label.className = 'jobsprint-success-label';
   label.textContent = 'Suggested Answer';
 
   const text = document.createElement('div');
-  text.style.cssText = 'font-size: 15px; color: #1b5e20; font-weight: 500; line-height: 1.4;';
+  text.className = 'jobsprint-success-text';
   text.textContent = answer;
 
   container.appendChild(label);
@@ -469,17 +1026,13 @@ function createAnswerDisplay(answer) {
 function createActionButtons(onApprove, onReject) {
   const rejectBtn = document.createElement('button');
   rejectBtn.textContent = 'Skip';
-  rejectBtn.style.cssText = 'padding: 10px 20px; border: 2px solid #ddd; background: white; color: #666; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;';
-  rejectBtn.onmouseover = () => { rejectBtn.style.background = '#f5f5f5'; rejectBtn.style.borderColor = '#999'; };
-  rejectBtn.onmouseout = () => { rejectBtn.style.background = 'white'; rejectBtn.style.borderColor = '#ddd'; };
-  rejectBtn.onclick = () => { removeApprovalUI(); onReject(); };
+  rejectBtn.className = 'jobsprint-btn jobsprint-btn-reject';
+  rejectBtn.addEventListener('click', () => { removeApprovalUI(); onReject(); });
 
   const approveBtn = document.createElement('button');
   approveBtn.textContent = 'Apply Answer';
-  approveBtn.style.cssText = 'padding: 10px 20px; border: none; background: #4CAF50; color: white; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;';
-  approveBtn.onmouseover = () => { approveBtn.style.background = '#45a049'; };
-  approveBtn.onmouseout = () => { approveBtn.style.background = '#4CAF50'; };
-  approveBtn.onclick = () => { removeApprovalUI(); onApprove(); };
+  approveBtn.className = 'jobsprint-btn jobsprint-btn-approve';
+  approveBtn.addEventListener('click', () => { removeApprovalUI(); onApprove(); });
 
   return { approveBtn, rejectBtn };
 }
@@ -491,7 +1044,7 @@ function createActionButtons(onApprove, onReject) {
  */
 function createButtonContainer(...buttons) {
   const container = document.createElement('div');
-  container.style.cssText = 'display: flex; gap: 12px; justify-content: flex-end;';
+  container.className = 'jobsprint-button-container';
   buttons.forEach(btn => container.appendChild(btn));
   return container;
 }
@@ -538,4 +1091,2407 @@ function removeApprovalUI() {
     input.style.outline = '';
     input.style.outlineOffset = '';
   });
+}
+
+// ============ INTERACTIVE MOUSE TRACKING ============
+
+// Mouse tracking state
+let mouseTrackingActive = false;
+let currentTrackedFieldId = null;
+let lastHighlightedElement = null;
+let mouseTrackingOverlay = null;
+let currentModifierMode = 'words'; // 'disabled', 'words', 'chars' (smart mode removed - only used for auto-extraction)
+let currentGranularity = {
+  words: { left: 0, right: 0 },  // Number of words on each side (default: just target word = 1 total)
+  chars: { left: 1, right: 1 }   // Number of characters on each side (default: 1 char left + 1 char right + target = 3 total)
+};
+let lastHighlightedText = null; // Track the highlighted text range
+let lastHighlightPosition = null; // Screen coordinates of last highlight for hysteresis { x, y, text }
+let lastMouseEvent = null; // Store last mouse event for re-extraction on mode/granularity changes
+let overlayPosition = {
+  top: 10,    // pixels from top
+  right: 10,  // pixels from right
+  bottom: null,  // pixels from bottom (alternative to top)
+  left: null     // pixels from left (alternative to right)
+};
+
+// Mouse tracking settings (loaded from chrome.storage)
+let mouseTrackingSettings = {
+  disabledModifier: 'none',
+  charModifier: 'ctrl',
+  wordModifier: 'shift',
+  overlayMoveModifier: 'alt',
+  overlayMoveStep: 20
+};
+
+// Mode colors (loaded from chrome.storage)
+let modeColors = {
+  disabled: { solid: '#6c757d', transparent: 'rgba(108, 117, 125, 0.1)', bg: 'rgba(108, 117, 125, 0.95)' },
+  words: { solid: '#2ecc71', transparent: 'rgba(46, 204, 113, 0.1)', bg: 'rgba(46, 204, 113, 0.95)' },
+  chars: { solid: '#9b59b6', transparent: 'rgba(155, 89, 182, 0.1)', bg: 'rgba(155, 89, 182, 0.95)' }
+};
+
+/**
+ * Load mouse tracking settings and colors from chrome.storage
+ * @returns {Promise<void>}
+ */
+async function loadMouseTrackingSettings() {
+  try {
+    const result = await chrome.storage.sync.get([
+      'DISABLED_MODIFIER',
+      'CHAR_MODIFIER',
+      'WORD_MODIFIER',
+      'OVERLAY_MOVE_MODIFIER',
+      'OVERLAY_MOVE_STEP',
+      'WORD_MODE_COLOR',
+      'CHAR_MODE_COLOR',
+      'DISABLED_MODE_COLOR'
+    ]);
+
+    mouseTrackingSettings = {
+      disabledModifier: result.DISABLED_MODIFIER || 'none',
+      charModifier: result.CHAR_MODIFIER || 'ctrl',
+      wordModifier: result.WORD_MODIFIER || 'shift',
+      overlayMoveModifier: result.OVERLAY_MOVE_MODIFIER || 'alt',
+      overlayMoveStep: result.OVERLAY_MOVE_STEP || 20
+    };
+
+    // Load and convert colors
+    const wordColor = result.WORD_MODE_COLOR || '#2ecc71';
+    const charColor = result.CHAR_MODE_COLOR || '#9b59b6';
+    const disabledColor = result.DISABLED_MODE_COLOR || '#6c757d';
+
+    modeColors = {
+      disabled: {
+        solid: disabledColor,
+        transparent: hexToRgba(disabledColor, 0.1),
+        bg: hexToRgba(disabledColor, 0.95)
+      },
+      words: {
+        solid: wordColor,
+        transparent: hexToRgba(wordColor, 0.1),
+        bg: hexToRgba(wordColor, 0.95)
+      },
+      chars: {
+        solid: charColor,
+        transparent: hexToRgba(charColor, 0.1),
+        bg: hexToRgba(charColor, 0.95)
+      }
+    };
+
+    console.log('[MouseTracking] Settings loaded:', mouseTrackingSettings);
+    console.log('[MouseTracking] Colors loaded:', modeColors);
+  } catch (error) {
+    console.error('[MouseTracking] Error loading settings:', error);
+    // Use defaults on error
+  }
+}
+
+/**
+ * Convert hex color to rgba
+ * @param {string} hex - Hex color (e.g., '#3498db')
+ * @param {number} alpha - Alpha value (0-1)
+ * @returns {string} RGBA color string
+ */
+function hexToRgba(hex, alpha) {
+  // Remove the hash if present
+  hex = hex.replace('#', '');
+
+  // Parse the hex values
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * Start interactive mouse tracking for field auto-fill
+ * When user hovers over text elements, their content is extracted and sent to the extension
+ * @param {string} fieldId - ID of the field being filled
+ * @param {string} mode - Initial mode to use ('words', 'smart', 'chars')
+ */
+async function startMouseTracking(fieldId, mode = 'words') {
+  console.log('[MouseTracking] Starting mouse tracking for field:', fieldId, 'with mode:', mode);
+
+  // Load settings before starting
+  await loadMouseTrackingSettings();
+  console.log('[MouseTracking] Settings loaded, starting tracking...');
+
+  // Stop any existing tracking
+  stopMouseTracking();
+
+  mouseTrackingActive = true;
+  currentTrackedFieldId = fieldId;
+  console.log('[MouseTracking] Tracking state set to active');
+
+  // Set the initial mode (persisted from popup)
+  currentModifierMode = mode;
+  console.log('[MouseTracking] Tracking state set to active with mode:', mode);
+
+  // Create visual overlay to indicate tracking mode
+  createTrackingOverlay();
+  updateOverlayMode(mode); // Update overlay to show correct mode color
+  console.log('[MouseTracking] Overlay created with mode:', mode);
+
+  // Add event listeners
+  document.addEventListener('mousemove', handleMouseMove, true);
+  document.addEventListener('click', handleMouseClick, true);
+  document.addEventListener('keydown', handleEscapeKey, true);
+  console.log('[MouseTracking] Event listeners added');
+
+  // Change cursor to indicate tracking mode
+  document.body.style.cursor = 'crosshair';
+  console.log('[MouseTracking] Mouse tracking fully initialized');
+}
+
+/**
+ * Stop interactive mouse tracking
+ */
+function stopMouseTracking() {
+  if (!mouseTrackingActive) return;
+
+  console.log('Stopping mouse tracking');
+
+  mouseTrackingActive = false;
+  currentTrackedFieldId = null;
+
+  // Remove event listeners
+  document.removeEventListener('mousemove', handleMouseMove, true);
+  document.removeEventListener('click', handleMouseClick, true);
+  document.removeEventListener('keydown', handleEscapeKey, true);
+
+  // Remove visual feedback
+  removeHighlight();
+  removeTrackingOverlay();
+
+  // Restore cursor
+  document.body.style.cursor = '';
+}
+
+/**
+ * Handle keyboard event relayed from popup
+ * Creates a synthetic event object and processes it like a native keyboard event
+ * @param {Object} eventData - Keyboard event data from popup
+ */
+function handleRelayedKeyboardEvent(eventData) {
+  if (!mouseTrackingActive) return;
+
+  console.log('[RelayedKeyEvent] Processing:', eventData.key, 'type:', eventData.type, 'with modifiers:', {
+    shift: eventData.shiftKey,
+    ctrl: eventData.ctrlKey,
+    alt: eventData.altKey
+  });
+
+  // Create a synthetic event object that matches the KeyboardEvent interface
+  const syntheticEvent = {
+    key: eventData.key,
+    code: eventData.code,
+    shiftKey: eventData.shiftKey,
+    ctrlKey: eventData.ctrlKey,
+    altKey: eventData.altKey,
+    metaKey: eventData.metaKey,
+    type: eventData.type || 'keydown',
+    preventDefault: () => {}, // No-op since it's already handled in popup
+    stopPropagation: () => {}
+  };
+
+  // Handle modifier key press for persistent mode switching
+  // Only switch modes on keydown (not keyup) to make modes sticky
+  const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(eventData.key);
+
+  if (isModifierKey && eventData.type === 'keydown') {
+    // Map modifier key to mode based on configured settings
+    let newMode = null;
+    if (eventData.key === 'Shift') {
+      // Check if Shift is configured for any mode
+      if (mouseTrackingSettings.smartModifier === 'shift') newMode = 'smart';
+      else if (mouseTrackingSettings.wordModifier === 'shift') newMode = 'words';
+      else if (mouseTrackingSettings.charModifier === 'shift') newMode = 'chars';
+    } else if (eventData.key === 'Control' || eventData.key === 'Meta') {
+      // Check if Ctrl is configured for any mode
+      if (mouseTrackingSettings.smartModifier === 'ctrl') newMode = 'smart';
+      else if (mouseTrackingSettings.wordModifier === 'ctrl') newMode = 'words';
+      else if (mouseTrackingSettings.charModifier === 'ctrl') newMode = 'chars';
+    } else if (eventData.key === 'Alt') {
+      // Check if Alt is configured for any mode (not overlay move)
+      if (mouseTrackingSettings.smartModifier === 'alt') newMode = 'smart';
+      else if (mouseTrackingSettings.wordModifier === 'alt') newMode = 'words';
+      else if (mouseTrackingSettings.charModifier === 'alt') newMode = 'chars';
+    }
+
+    // Switch mode persistently (it stays until changed again)
+    if (newMode && newMode !== currentModifierMode) {
+      currentModifierMode = newMode;
+      updateOverlayMode(newMode);
+      console.log('[RelayedKeyEvent] Mode switched to:', newMode, 'due to modifier', eventData.key);
+
+      // Notify popup about mode change so button states can update
+      notifyPopupModeChange(newMode);
+
+      // Re-extract text and update highlight with new mode if we have a last mouse position
+      if (lastMouseEvent && lastHighlightedElement) {
+        const element = lastHighlightedElement;
+
+        // Re-extract text with new mode
+        const text = extractTextFromElement(element, lastMouseEvent, newMode);
+
+        // Remove and re-add highlight to update color and text
+        removeHighlight();
+        if (text && text.trim()) {
+          highlightElement(element, text.trim(), lastMouseEvent);
+          sendTextToPopup(text.trim());
+        } else {
+          highlightElement(element, null, lastMouseEvent);
+        }
+      }
+    }
+    return; // Don't process modifier keys further
+  }
+
+  // Ignore keyup events for modifiers - mode should persist
+  if (isModifierKey && eventData.type === 'keyup') {
+    return;
+  }
+
+  // For non-modifier keys, process through the existing keyboard handler
+  handleEscapeKey(syntheticEvent);
+}
+
+/**
+ * Handle manual mode change from popup button click
+ * @param {string} mode - Mode to switch to: 'words', 'smart', 'chars'
+ */
+function handleManualModeChange(mode) {
+  if (!mouseTrackingActive) return;
+
+  console.log('[ManualModeChange] Switching to mode:', mode);
+
+  // Update current mode
+  currentModifierMode = mode;
+  updateOverlayMode(mode);
+
+  // Re-extract text and update highlight with new mode if we have a last mouse position
+  if (lastMouseEvent && lastHighlightedElement) {
+    const element = lastHighlightedElement;
+
+    // Re-extract text with new mode
+    const text = extractTextFromElement(element, lastMouseEvent, mode);
+
+    // Remove and re-add highlight to update color and text
+    removeHighlight();
+    if (text && text.trim()) {
+      highlightElement(element, text.trim(), lastMouseEvent);
+      sendTextToPopup(text.trim());
+    } else {
+      highlightElement(element, null, lastMouseEvent);
+    }
+  }
+}
+
+/**
+ * Handle mouse move events during tracking
+ * @param {MouseEvent} event - Mouse event
+ */
+function handleMouseMove(event) {
+  if (!mouseTrackingActive) return;
+
+  // Store last mouse event for re-extraction when granularity changes
+  lastMouseEvent = event;
+
+  // Check if user is pressing modifier keys to override the current mode
+  const modifierMode = getExtractionModeFromModifiers(event);
+  if (modifierMode && modifierMode !== currentModifierMode) {
+    currentModifierMode = modifierMode;
+    updateOverlayMode(currentModifierMode);
+  }
+
+  // Use the current mode (either from button or modifier key)
+  const mode = currentModifierMode;
+
+  // If mode is disabled, don't highlight anything
+  if (mode === 'disabled') {
+    removeHighlight();
+    return;
+  }
+
+  // Get element under cursor
+  let element = document.elementFromPoint(event.clientX, event.clientY);
+
+  if (!element || element === mouseTrackingOverlay) return;
+
+  // Exclude the tracking overlay and its children from highlighting
+  if (element.id === 'jobsprint-tracking-overlay' ||
+      element.closest('#jobsprint-tracking-overlay')) {
+    return;
+  }
+
+  // If we hit a highlight mark, get the actual element
+  if (element.classList && element.classList.contains('jobsprint-text-highlight')) {
+    element = element.closest(':not(.jobsprint-text-highlight)') || element.parentElement;
+  }
+
+  // Extract text from element with appropriate scope
+  const extractionResult = extractTextFromElement(element, event, mode);
+  const text = typeof extractionResult === 'string' ? extractionResult : extractionResult.text;
+  const sourceNode = extractionResult.sourceNode || null;
+  const sourceOffset = extractionResult.sourceOffset || null;
+  const sourceOffsetEnd = extractionResult.sourceOffsetEnd || null;
+
+  if (text && text.trim()) {
+    // Highlight the element and the extracted text
+    highlightElement(element, text.trim(), event, sourceNode, sourceOffset, sourceOffsetEnd);
+
+    // Send text to extension popup
+    sendTextToPopup(text.trim());
+  } else {
+    removeHighlight();
+  }
+}
+
+/**
+ * Handle mouse click during tracking - confirm selection and stop tracking
+ * @param {MouseEvent} event - Mouse event
+ */
+function handleMouseClick(event) {
+  if (!mouseTrackingActive) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  // Get current extraction mode (use button mode unless modifier is pressed)
+  const mode = getExtractionModeFromModifiers(event) || currentModifierMode;
+
+  // Get element under cursor
+  const element = document.elementFromPoint(event.clientX, event.clientY);
+
+  if (element && element !== mouseTrackingOverlay) {
+    const extractionResult = extractTextFromElement(element, event, mode);
+    const text = typeof extractionResult === 'string' ? extractionResult : extractionResult.text;
+
+    if (text && text.trim()) {
+      // Send final text to popup and stop tracking
+      sendTextToPopup(text.trim(), true);
+    }
+  }
+
+  stopMouseTracking();
+}
+
+/**
+ * Handle escape key to cancel tracking, arrow keys for granularity, and Alt+Arrow to move overlay
+ * @param {KeyboardEvent} event - Keyboard event
+ */
+function handleEscapeKey(event) {
+  if (!mouseTrackingActive) return;
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    stopMouseTracking();
+    return;
+  }
+
+  // Handle overlay repositioning with configured modifier + Arrow keys
+  if (checkModifierKey(event, mouseTrackingSettings.overlayMoveModifier) &&
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    event.preventDefault();
+    handleOverlayReposition(event);
+    return;
+  }
+
+  // Handle arrow keys for granularity control (without overlay move modifier)
+  if (!checkModifierKey(event, mouseTrackingSettings.overlayMoveModifier) &&
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    event.preventDefault();
+    handleGranularityChange(event);
+  }
+}
+
+/**
+ * Handle arrow key presses to adjust extraction granularity or smart mode strength
+ * Supports directional control for words and chars modes:
+ * - ArrowUp: Extend both sides (increase left and right)
+ * - ArrowDown: Reduce both sides (decrease left and right)
+ * - ArrowLeft: Extend left only (increase left, keep right)
+ * - ArrowRight: Extend right only (keep left, increase right)
+ * For smart mode:
+ * - ArrowUp/ArrowRight: Increase aggressiveness level
+ * - ArrowDown/ArrowLeft: Decrease aggressiveness level
+ * @param {KeyboardEvent} event - Keyboard event
+ */
+function handleGranularityChange(event) {
+  const mode = currentModifierMode; // Use current button mode
+
+  // Determine what to adjust based on arrow key direction
+  const isVertical = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+  const isHorizontal = event.key === 'ArrowLeft' || event.key === 'ArrowRight';
+  const increment = (event.key === 'ArrowUp' || event.key === 'ArrowRight') ? 1 : -1;
+
+  // Update granularity based on current mode and direction
+  if (mode === 'smart') {
+    // Smart mode: adjust aggressiveness level (1-5)
+    smartModeStrength = Math.max(1, Math.min(5, smartModeStrength + increment));
+  } else if (mode === 'chars') {
+    // Character mode: adjust character granularity
+    if (isVertical) {
+      // Up/Down: adjust both sides symmetrically
+      currentGranularity.chars.left = Math.max(0, currentGranularity.chars.left + increment);
+      currentGranularity.chars.right = Math.max(0, currentGranularity.chars.right + increment);
+    } else if (event.key === 'ArrowLeft') {
+      // Left: extend left side only
+      currentGranularity.chars.left = Math.max(0, currentGranularity.chars.left + 1);
+    } else if (event.key === 'ArrowRight') {
+      // Right: extend right side only
+      currentGranularity.chars.right = Math.max(0, currentGranularity.chars.right + 1);
+    }
+  } else {
+    // Word mode: adjust word granularity
+    if (isVertical) {
+      // Up/Down: adjust both sides symmetrically
+      currentGranularity.words.left = Math.max(0, currentGranularity.words.left + increment);
+      currentGranularity.words.right = Math.max(0, currentGranularity.words.right + increment);
+    } else if (event.key === 'ArrowLeft') {
+      // Left: extend left side only
+      currentGranularity.words.left = Math.max(0, currentGranularity.words.left + 1);
+    } else if (event.key === 'ArrowRight') {
+      // Right: extend right side only
+      currentGranularity.words.right = Math.max(0, currentGranularity.words.right + 1);
+    }
+  }
+
+  console.log('[GranularityChange] New granularity:', mode, JSON.stringify(currentGranularity), 'Smart strength:', smartModeStrength);
+
+  // Update overlay to show current granularity/strength
+  updateOverlayMode(mode);
+
+  // Re-extract text with new granularity if we have a last mouse position
+  if (lastMouseEvent && lastHighlightedElement) {
+    const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, mode);
+    if (text && text.trim()) {
+      sendTextToPopup(text.trim());
+      // Update the highlight to reflect the new extraction
+      highlightElement(lastHighlightedElement, text.trim(), lastMouseEvent);
+    }
+  }
+}
+
+/**
+ * Handle Alt+Arrow key presses to reposition the tracking overlay
+ * @param {KeyboardEvent} event - Keyboard event
+ */
+function handleOverlayReposition(event) {
+  const MOVE_STEP = mouseTrackingSettings.overlayMoveStep; // pixels to move per keypress (from settings)
+
+  // Get current viewport dimensions
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  // Calculate overlay dimensions (approximate)
+  const overlayWidth = 300; // approximate width
+  const overlayHeight = 100; // approximate height
+
+  console.log('[Overlay] Repositioning with', event.key, '- Current position:', {...overlayPosition});
+
+  switch (event.key) {
+    case 'ArrowUp':
+      // Move up (decrease top if using top, increase bottom if using bottom)
+      if (overlayPosition.top !== null) {
+        overlayPosition.top = Math.max(0, overlayPosition.top - MOVE_STEP);
+      } else if (overlayPosition.bottom !== null) {
+        overlayPosition.bottom = Math.min(viewportHeight - overlayHeight, overlayPosition.bottom + MOVE_STEP);
+      }
+      break;
+
+    case 'ArrowDown':
+      // Move down (increase top if using top, decrease bottom if using bottom)
+      if (overlayPosition.top !== null) {
+        overlayPosition.top = Math.min(viewportHeight - overlayHeight, overlayPosition.top + MOVE_STEP);
+      } else if (overlayPosition.bottom !== null) {
+        overlayPosition.bottom = Math.max(0, overlayPosition.bottom - MOVE_STEP);
+      }
+      break;
+
+    case 'ArrowLeft':
+      // Move left (switch to left positioning, or decrease left value)
+      if (overlayPosition.right !== null) {
+        // Convert from right to left positioning
+        overlayPosition.left = viewportWidth - overlayPosition.right - overlayWidth;
+        overlayPosition.right = null;
+      }
+      if (overlayPosition.left !== null) {
+        overlayPosition.left = Math.max(0, overlayPosition.left - MOVE_STEP);
+      }
+      break;
+
+    case 'ArrowRight':
+      // Move right (switch to right positioning, or decrease right value)
+      if (overlayPosition.left !== null) {
+        // Convert from left to right positioning
+        overlayPosition.right = viewportWidth - overlayPosition.left - overlayWidth;
+        overlayPosition.left = null;
+      }
+      if (overlayPosition.right !== null) {
+        overlayPosition.right = Math.max(0, overlayPosition.right - MOVE_STEP);
+      }
+      break;
+  }
+
+  console.log('[Overlay] New position:', {...overlayPosition});
+
+  // Update overlay position
+  updateOverlayPosition();
+
+  // Add visual feedback with pulse animation
+  if (mouseTrackingOverlay) {
+    mouseTrackingOverlay.style.animation = 'none';
+    // Force reflow to restart animation
+    void mouseTrackingOverlay.offsetHeight;
+    mouseTrackingOverlay.style.animation = 'pulseGlow 0.3s ease-out';
+  }
+}
+
+/**
+ * Get extraction mode based on modifier keys (for temporary override)
+ * Only returns a mode if an actual modifier key is pressed (not 'none')
+ * @param {MouseEvent|KeyboardEvent} event - Event with modifier key info
+ * @returns {string|null} Extraction mode if modifier is pressed, null otherwise
+ */
+function getExtractionModeFromModifiers(event) {
+  // Check each configured modifier and return corresponding mode if pressed
+  // Skip 'none' modifiers as they shouldn't override the button-selected mode
+
+  // Check for disabled modifier (only if it's not 'none')
+  if (mouseTrackingSettings.disabledModifier !== 'none' &&
+      checkModifierKey(event, mouseTrackingSettings.disabledModifier)) {
+    return 'disabled';
+  }
+
+  // Check for char modifier (only if it's not 'none')
+  if (mouseTrackingSettings.charModifier !== 'none' &&
+      checkModifierKey(event, mouseTrackingSettings.charModifier)) {
+    return 'chars';
+  }
+
+  // Check for word modifier (only if it's not 'none')
+  if (mouseTrackingSettings.wordModifier !== 'none' &&
+      checkModifierKey(event, mouseTrackingSettings.wordModifier)) {
+    return 'words';
+  }
+
+  // No actual modifier key pressed - return null to use current button mode
+  return null;
+}
+
+/**
+ * Check if a specific modifier key is pressed
+ * @param {MouseEvent|KeyboardEvent} event - Event to check
+ * @param {string} modifier - Modifier name: 'shift', 'ctrl', 'alt', or 'none'
+ * @returns {boolean} True if the modifier is active
+ */
+function checkModifierKey(event, modifier) {
+  switch (modifier) {
+    case 'shift':
+      return event.shiftKey;
+    case 'ctrl':
+      return event.ctrlKey || event.metaKey; // Support both Ctrl and Cmd
+    case 'alt':
+      return event.altKey;
+    case 'none':
+      // 'none' means this mode is active when NO modifiers are pressed
+      return !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Extract text content from an element with scope control
+ * Handles various element types and nested structures
+ * @param {HTMLElement} element - Element to extract text from
+ * @param {MouseEvent} event - Mouse event for cursor position
+ * @param {string} mode - Extraction mode: 'chars', 'words', or 'smart'
+ * @returns {string} Extracted text
+ */
+function extractTextFromElement(element, event, mode = 'words') {
+  if (!element) return '';
+
+  // For input elements, get the value
+  if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+    return element.value;
+  }
+
+  // Get the full text content, ignoring our highlight marks
+  let fullText = '';
+
+  // Clone the element to get clean text without modifying the original
+  const clone = element.cloneNode(true);
+
+  // Remove all our highlight marks from the clone
+  const marks = clone.querySelectorAll('mark.jobsprint-text-highlight');
+  marks.forEach(mark => {
+    const text = document.createTextNode(mark.textContent);
+    mark.parentNode.replaceChild(text, mark);
+  });
+
+  // Get text from the cleaned clone
+  fullText = clone.textContent || '';
+  fullText = cleanText(fullText);
+
+  // Apply scope based on mode and granularity
+  if (mode === 'disabled') {
+    // Disabled mode: return empty (no extraction)
+    return '';
+  } else if (mode === 'words') {
+    // Word mode: basic nearest words extraction
+    return extractNearestWords(fullText, event, element, currentGranularity.words.left, currentGranularity.words.right);
+  } else if (mode === 'chars') {
+    // Char mode: nearest characters extraction
+    return extractNearestChars(fullText, event, element, currentGranularity.chars.left, currentGranularity.chars.right);
+  }
+
+  return fullText;
+}
+
+/**
+ * Smart mode extraction with configurable aggressiveness
+ * Aggressively searches for patterns based on field type and strength setting
+ * Reuses existing field-specific extraction functions with expanded search scope
+ * @param {HTMLElement} element - Element being hovered over
+ * @param {MouseEvent} event - Mouse event
+ * @param {string} fullText - Full text of element
+ * @returns {string} Extracted text
+ */
+function extractSmartMode(element, event, fullText) {
+  const fieldId = currentTrackedFieldId;
+
+  // Try extraction with increasing scope based on strength level
+  let result = null;
+
+  // Level 1: Just the hovered element (same as field-aware mode)
+  if (fieldId === 'manualPay') {
+    result = extractPayAmount(element, fullText);
+  } else if (fieldId === 'manualCompensation') {
+    result = extractCompensationRange(element, fullText);
+  } else if (fieldId === 'manualLocation') {
+    result = extractLocation(element, fullText);
+  } else if (fieldId === 'manualJobTitle') {
+    result = extractJobTitle(element);
+  } else if (fieldId === 'manualCompany') {
+    result = extractCompanyName(element);
+  } else if (fieldId === 'manualNotes') {
+    result = extractLargeTextBlock(element) || fullText;
+  }
+
+  // If found at level 1, return it
+  if (result) return result;
+
+  // Level 2+: Search parent elements based on strength
+  if (smartModeStrength >= 2) {
+    result = searchNearbyElements(element, fieldId);
+    if (result) return result;
+  }
+
+  // Fallback to basic field-aware extraction
+  return extractFieldAware(element, event, fullText, currentGranularity.words.left, currentGranularity.words.right);
+}
+
+/**
+ * Search nearby elements (parent, siblings) using field-specific extractors
+ * Reuses existing extraction functions for consistency
+ * @param {HTMLElement} element - Starting element
+ * @param {string} fieldId - Field being filled
+ * @returns {string|null} Extracted value or null
+ */
+function searchNearbyElements(element, fieldId) {
+  const elementsToSearch = [];
+
+  // Add parent element (strength >= 2)
+  if (smartModeStrength >= 2 && element.parentElement) {
+    elementsToSearch.push(element.parentElement);
+  }
+
+  // Add siblings (strength >= 4)
+  if (smartModeStrength >= 4 && element.parentElement) {
+    const siblings = Array.from(element.parentElement.children);
+    elementsToSearch.push(...siblings.filter(s => s !== element));
+  }
+
+  // Add grandparent (strength >= 5 - maximum)
+  if (smartModeStrength >= 5 && element.parentElement?.parentElement) {
+    elementsToSearch.push(element.parentElement.parentElement);
+  }
+
+  // Try extraction on each element in scope
+  for (const el of elementsToSearch) {
+    const text = cleanText(el.textContent || '');
+    let result = null;
+
+    // Apply field-specific extractor
+    if (fieldId === 'manualPay') {
+      result = extractPayAmount(el, text);
+    } else if (fieldId === 'manualCompensation') {
+      result = extractCompensationRange(el, text);
+    } else if (fieldId === 'manualLocation') {
+      result = extractLocation(el, text);
+    } else if (fieldId === 'manualJobTitle') {
+      result = extractJobTitle(el);
+    } else if (fieldId === 'manualCompany') {
+      result = extractCompanyName(el);
+    } else if (fieldId === 'manualNotes') {
+      result = extractLargeTextBlock(el);
+    }
+
+    if (result) return result;
+  }
+
+  return null;
+}
+
+/**
+ * Field-aware intelligent extraction (less aggressive than smart mode)
+ * Uses context from the focused field to intelligently extract relevant data
+ * @param {HTMLElement} element - Element being hovered over
+ * @param {MouseEvent} event - Mouse event
+ * @param {string} fullText - Full text of element
+ * @param {number} wordsLeft - Number of words to extract on the left side
+ * @param {number} wordsRight - Number of words to extract on the right side
+ * @returns {string} Extracted text
+ */
+function extractFieldAware(element, event, fullText, wordsLeft, wordsRight) {
+  // Determine which field is being filled based on currentTrackedFieldId
+  const fieldId = currentTrackedFieldId;
+
+  // Use field-specific extraction logic
+  if (fieldId === 'manualPay') {
+    return extractPayAmount(element, fullText) || extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
+  } else if (fieldId === 'manualCompensation') {
+    return extractCompensationRange(element, fullText) || extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
+  } else if (fieldId === 'manualLocation') {
+    return extractLocation(element, fullText) || extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
+  } else if (fieldId === 'manualJobTitle') {
+    return extractJobTitle(element) || extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
+  } else if (fieldId === 'manualCompany') {
+    return extractCompanyName(element) || extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
+  } else if (fieldId === 'manualNotes') {
+    return extractLargeTextBlock(element) || fullText;
+  }
+
+  // Default: use standard word extraction
+  return extractNearestWords(fullText, event, element, wordsLeft, wordsRight);
+}
+
+/**
+ * Extract words nearest to the cursor position
+ * @param {string} text - Full text content
+ * @param {MouseEvent} event - Mouse event for cursor position
+ * @param {HTMLElement} element - Element containing the text
+ * @param {number} wordsPerSide - Number of words on each side of cursor
+ * @returns {string} Nearest words
+ */
+function extractNearestWords(text, event, element, wordsLeft = 1, wordsRight = 1) {
+  if (!text) return '';
+
+  // Split text into words by whitespace, slashes, and em/en-dashes
+  // Note: Regular hyphens (-) are preserved to keep hyphenated words like "water-soaked" intact
+  const words = text.split(/[\s\/—–]+/).filter(w => w.trim());
+
+  if (words.length === 0) return '';
+  if (words.length === 1) return words[0];
+
+  // Try to find the word under cursor using Range API
+  const range = document.caretRangeFromPoint(event.clientX, event.clientY);
+  if (!range) {
+    console.log('[Extract] caretRangeFromPoint returned null - using fallback');
+    // Fallback: return first N words
+    const totalWords = wordsLeft + wordsRight + 1;
+    return words.slice(0, totalWords).join(' ');
+  }
+
+  // Get approximate position in text
+  const textNode = range.startContainer;
+  if (textNode.nodeType !== Node.TEXT_NODE) {
+    console.log('[Extract] Range not in text node, nodeType:', textNode.nodeType);
+    const totalWords = wordsLeft + wordsRight + 1;
+    return words.slice(0, totalWords).join(' ');
+  }
+
+  const offset = range.startOffset;
+  console.log('[Extract] Found text node:', textNode.nodeValue?.substring(0, 50), 'offset:', offset);
+
+  // Find the exact character range in the RAW text node for the extracted words
+  // We need to map from cursor position → word boundaries in RAW text
+  const rawText = textNode.nodeValue || '';
+
+  // Split into words while tracking their positions in the raw text
+  const wordBoundaries = [];
+  const wordRegex = /[\s\/—–]+/g;
+  let lastIndex = 0;
+  let match;
+
+  // Find each word and its position in the raw text
+  while ((match = wordRegex.exec(rawText)) !== null) {
+    if (match.index > lastIndex) {
+      wordBoundaries.push({
+        word: rawText.substring(lastIndex, match.index),
+        start: lastIndex,
+        end: match.index
+      });
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  // Add final word after last separator
+  if (lastIndex < rawText.length) {
+    wordBoundaries.push({
+      word: rawText.substring(lastIndex),
+      start: lastIndex,
+      end: rawText.length
+    });
+  }
+
+  // Find which word contains the offset
+  let targetWordIndex = 0;
+  for (let i = 0; i < wordBoundaries.length; i++) {
+    if (offset >= wordBoundaries[i].start && offset <= wordBoundaries[i].end) {
+      targetWordIndex = i;
+      break;
+    }
+  }
+
+  // Get words around the target
+  const startWordIndex = Math.max(0, targetWordIndex - wordsLeft);
+  const endWordIndex = Math.min(wordBoundaries.length, targetWordIndex + wordsRight + 1);
+
+  if (wordBoundaries.length === 0) {
+    return words.slice(0, wordsLeft + wordsRight + 1).join(' ');
+  }
+
+  // Calculate exact character range in raw text
+  const rangeStart = wordBoundaries[startWordIndex].start;
+  const rangeEnd = wordBoundaries[endWordIndex - 1].end;
+  const extractedRawText = rawText.substring(rangeStart, rangeEnd);
+
+  return {
+    text: extractedRawText.trim(),
+    sourceNode: textNode,
+    sourceOffset: rangeStart,  // Start of the range
+    sourceOffsetEnd: rangeEnd  // End of the range
+  };
+}
+
+/**
+ * Extract characters nearest to the cursor position
+ * @param {string} text - Full text content
+ * @param {MouseEvent} event - Mouse event for cursor position
+ * @param {HTMLElement} element - Element containing the text
+ * @param {number} charsLeft - Number of characters on the left side (0 = single char under cursor)
+ * @param {number} charsRight - Number of characters on the right side (0 = single char under cursor)
+ * @returns {string} Nearest characters
+ */
+function extractNearestChars(text, event, element, charsLeft = 1, charsRight = 1) {
+  if (!text) return '';
+
+  // Try to find the position under cursor using Range API
+  const range = document.caretRangeFromPoint(event.clientX, event.clientY);
+  if (!range) {
+    // Fallback: return first N characters
+    if (charsLeft === 0 && charsRight === 0) return text.charAt(0);
+    const totalChars = charsLeft + charsRight + 1;
+    return text.substring(0, totalChars);
+  }
+
+  // Get approximate position in text
+  const textNode = range.startContainer;
+  if (textNode.nodeType !== Node.TEXT_NODE) {
+    if (charsLeft === 0 && charsRight === 0) return text.charAt(0);
+    const totalChars = charsLeft + charsRight + 1;
+    return text.substring(0, totalChars);
+  }
+
+  const offset = range.startOffset;
+
+  // Calculate the actual position by walking through all text nodes before the cursor
+  let targetPosition = 0;
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  let currentNode;
+  while (currentNode = walker.nextNode()) {
+    if (currentNode === textNode) {
+      targetPosition += offset;
+      break;
+    }
+    targetPosition += currentNode.textContent.length;
+  }
+
+  if (targetPosition < 0 || targetPosition >= text.length) {
+    if (charsLeft === 0 && charsRight === 0) return text.charAt(0);
+    const totalChars = charsLeft + charsRight + 1;
+    return text.substring(0, totalChars);
+  }
+
+  // Extract characters around the target position in RAW text node
+  const rawText = textNode.nodeValue || '';
+  const startIndex = Math.max(0, offset - charsLeft);
+  const endIndex = Math.min(rawText.length, offset + charsRight + 1);
+
+  return {
+    text: rawText.substring(startIndex, endIndex),
+    sourceNode: textNode,
+    sourceOffset: startIndex,
+    sourceOffsetEnd: endIndex
+  };
+}
+
+// ============ FIELD-SPECIFIC INTELLIGENT EXTRACTORS ============
+
+/**
+ * Extract pay amount (single number with optional currency)
+ * Looks for patterns like: $75, $75.00, 75/hour, etc.
+ * @param {HTMLElement} element - Element being hovered
+ * @param {string} text - Text content
+ * @returns {string|null} Extracted pay amount or null
+ */
+function extractPayAmount(element, text) {
+  // Look for currency amounts: $XX, $XX.XX, XXk, XX/hour, etc.
+  // Order matters: more specific patterns first
+  const patterns = [
+    /\$\s*\d+\s*k\b/i, // $70k (must come before dollar amounts to catch k notation)
+    /\$\s*\d+(?:,\d{3})*(?:\.\d+)?\s*\/\s*(?:hour|hr|h)\b/i, // $75.00/hour
+    /\$\s*\d+(?:,\d{3})*(?:\.\d+)?/i, // $75.00 or $75,000
+    /\d+(?:,\d{3})*(?:\.\d+)?\s*(?:USD|dollars?)/i, // 75 USD
+    /\d+\s*k\b/i, // 75k
+    /\d+(?:\.\d+)?\s*\/\s*(?:hour|hr|h)\b/i // 75/hour
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      // Return the full matched text with context
+      return match[0].trim();
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract compensation range (salary range with optional benefits)
+ * Looks for patterns like: $65-$75/hour, $100k-$120k, etc.
+ * @param {HTMLElement} element - Element being hovered
+ * @param {string} text - Text content
+ * @returns {string|null} Extracted compensation or null
+ */
+function extractCompensationRange(element, text) {
+  // Look for salary ranges (must contain a dash/range indicator)
+  // Order matters: more specific patterns first
+  const rangePatterns = [
+    /\$\s*\d+\s*k\s*[-–—]\s*\$?\s*\d+\s*k\s*(?:(?:\/|per)\s*(?:hour|hr|year|yr|annually))?/i, // $50k-$60k per year
+    /\d+k\s*[-–—]\s*\d+k/i, // 100k-120k
+    /\$\s*\d+(?:,\d{3})*(?:\.\d+)?\s*[-–—]\s*\$?\s*\d+(?:,\d{3})*(?:\.\d+)?\s*(?:(?:\/|per)\s*(?:hour|hr|year|yr|annually))?/i // $65-$75/hour
+  ];
+
+  for (const pattern of rangePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      return match[0].trim();
+    }
+  }
+
+  // Fallback: try single pay amount
+  return extractPayAmount(element, text);
+}
+
+/**
+ * Extract location (city, state, or remote)
+ * Looks for US state abbreviations, city names, or "Remote"
+ * @param {HTMLElement} element - Element being hovered
+ * @param {string} text - Text content
+ * @returns {string|null} Extracted location or null
+ */
+function extractLocation(element, text) {
+  // Check for special location keywords first (hard-coded as valid locations)
+  // These take priority over other patterns to avoid misinterpretation
+  // Priority order matters: more specific patterns first
+
+  // Check for "Multiple Locations" and variations FIRST
+  // (before Remote, as "Multiple Locations (Remote available)" should return "Multiple Locations")
+  if (/\bmultiple\s+locations?\b/i.test(text)) {
+    return 'Multiple Locations';
+  }
+
+  // Check for "Various Locations"
+  if (/\bvarious\s+locations?\b/i.test(text)) {
+    return 'Multiple Locations';
+  }
+
+  // Check for "Remote" (very common and distinctive)
+  if (/\bremote\b/i.test(text)) {
+    return 'Remote';
+  }
+
+  // Check for "Hybrid"
+  if (/\bhybrid\b/i.test(text)) {
+    return 'Hybrid';
+  }
+
+  // Check for "Nationwide"
+  if (/\bnationwide\b/i.test(text)) {
+    return 'Nationwide';
+  }
+
+  // Check for "On-site" or "Onsite"
+  if (/\bon-?site\b/i.test(text)) {
+    return 'On-site';
+  }
+
+  // Common state abbreviations (defensive - validates actual states)
+  const validStates = [
+    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+    'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+    'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+    'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+    'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
+  ];
+
+  // Try to match "City, STATE" format first (most complete)
+  const cityStatePattern = /([A-Za-z][A-Za-z\s\.'-]+),\s*([A-Z]{2})\b/;
+  const cityStateMatch = text.match(cityStatePattern);
+  if (cityStateMatch && validStates.includes(cityStateMatch[2])) {
+    return cityStateMatch[0].trim(); // Return "City, STATE"
+  }
+
+  // Try to match just state abbreviation
+  const statePattern = /\b([A-Z]{2})\b/;
+  const stateMatch = text.match(statePattern);
+  if (stateMatch && validStates.includes(stateMatch[1])) {
+    return stateMatch[1]; // Return just "STATE"
+  }
+
+  // Try to match "City, State Name" (full state name)
+  const fullStateNames = {
+    'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR',
+    'California': 'CA', 'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE',
+    'Florida': 'FL', 'Georgia': 'GA', 'Hawaii': 'HI', 'Idaho': 'ID',
+    'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
+    'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+    'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS',
+    'Missouri': 'MO', 'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV',
+    'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY',
+    'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH', 'Oklahoma': 'OK',
+    'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+    'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT',
+    'Vermont': 'VT', 'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV',
+    'Wisconsin': 'WI', 'Wyoming': 'WY'
+  };
+
+  for (const [stateName, abbrev] of Object.entries(fullStateNames)) {
+    if (text.includes(stateName)) {
+      // Try to extract city if present
+      const cityFullStatePattern = new RegExp(`([A-Za-z][A-Za-z\\s\\.'-]+),\\s*${stateName}`, 'i');
+      const cityFullStateMatch = text.match(cityFullStatePattern);
+      if (cityFullStateMatch) {
+        return `${cityFullStateMatch[1].trim()}, ${abbrev}`;
+      }
+      return abbrev; // Just return state abbreviation
+    }
+  }
+
+  // Defensive fallback: if nothing matched, return null
+  // The system will fall back to word extraction around mouse cursor
+  return null;
+}
+
+/**
+ * Extract job title (typically header text, bold, or prominently displayed)
+ * Looks for h1-h3 headers or bold text near top of page
+ * @param {HTMLElement} element - Element being hovered
+ * @returns {string|null} Extracted job title or null
+ */
+function extractJobTitle(element) {
+  // Guard against null/undefined element
+  if (!element) return null;
+
+  // Check for data attributes first (most reliable)
+  const dataAttrs = ['data-job-title', 'data-title', 'data-position'];
+  for (const attr of dataAttrs) {
+    const value = element.getAttribute(attr);
+    if (value && value.trim()) {
+      return cleanText(value);
+    }
+  }
+
+  // Check if element itself is a header
+  if (['H1', 'H2', 'H3'].includes(element.tagName)) {
+    const text = cleanText(element.textContent);
+    const wordCount = text.split(/\s+/).length;
+    // Headers should be reasonable length for a title
+    if (wordCount >= 2 && wordCount <= 10) {
+      return text;
+    }
+  }
+
+  // Check semantic HTML structure (e.g., article > h1, main > h1)
+  const semanticParent = element.closest('article, main, [role="main"]');
+  if (semanticParent) {
+    const headerInParent = semanticParent.querySelector('h1, h2, .job-title, [data-job-title]');
+    if (headerInParent && headerInParent.textContent) {
+      const text = cleanText(headerInParent.textContent);
+      const wordCount = text.split(/\s+/).length;
+      if (wordCount >= 2 && wordCount <= 10) {
+        return text;
+      }
+    }
+  }
+
+  // Check if element is in top 25% of page (titles usually at top)
+  const viewportHeight = window.innerHeight;
+  const rect = element.getBoundingClientRect();
+  const isNearTop = rect.top < viewportHeight * 0.25;
+
+  // Check if element has bold/strong styling
+  const style = window.getComputedStyle(element);
+  const isBold = style.fontWeight === 'bold' || parseInt(style.fontWeight) >= 600;
+  const isLarge = parseInt(style.fontSize) >= 18;
+
+  if (isBold && isLarge && isNearTop) {
+    const text = cleanText(element.textContent);
+    const wordCount = text.split(/\s+/).length;
+    // Job titles are usually 2-8 words
+    if (wordCount >= 2 && wordCount <= 8) {
+      return text;
+    }
+  }
+
+  // Look for nearby header with common class names
+  const nearbyHeader = element.closest('header, [role="heading"], .job-title, .title, .position, .job-header');
+  if (nearbyHeader) {
+    const headerText = cleanText(nearbyHeader.textContent);
+    const wordCount = headerText.split(/\s+/).length;
+    if (wordCount >= 2 && wordCount <= 8) {
+      return headerText;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract company name (typically bold organization name)
+ * Looks for bold text, links, or elements with company-related classes
+ * @param {HTMLElement} element - Element being hovered
+ * @returns {string|null} Extracted company name or null
+ */
+function extractCompanyName(element) {
+  // Guard against null/undefined element
+  if (!element) return null;
+
+  const text = cleanText(element.textContent || '');
+
+  // Return null if text is empty after cleaning
+  if (!text) return null;
+
+  // Filter out department names to prevent misinterpretation
+  // Department names are not company names
+  // Be careful: "Department Store Inc" is a valid company, but "Department of Engineering" is not
+  const departmentPatterns = [
+    /^department\s+(of|for|:|at)\b/i,    // "Department of/for/:/at..." but NOT "Department Store"
+    /^(engineering|sales|marketing|hr|finance|it|operations|legal)\s+department/i,  // "Engineering Department"
+    /\bdepartment\s*:\s*(?!store)/i,     // "Department:" label (not "Department: Store")
+    /^dept\.?\s+(?!store)/i,             // "Dept." or "Dept" (not "Dept. Store")
+    /\b(team|division|group|unit)\s*:/i  // "Team:", "Division:", etc.
+  ];
+
+  for (const pattern of departmentPatterns) {
+    if (pattern.test(text)) {
+      return null; // This is a department, not a company
+    }
+  }
+
+  // Check for corporate suffixes (strong indicator of company name)
+  // Must be at the end of the text to avoid false positives
+  // Also filter out generic words like "a Company" or "the Corporation"
+  const corporateSuffixes = /\b(Inc\.?|LLC|Corp\.?|Corporation|Ltd\.?|Limited|Co\.?|Company|LP|LLP|PC|PLC|GmbH|SA|AG)\.?$/i;
+  if (corporateSuffixes.test(text)) {
+    const wordCount = text.split(/\s+/).length;
+    // Company names with suffixes are usually 2-6 words
+    // Reject if it starts with articles or common sentence starters
+    const startsWithArticle = /^(this|that|these|those|the|a|an)\s+/i.test(text);
+    if (wordCount >= 1 && wordCount <= 6 && !startsWithArticle) {
+      return text;
+    }
+  }
+
+  // Check for all-caps company names (common in headers)
+  const words = text.split(/\s+/);
+  const allCapsWords = words.filter(w => w === w.toUpperCase() && w.length > 1 && /[A-Z]/.test(w));
+  if (allCapsWords.length >= 1 && allCapsWords.length <= 4) {
+    // If most/all words are caps, likely a company name
+    if (allCapsWords.length / words.length > 0.5) {
+      return allCapsWords.join(' ');
+    }
+  }
+
+  // Check if element has company-related class or id
+  const companyClasses = ['company', 'employer', 'organization', 'org-name', 'org', 'business'];
+  const elementClasses = (element.className || '').toLowerCase();
+  const elementId = (element.id || '').toLowerCase();
+
+  for (const cls of companyClasses) {
+    if ((elementClasses && elementClasses.includes(cls)) || (elementId && elementId.includes(cls))) {
+      const wordCount = text.split(/\s+/).length;
+      if (wordCount >= 1 && wordCount <= 5) {
+        return text;
+      }
+    }
+  }
+
+  // Check if element is a link (companies often link to their pages)
+  if (element.tagName === 'A') {
+    const wordCount = text.split(/\s+/).length;
+    // Company names are usually 1-5 words
+    if (wordCount >= 1 && wordCount <= 5) {
+      return text;
+    }
+  }
+
+  // Check for bold styling
+  const style = window.getComputedStyle(element);
+  const isBold = style.fontWeight === 'bold' || parseInt(style.fontWeight) >= 600;
+
+  if (isBold) {
+    const wordCount = text.split(/\s+/).length;
+    if (wordCount >= 1 && wordCount <= 5) {
+      return text;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract large text block (for job description/notes)
+ * Prefers the largest continuous text block near the cursor
+ * @param {HTMLElement} element - Element being hovered
+ * @returns {string|null} Extracted text block or null
+ */
+function extractLargeTextBlock(element) {
+  // Guard against null/undefined element
+  if (!element) return null;
+
+  // Check if element is in a navigation, footer, or sidebar (skip these)
+  const excludedTags = ['NAV', 'FOOTER', 'ASIDE', 'HEADER'];
+  const excludedRoles = ['navigation', 'banner', 'contentinfo', 'complementary'];
+  const excludedClasses = [
+    'nav', 'navigation', 'footer', 'sidebar', 'side-bar', 'menu', 'header-',
+    'related-jobs', 'similar-jobs', 'job-list', 'job-card',
+    'company-info', 'company-about', 'about-company',
+    'apply-button', 'apply-now', 'application-form',
+    'breadcrumb', 'pagination',
+    'advertisement', 'ad-', 'promo'
+  ];
+
+  // Check for sidebar-specific content patterns in text
+  const text = cleanText(element.textContent || '');
+  const sidebarContentPatterns = [
+    /^about\s+(this\s+)?company/i,       // "About this company" / "About the company"
+    /^how\s+to\s+apply/i,                 // "How to apply"
+    /^apply\s+now/i,                      // "Apply now"
+    /^related\s+jobs?/i,                  // "Related jobs"
+    /^similar\s+(jobs?|positions?)/i,    // "Similar jobs" / "Similar positions"
+    /^recommended\s+jobs?/i,              // "Recommended jobs"
+    /^you\s+might\s+also\s+like/i,       // "You might also like"
+    /^other\s+jobs?\s+(at|from)/i,       // "Other jobs at..." / "Other jobs from..."
+    /^share\s+this\s+job/i,              // "Share this job"
+    /^save\s+this\s+job/i,               // "Save this job"
+    /^report\s+this\s+job/i,             // "Report this job"
+    /^company\s+overview/i,               // "Company overview"
+    /^company\s+culture/i,                // "Company culture"
+    /^company\s+benefits/i,               // "Company benefits"
+    /^why\s+work\s+(here|at)/i           // "Why work here" / "Why work at..."
+  ];
+
+  for (const pattern of sidebarContentPatterns) {
+    if (pattern.test(text)) {
+      return null; // This is sidebar content, not job description
+    }
+  }
+
+  let current = element;
+  while (current) {
+    // Check tag name
+    if (excludedTags.includes(current.tagName)) {
+      return null; // Don't extract from these areas
+    }
+
+    // Check ARIA role
+    const role = current.getAttribute('role');
+    if (role && excludedRoles.includes(role)) {
+      return null;
+    }
+
+    // Check class names
+    const className = (current.className || '').toLowerCase();
+    if (excludedClasses.some(cls => className.includes(cls))) {
+      return null;
+    }
+
+    // Check for data attributes that indicate sidebar/auxiliary content
+    const dataType = current.getAttribute('data-type');
+    const dataSection = current.getAttribute('data-section');
+    if (dataType === 'sidebar' || dataType === 'related' ||
+        dataSection === 'sidebar' || dataSection === 'recommended') {
+      return null;
+    }
+
+    current = current.parentElement;
+  }
+
+  // Look for semantic main content areas first
+  const mainContent = element.closest('main, article, [role="main"], .job-description, .description, .content, .main-content');
+  if (mainContent) {
+    const text = cleanText(mainContent.textContent);
+    // Prefer main content if it's a reasonable size
+    if (text.length >= 100 && text.length <= 5000) {
+      return text;
+    }
+  }
+
+  // Look for paragraph containers
+  const paragraphParent = element.closest('div.description, div.job-description, section, .text-content');
+  if (paragraphParent) {
+    const text = cleanText(paragraphParent.textContent);
+    if (text.length >= 50 && text.length <= 5000) {
+      return text;
+    }
+  }
+
+  // Walk up the DOM tree to find the largest reasonable text block
+  let targetElement = element;
+  let maxLength = cleanText(element.textContent).length;
+  current = element.parentElement;
+  let depth = 0;
+  const MAX_DEPTH = 5;
+
+  while (current && depth < MAX_DEPTH) {
+    const text = cleanText(current.textContent);
+
+    // Don't select the entire page
+    if (text.length > 5000) {
+      break;
+    }
+
+    // Skip elements that are likely containers
+    if (current.tagName === 'BODY' || current.tagName === 'HTML') {
+      break;
+    }
+
+    // Prefer larger blocks - use 1.05x threshold to catch sibling paragraphs
+    // This allows extraction of multi-element descriptions where paragraphs
+    // might be very different sizes (e.g., long intro + short addendum)
+    if (text.length > maxLength * 1.05) {
+      targetElement = current;
+      maxLength = text.length;
+    }
+
+    current = current.parentElement;
+    depth++;
+  }
+
+  const finalText = cleanText(targetElement.textContent);
+
+  // Only return if it's a substantial block
+  if (finalText.length >= 50 && finalText.length <= 5000) {
+    return finalText;
+  }
+
+  return null;
+}
+
+// ============================================================================
+// TEXT HIGHLIGHTING SYSTEM
+// ============================================================================
+//
+// PURPOSE:
+// Provides visual feedback showing which text is being extracted and mirrored.
+// Two-level system: element outline + specific text highlighting.
+//
+// CORE ALGORITHM:
+// 1. Find ALL occurrences of the extracted text in the element
+// 2. Get screen position of each occurrence using Range.getClientRects()
+// 3. Calculate Euclidean distance from mouse to each occurrence
+// 4. Highlight the closest one (with hysteresis to prevent jitter)
+//
+// KEY CHALLENGES SOLVED:
+// - DOM fragmentation: normalize() after every update prevents text node accumulation
+// - Stale references: clean DOM before searching prevents detached node failures
+// - Wrapped text: use closest rectangle when text spans multiple lines
+// - Jitter: hysteresis keeps current highlight unless new one is significantly better
+// - Whitespace: cleanText() normalization ensures consistent matching
+// - Mouse interference: pointer-events: none on marks prevents highlight/element flickering
+//
+// PERFORMANCE:
+// - Runs on every mousemove event (high frequency)
+// - Must be efficient to avoid lag
+// - Early exits and DOM cleaning are critical
+//
+// ============================================================================
+
+/**
+ * Highlight an element with both an outline and specific text highlighting.
+ * This is the main entry point for visual feedback during mouse tracking.
+ *
+ * TWO-LEVEL HIGHLIGHTING:
+ * 1. Element-level: Colored outline around the entire element
+ * 2. Text-level: <mark> tag highlighting the specific extracted text within the element
+ *
+ * @param {HTMLElement} element - Element to highlight
+ * @param {string} extractedText - The extracted text to highlight within the element (null for outline only)
+ * @param {MouseEvent} mouseEvent - Mouse event for cursor position (used by position-based highlighting)
+ */
+function highlightElement(element, extractedText = null, mouseEvent = null, sourceNode = null, sourceOffset = null, sourceOffsetEnd = null) {
+  // Early exit: if already highlighting the same element with the same text, do nothing
+  // This prevents unnecessary DOM manipulation and improves performance
+  if (lastHighlightedElement === element && lastHighlightedText === extractedText) return;
+
+  // Remove previous highlight from different element (if any)
+  removeHighlight();
+
+  // Get mode-specific colors (green=words, blue=smart, purple=chars)
+  const colors = getModeColors(currentModifierMode);
+
+  // Apply element-level outline - always shown for any hovered element
+  element.style.outline = `3px solid ${colors.solid}`;
+  element.style.outlineOffset = '2px';
+  element.style.backgroundColor = colors.transparent;
+
+  // Track what we're currently highlighting
+  lastHighlightedElement = element;
+  lastHighlightedText = extractedText;
+
+  // Apply text-level highlighting if we have extracted text
+  // In smart mode, extractedText may be null if element doesn't contain the extracted text
+  if (extractedText && extractedText.trim()) {
+    try {
+      highlightTextInElement(element, extractedText.trim(), mouseEvent || lastMouseEvent, sourceNode, sourceOffset, sourceOffsetEnd);
+    } catch (error) {
+      console.error('[MouseTracking] Error highlighting text:', error);
+      // Fail gracefully - element outline will still be visible
+    }
+  }
+}
+
+/**
+ * Create a text highlight overlay showing the extracted text
+ * @param {HTMLElement} element - Element containing the text
+ * @param {string} text - The extracted text to highlight
+ */
+function createTextHighlight(element, text) {
+  // Try to find and highlight the exact text within the element
+  const elementText = element.textContent || '';
+  const trimmedText = text.trim();
+
+  if (!elementText.includes(trimmedText)) {
+    // Text not found exactly, skip text-level highlighting
+    return;
+  }
+
+  // Find text position
+  const textIndex = elementText.indexOf(trimmedText);
+  if (textIndex === -1) return;
+
+  // Create highlight mark element
+  try {
+    // Find text nodes and apply highlighting
+    highlightTextInElement(element, trimmedText);
+  } catch (error) {
+    console.error('[MouseTracking] Error creating text highlight:', error);
+  }
+}
+
+/**
+ * Highlight specific text within an element by wrapping it in a <mark> tag.
+ *
+ * ALGORITHM: Screen Coordinate Distance-Based Highlighting
+ * 1. Find ALL occurrences of searchText within element's text nodes
+ * 2. For each occurrence, get its actual screen position using Range.getClientRects()
+ * 3. Calculate Euclidean distance from mouse cursor to each occurrence
+ * 4. Highlight the occurrence closest to the mouse
+ *
+ * CRITICAL DESIGN DECISIONS:
+ * - Uses browser's layout engine (Range.getClientRects) for accurate positioning
+ * - Handles wrapped text by finding closest rectangle when text spans multiple lines
+ * - Prevents DOM fragmentation via normalize() after each update
+ * - Implements hysteresis to avoid jitter when many identical matches are close together
+ * - Works with cleaned (whitespace-normalized) text for consistent matching
+ *
+ * WHY THIS APPROACH:
+ * - Previous "mouse buffer" approach failed because text positions are unreliable in complex layouts
+ * - Screen coordinates are the ground truth - they reflect actual rendered positions
+ * - Prevents highlighting wrong occurrence when text repeats (e.g., common words like "and")
+ *
+ * @param {HTMLElement} element - Element containing the text to highlight
+ * @param {string} searchText - Text to highlight (will be cleaned/normalized)
+ * @param {MouseEvent} mouseEvent - Mouse event for cursor position (null for fallback to first occurrence)
+ */
+function highlightTextInElement(element, searchText, mouseEvent, sourceNode = null, sourceOffset = null, sourceOffsetEnd = null) {
+  // STEP 1: Verify the search text actually exists in this element
+  // This is crucial for smart mode which may extract text from parent/sibling elements
+  // We clone and clean to avoid false negatives from existing highlights or whitespace differences
+  const clone = element.cloneNode(true);
+  const marks = clone.querySelectorAll('mark.jobsprint-text-highlight');
+  marks.forEach(mark => {
+    const textContent = document.createTextNode(mark.textContent);
+    mark.parentNode.replaceChild(textContent, mark);
+  });
+  const elementText = cleanText(clone.textContent || '');
+  const cleanedSearchText = cleanText(searchText);
+
+  if (!elementText.includes(cleanedSearchText)) {
+    // Text not in this element - only show outline, no text highlight
+    // This is normal for smart mode which extracts from broader context
+    console.log('[Highlight] Text not found in element. Searched for:', cleanedSearchText.substring(0, 30));
+    lastHighlightPosition = null;
+    return;
+  }
+
+  console.log('[Highlight] Highlighting text:', cleanedSearchText.substring(0, 30), 'in element:', element.tagName, element.className);
+
+  // STEP 2: Get mode-specific colors for the highlight
+  const colors = getModeColors(currentModifierMode);
+  const highlightColor = colors.solid;
+  const bgColor = hexToRgba(highlightColor, 0.5);
+  const shadowColor = hexToRgba(highlightColor, 0.25);
+
+  // STEP 3: Handle edge case - no mouse event available (shouldn't happen in normal usage)
+  if (!mouseEvent) {
+    // Fallback: highlight first occurrence without position-based selection
+    const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
+    existingHighlights.forEach(mark => {
+      const text = mark.textContent;
+      const textNode = document.createTextNode(text);
+      mark.parentNode.replaceChild(textNode, mark);
+    });
+    element.normalize(); // Prevent fragmentation even in fallback path
+    highlightFirstOccurrence(element, cleanedSearchText, elementText, bgColor, shadowColor);
+    lastHighlightPosition = null;
+    return;
+  }
+
+  const mouseX = mouseEvent.clientX;
+  const mouseY = mouseEvent.clientY;
+
+  // FAST PATH: If we have exact source node + offset range, highlight directly at that exact range
+  if (sourceNode && sourceOffset !== null && sourceOffsetEnd !== null && sourceNode.nodeType === Node.TEXT_NODE) {
+    console.log('[Highlight] Using EXACT range highlighting from', sourceOffset, 'to', sourceOffsetEnd);
+
+    // Remove existing highlights
+    const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
+    existingHighlights.forEach(mark => {
+      const text = mark.textContent;
+      const textNode = document.createTextNode(text);
+      mark.parentNode.replaceChild(textNode, mark);
+    });
+    // DON'T normalize() yet - it would destroy sourceNode reference!
+
+    // Verify sourceNode is still in the DOM
+    if (!sourceNode.parentNode) {
+      console.log('[Highlight] Source node no longer in DOM, falling back to search');
+      // Fall through to normal search path below
+    } else {
+      // Highlight the EXACT range - no searching needed!
+      const nodeText = sourceNode.nodeValue || '';
+      const actualText = nodeText.substring(sourceOffset, sourceOffsetEnd);
+
+      console.log('[Highlight] Highlighting exact text:', actualText.substring(0, 30));
+
+      // Create highlight at this exact position
+      const before = nodeText.substring(0, sourceOffset);
+      const after = nodeText.substring(sourceOffsetEnd);
+
+      const fragment = document.createDocumentFragment();
+      if (before) fragment.appendChild(document.createTextNode(before));
+
+      const mark = document.createElement('mark');
+      mark.className = 'jobsprint-text-highlight';
+      mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
+      mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
+      mark.textContent = actualText;
+      fragment.appendChild(mark);
+
+      if (after) fragment.appendChild(document.createTextNode(after));
+
+      sourceNode.parentNode.replaceChild(fragment, sourceNode);
+      lastHighlightPosition = { x: mouseX, y: mouseY, text: actualText };
+      return;
+    }
+  }
+
+  // STEP 4: Clean the DOM before searching
+  // CRITICAL: Remove existing highlights first to prevent stale node references
+  // When we later modify nodes, having old references causes failures
+  const existingHighlights = element.querySelectorAll('mark.jobsprint-text-highlight');
+  existingHighlights.forEach(mark => {
+    const text = mark.textContent;
+    const textNode = document.createTextNode(text);
+    mark.parentNode.replaceChild(textNode, mark);
+  });
+
+  // CRITICAL: Normalize to prevent DOM fragmentation
+  // Each highlight splits a text node into 3 parts: [before, <mark>, after]
+  // After many mousemoves (50-100), element has hundreds of tiny text nodes
+  // normalize() merges adjacent text nodes back together, keeping DOM healthy
+  // WITHOUT THIS: highlighting degrades after ~5 seconds and eventually fails completely
+  element.normalize();
+
+  // STEP 5: Build regex pattern for finding all occurrences
+  // Must escape special regex characters and allow flexible whitespace matching
+  const escapedText = cleanedSearchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const patternText = escapedText.replace(/\s+/g, '\\s+'); // Match any whitespace sequence
+  const regex = new RegExp(patternText, 'g'); // Global flag to find ALL matches
+
+  // STEP 6: Find ALL occurrences of the search text in the element
+  // Use TreeWalker to traverse all text nodes efficiently
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+  let candidates = [];  // Use 'let' so we can filter to source node candidates later
+  let node;
+
+  while (node = walker.nextNode()) {
+    const nodeText = node.nodeValue || '';
+    regex.lastIndex = 0; // MUST reset regex for global flag to work correctly
+    let match;
+
+    while ((match = regex.exec(nodeText)) !== null) {
+      // Found a match - now calculate its distance from the mouse cursor
+
+      // Create a Range covering exactly this match
+      const range = document.createRange();
+      range.setStart(node, match.index);
+      range.setEnd(node, match.index + match[0].length);
+
+      // Get screen rectangles for this range
+      // NOTE: Can be multiple rects if text wraps across lines or is split by inline elements
+      const rects = range.getClientRects();
+      if (rects.length > 0) {
+        // CRITICAL: For wrapped text, use the rectangle closest to the mouse
+        // Example: "very long text that wraps" has 2 rects if it spans 2 lines
+        // We want distance to the part the mouse is actually near
+        // WITHOUT THIS: highlights jump to wrong line of wrapped text
+        let closestRect = rects[0];
+        let minRectDistance = Infinity;
+
+        for (let i = 0; i < rects.length; i++) {
+          const rect = rects[i];
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const rectDistance = Math.sqrt(
+            Math.pow(mouseX - centerX, 2) +
+            Math.pow(mouseY - centerY, 2)
+          );
+
+          if (rectDistance < minRectDistance) {
+            minRectDistance = rectDistance;
+            closestRect = rect;
+          }
+        }
+
+        // Calculate final distance using the closest rectangle
+        const centerX = closestRect.left + closestRect.width / 2;
+        const centerY = closestRect.top + closestRect.height / 2;
+        const distance = Math.sqrt(
+          Math.pow(mouseX - centerX, 2) +
+          Math.pow(mouseY - centerY, 2)
+        );
+
+        // Store this candidate with all info needed for highlighting
+        candidates.push({
+          node,              // Text node containing this match
+          matchIndex: match.index,  // Character offset within the node
+          matchText: match[0],      // Actual matched text (may differ in whitespace)
+          distance,          // Distance from mouse to this occurrence
+          centerX,           // Screen X coordinate (for hysteresis)
+          centerY            // Screen Y coordinate (for hysteresis)
+        });
+      }
+    }
+  }
+
+  // STEP 7: Handle edge case - no matches found
+  if (candidates.length === 0) {
+    console.log('[Highlight] No text candidates found');
+    lastHighlightPosition = null;
+    return;
+  }
+
+  console.log('[Highlight] Found', candidates.length, 'candidates, Mouse at:', mouseX.toFixed(0), mouseY.toFixed(0));
+
+  // STEP 8: Select the occurrence closest to the mouse cursor
+  // PRIORITY: If we have a sourceNode from extraction, strongly prefer candidates from that node
+  if (sourceNode) {
+    const sourceNodeCandidates = candidates.filter(c => c.node === sourceNode);
+    if (sourceNodeCandidates.length > 0) {
+      console.log('[Highlight] Found', sourceNodeCandidates.length, 'candidates in source node - prioritizing, sourceOffset:', sourceOffset);
+      candidates = sourceNodeCandidates;
+
+      // SUPER PRIORITY: If we have the exact offset, use only candidates at/near that offset
+      if (sourceOffset !== null && candidates.length > 1) {
+        console.log('[Highlight] Filtering by offset', sourceOffset, '. Candidates at:', candidates.map(c => c.matchIndex).join(', '));
+        const offsetCandidates = candidates.filter(c =>
+          Math.abs(c.matchIndex - sourceOffset) < searchText.length + 5
+        );
+        if (offsetCandidates.length > 0) {
+          console.log('[Highlight] Found', offsetCandidates.length, 'candidates near source offset', sourceOffset);
+          candidates = offsetCandidates;
+        } else {
+          console.log('[Highlight] No candidates near offset', sourceOffset, '- keeping all', candidates.length, 'candidates');
+        }
+      }
+    }
+  }
+
+  candidates.sort((a, b) => a.distance - b.distance);
+  let best = candidates[0];
+  console.log('[Highlight] Best candidate at:', best.centerX.toFixed(0), best.centerY.toFixed(0), 'distance:', best.distance.toFixed(1), 'px, text:', best.matchText.substring(0, 20));
+
+  // STEP 9: Apply hysteresis to prevent jitter
+  // PROBLEM: In char mode, there are often many identical characters very close together
+  //          (e.g., the letter 'e' appears every few pixels in dense text)
+  //          Tiny mouse movements cause highlights to jump between nearby matches
+  // SOLUTION: If the last highlighted position is still a reasonable candidate,
+  //           only switch to a new position if it's SIGNIFICANTLY better (20px threshold)
+  // RESULT: "Sticky" highlighting that doesn't jump unless there's clear reason to move
+  if (lastHighlightPosition && candidates.length > 1) {
+    // Find the candidate that matches our last position (within 3px tolerance)
+    const lastCandidate = candidates.find(c =>
+      Math.abs(c.centerX - lastHighlightPosition.x) < 3 &&
+      Math.abs(c.centerY - lastHighlightPosition.y) < 3
+    );
+
+    if (lastCandidate) {
+      // Calculate how much better the new best candidate is
+      const improvement = lastCandidate.distance - best.distance;
+      if (improvement < 20) {
+        best = lastCandidate; // Stick with the current position
+      }
+    }
+  }
+
+  // STEP 10: Store position for next hysteresis comparison
+  lastHighlightPosition = {
+    x: best.centerX,
+    y: best.centerY,
+    text: best.matchText
+  };
+
+  // STEP 11: Apply the highlight to the DOM
+  // Split the text node into 3 parts: [before, <mark>highlighted</mark>, after]
+  const before = best.node.nodeValue.substring(0, best.matchIndex);
+  const after = best.node.nodeValue.substring(best.matchIndex + best.matchText.length);
+
+  // Use DocumentFragment for efficient DOM manipulation (single reflow)
+  const fragment = document.createDocumentFragment();
+  if (before) fragment.appendChild(document.createTextNode(before));
+
+  // Create the <mark> element with mode-specific styling using CSS variables
+  const mark = document.createElement('mark');
+  mark.className = 'jobsprint-text-highlight';
+  mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
+  mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
+  // CRITICAL: pointer-events: none prevents the mark from interfering with mouse tracking
+  // WITHOUT THIS: mouse would constantly hit the mark itself, causing jitter/flicker
+  mark.textContent = best.matchText;
+  fragment.appendChild(mark);
+
+  if (after) fragment.appendChild(document.createTextNode(after));
+
+  // Replace the original text node with our fragment (containing before + mark + after)
+  best.node.parentNode.replaceChild(fragment, best.node);
+  // NOTE: This splits the text node, which is why normalize() is critical to prevent fragmentation
+}
+
+/**
+ * WHAT IF WE REMOVED CERTAIN FEATURES?
+ *
+ * 1. REMOVING element.normalize():
+ *    - DOM degrades after ~50-100 mousemove events
+ *    - Text nodes fragment into hundreds of 1-2 character pieces
+ *    - TreeWalker becomes unpredictable, missing nodes
+ *    - Highlighting stops working on parts of the text
+ *    - Performance degrades significantly
+ *    - VERDICT: CRITICAL - must keep normalize()
+ *
+ * 2. REMOVING hysteresis (sticky highlighting):
+ *    - Char mode becomes unusable - highlights jump rapidly between nearby characters
+ *    - Word mode also affected when hovering over repeated words
+ *    - Creates visual "jitter" that's distracting and hard to use
+ *    - VERDICT: IMPORTANT - significantly degrades UX without it
+ *
+ * 3. REMOVING wrapped text handling (multiple rects):
+ *    - Highlights wrong line when text wraps across multiple lines
+ *    - Distance calculation becomes inaccurate for long text
+ *    - Especially bad in narrow containers with lots of wrapping
+ *    - VERDICT: IMPORTANT - causes incorrect highlighting in common scenarios
+ *
+ * 4. REMOVING cleanText() normalization:
+ *    - Text with extra whitespace won't match ("between  disparate  sources")
+ *    - Smart mode fails when whitespace differs between extraction and element
+ *    - Causes "no highlight" bugs even when mouse is directly on text
+ *    - VERDICT: CRITICAL - breaks matching in real-world HTML with irregular whitespace
+ *
+ * 5. REMOVING pointer-events: none from <mark>:
+ *    - Mouse cursor hits the mark element instead of underlying content
+ *    - Triggers constant element changes (mark -> element -> mark -> element)
+ *    - Creates rapid jitter/flicker that was the original bug being fixed
+ *    - VERDICT: CRITICAL - reintroduces the primary bug this implementation fixed
+ *
+ * 6. REMOVING stale reference prevention (cleaning DOM first):
+ *    - Node references become detached after first highlight removal
+ *    - Attempting to use detached node fails silently
+ *    - Highlighting stops working after first successful highlight
+ *    - VERDICT: CRITICAL - highlighting fails completely without this
+ */
+
+/**
+ * Helper: Highlight first occurrence of text (fallback)
+ */
+function highlightFirstOccurrence(element, searchText, elementText, bgColor, shadowColor) {
+  const position = elementText.indexOf(searchText);
+  if (position === -1) return;
+
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+  let cleanedPosition = 0;
+  let node;
+
+  while (node = walker.nextNode()) {
+    const nodeText = node.nodeValue || '';
+    const cleanedNodeText = cleanText(nodeText);
+    const cleanedStart = cleanedPosition;
+    const cleanedEnd = cleanedPosition + cleanedNodeText.length;
+
+    if (position >= cleanedStart && position < cleanedEnd) {
+      // Escape special regex characters, then replace spaces with flexible pattern
+      const escapedText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const patternText = escapedText.replace(/\s+/g, '\\s+');
+      const regex = new RegExp(patternText);
+      const match = nodeText.match(regex);
+
+      if (match && match.index !== undefined) {
+        const offsetInNode = match.index;
+        const matchedText = match[0];
+        const before = nodeText.substring(0, offsetInNode);
+        const after = nodeText.substring(offsetInNode + matchedText.length);
+
+        const fragment = document.createDocumentFragment();
+        if (before) fragment.appendChild(document.createTextNode(before));
+
+        const mark = document.createElement('mark');
+        mark.className = 'jobsprint-text-highlight';
+        mark.style.setProperty('--jobsprint-highlight-bg', bgColor);
+        mark.style.setProperty('--jobsprint-highlight-shadow', shadowColor);
+        mark.textContent = matchedText;
+        fragment.appendChild(mark);
+
+        if (after) fragment.appendChild(document.createTextNode(after));
+
+        node.parentNode.replaceChild(fragment, node);
+      }
+      break;
+    }
+
+    cleanedPosition += cleanedNodeText.length;
+  }
+}
+
+/**
+ * Get colors for a specific mode
+ * @param {string} mode - Mode name: 'words', 'smart', 'chars'
+ * @returns {Object} Object with solid and transparent color values
+ */
+function getModeColors(mode) {
+  switch (mode) {
+    case 'smart':
+      return {
+        solid: modeColors.smart.solid,
+        transparent: modeColors.smart.transparent
+      };
+    case 'chars':
+      return {
+        solid: modeColors.chars.solid,
+        transparent: modeColors.chars.transparent
+      };
+    case 'words':
+      return {
+        solid: modeColors.words.solid,
+        transparent: modeColors.words.transparent
+      };
+    case 'disabled':
+      return {
+        solid: modeColors.disabled.solid,
+        transparent: modeColors.disabled.transparent
+      };
+    default:
+      return {
+        solid: '#FF6B6B',              // Red (default)
+        transparent: 'rgba(255, 107, 107, 0.1)'
+      };
+  }
+}
+
+/**
+ * Remove highlight from currently highlighted element.
+ * Called when:
+ * - Mouse moves to a different element
+ * - Mouse tracking is disabled
+ * - Element changes (mode switch, granularity change)
+ *
+ * CRITICAL: Always calls normalize() to prevent DOM fragmentation
+ */
+function removeHighlight() {
+  if (lastHighlightedElement) {
+    // Remove visual outline around element
+    lastHighlightedElement.style.outline = '';
+    lastHighlightedElement.style.outlineOffset = '';
+    lastHighlightedElement.style.backgroundColor = '';
+
+    // Remove <mark> tags and restore original text nodes
+    const highlights = lastHighlightedElement.querySelectorAll('mark.jobsprint-text-highlight');
+    highlights.forEach(mark => {
+      const text = mark.textContent;
+      const textNode = document.createTextNode(text);
+      mark.parentNode.replaceChild(textNode, mark);
+    });
+
+    // CRITICAL: Merge adjacent text nodes to prevent fragmentation
+    // Without this, the element accumulates fragmented text nodes over time
+    lastHighlightedElement.normalize();
+
+    // Clear tracking variables
+    lastHighlightedElement = null;
+    lastHighlightedText = null;
+    lastHighlightPosition = null;
+  }
+}
+
+/**
+ * Setup click event listeners for mode buttons
+ */
+function setupModeButtons() {
+  if (!mouseTrackingOverlay) return;
+
+  const smartBtn = mouseTrackingOverlay.querySelector('#mode-smart');
+  const sentenceBtn = mouseTrackingOverlay.querySelector('#mode-sentence');
+  const wordsBtn = mouseTrackingOverlay.querySelector('#mode-words');
+  const charsBtn = mouseTrackingOverlay.querySelector('#mode-chars');
+
+  if (smartBtn) {
+    smartBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchMode('smart');
+    });
+  }
+
+  if (sentenceBtn) {
+    sentenceBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchMode('sentence');
+    });
+  }
+
+  if (wordsBtn) {
+    wordsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchMode('words');
+    });
+  }
+
+  if (charsBtn) {
+    charsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchMode('chars');
+    });
+  }
+
+  // Update button states to reflect current mode
+  updateModeButtonStates();
+}
+
+/**
+ * Switch to a different extraction mode
+ * @param {string} mode - Mode to switch to: 'smart', 'sentence', 'words', 'chars'
+ */
+function switchMode(mode) {
+  currentModifierMode = mode;
+  updateOverlayMode(mode);
+  updateModeButtonStates();
+
+  // Re-extract text with new mode if we have a last mouse position
+  if (lastMouseEvent && lastHighlightedElement) {
+    const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, mode);
+    if (text && text.trim()) {
+      sendTextToPopup(text.trim());
+    }
+  }
+}
+
+/**
+ * Update mode button visual states to show active mode
+ */
+function updateModeButtonStates() {
+  if (!mouseTrackingOverlay) return;
+
+  const buttons = {
+    smart: mouseTrackingOverlay.querySelector('#mode-smart'),
+    sentence: mouseTrackingOverlay.querySelector('#mode-sentence'),
+    words: mouseTrackingOverlay.querySelector('#mode-words'),
+    chars: mouseTrackingOverlay.querySelector('#mode-chars')
+  };
+
+  // Reset all buttons to inactive state
+  Object.values(buttons).forEach(btn => {
+    if (btn) {
+      btn.style.background = 'rgba(255,255,255,0.2)';
+      btn.style.transform = 'scale(1)';
+    }
+  });
+
+  // Highlight active button
+  const activeButton = buttons[currentModifierMode];
+  if (activeButton) {
+    // Use mode-specific colors
+    let activeColor = '#3498db'; // Default blue for smart
+    if (currentModifierMode === 'sentence') {
+      activeColor = '#3498db'; // Blue
+    } else if (currentModifierMode === 'words') {
+      activeColor = '#2ecc71'; // Green
+    } else if (currentModifierMode === 'chars') {
+      activeColor = '#9b59b6'; // Purple
+    }
+
+    activeButton.style.background = activeColor;
+    activeButton.style.transform = 'scale(1.05)';
+  }
+}
+
+/**
+ * Create visual overlay to indicate tracking mode is active (CSP-compliant)
+ */
+function createTrackingOverlay() {
+  console.log('[Overlay] createTrackingOverlay() called');
+  removeTrackingOverlay();
+
+  injectJobSprintStyles(); // Ensure styles are injected
+
+  const overlay = document.createElement('div');
+  overlay.id = 'jobsprint-mouse-tracking-overlay';
+
+  // Apply position using inline styles for dynamic positioning (this is allowed)
+  if (overlayPosition.top !== null) {
+    overlay.style.top = `${overlayPosition.top}px`;
+  }
+  if (overlayPosition.bottom !== null) {
+    overlay.style.bottom = `${overlayPosition.bottom}px`;
+  }
+  if (overlayPosition.right !== null) {
+    overlay.style.right = `${overlayPosition.right}px`;
+  }
+  if (overlayPosition.left !== null) {
+    overlay.style.left = `${overlayPosition.left}px`;
+  }
+
+  // Create overlay content structure using DOM methods (no innerHTML)
+  const icon = document.createElement('span');
+  icon.textContent = '🎯';
+
+  const title = document.createElement('span');
+  title.id = 'jobsprint-tracking-title';
+  title.textContent = 'Mouse Text Mirror';
+
+  const mode = document.createElement('div');
+  mode.id = 'jobsprint-tracking-mode';
+  mode.textContent = '↑↓ adjust • Alt+Arrows move • ESC cancel';
+
+  const exitBtn = document.createElement('button');
+  exitBtn.id = 'jobsprint-exit-btn';
+  exitBtn.title = 'Exit tracking mode (ESC)';
+  exitBtn.textContent = '×';
+
+  // Assemble the overlay structure
+  overlay.appendChild(icon);
+  overlay.appendChild(title);
+  overlay.appendChild(mode);
+  overlay.appendChild(exitBtn);
+
+  // Ensure document.body exists before appending
+  if (!document.body) {
+    console.error('[Overlay] document.body does not exist! Cannot create overlay.');
+    return;
+  }
+
+  try {
+    document.body.appendChild(overlay);
+    mouseTrackingOverlay = overlay;
+    console.log('[Overlay] Overlay successfully appended to document.body');
+  } catch (error) {
+    console.error('[Overlay] Error appending overlay to document.body:', error);
+    return;
+  }
+
+  // Add event listener for exit button
+  if (exitBtn) {
+    console.log('[Overlay] Exit button found, attaching event listeners');
+
+    // Handler function for exit button
+    const handleExitButton = (e) => {
+      console.log('[Overlay] Exit button triggered! Event type:', e.type);
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      // Set mode to disabled BEFORE stopping tracking
+      currentModifierMode = 'disabled';
+      console.log('[Overlay] Mode set to disabled in content script');
+
+      // DIRECTLY save disabled mode to storage (don't rely on popup)
+      console.log('[Overlay] Saving disabled mode directly to storage...');
+      chrome.storage.local.get(['jobsprint_ui_state'], (result) => {
+        const state = result.jobsprint_ui_state || {};
+        state.currentMode = 'disabled';
+        state.timestamp = Date.now();
+        chrome.storage.local.set({ jobsprint_ui_state: state }, () => {
+          console.log('[Overlay] Disabled mode saved to storage:', state);
+        });
+      });
+
+      // Also notify popup about mode change (for UI update if popup is still open)
+      console.log('[Overlay] Notifying popup of mode change...');
+      notifyPopupModeChange('disabled');
+
+      // Stop mouse tracking completely
+      console.log('[Overlay] Calling stopMouseTracking...');
+      stopMouseTracking();
+
+      // Additional cleanup to ensure all highlights are removed
+      removeHighlight();
+      removeTrackingOverlay();
+
+      console.log('[Overlay] Exit button handler complete - mode is now disabled');
+    };
+
+    // Add multiple event types to ensure we catch the interaction
+    exitBtn.addEventListener('mousedown', handleExitButton, true);
+    exitBtn.addEventListener('click', handleExitButton, true);
+    console.log('[Overlay] Event listeners attached (mousedown + click)');
+  } else {
+    console.error('[Overlay] Exit button NOT found!');
+  }
+
+  // Note: Mode buttons removed from overlay - they're only in the popup now
+  // This keeps the overlay minimal and non-redundant
+}
+
+/**
+ * Update overlay position based on stored position state
+ */
+function updateOverlayPosition() {
+  if (!mouseTrackingOverlay) return;
+
+  // Clear all position properties first by removing them
+  mouseTrackingOverlay.style.removeProperty('top');
+  mouseTrackingOverlay.style.removeProperty('bottom');
+  mouseTrackingOverlay.style.removeProperty('left');
+  mouseTrackingOverlay.style.removeProperty('right');
+
+  // Apply stored position
+  if (overlayPosition.top !== null) {
+    mouseTrackingOverlay.style.top = `${overlayPosition.top}px`;
+  }
+  if (overlayPosition.bottom !== null) {
+    mouseTrackingOverlay.style.bottom = `${overlayPosition.bottom}px`;
+  }
+  if (overlayPosition.left !== null) {
+    mouseTrackingOverlay.style.left = `${overlayPosition.left}px`;
+  }
+  if (overlayPosition.right !== null) {
+    mouseTrackingOverlay.style.right = `${overlayPosition.right}px`;
+  }
+}
+
+/**
+ * Update overlay to show current extraction mode and granularity
+ * @param {string} mode - Current mode: 'smart', 'words', 'sentence', or 'chars'
+ */
+function updateOverlayMode(mode) {
+  if (!mouseTrackingOverlay) return;
+
+  const modeElement = mouseTrackingOverlay.querySelector('#jobsprint-tracking-mode');
+  if (!modeElement) return;
+
+  // Simplified status text - just show keyboard shortcuts
+  let modeText = '↑↓ adjust • Alt+Arrows move • ESC cancel';
+  let bgColor = 'rgba(255, 107, 107, 0.95)';
+
+  switch (mode) {
+    case 'smart':
+      bgColor = modeColors.smart.bg;
+      break;
+    case 'chars':
+      bgColor = modeColors.chars.bg;
+      break;
+    case 'words':
+      bgColor = modeColors.words.bg;
+      break;
+    case 'disabled':
+      bgColor = modeColors.disabled.bg;
+      break;
+    default:
+      bgColor = 'rgba(255, 107, 107, 0.95)'; // Red for default
+  }
+
+  modeElement.textContent = modeText;
+  mouseTrackingOverlay.style.background = bgColor;
+
+  // Add pulse animation when mode changes
+  mouseTrackingOverlay.style.animation = 'slideInFromRight 0.3s ease-out, pulseGlow 0.5s ease-in-out';
+}
+
+/**
+ * Remove tracking overlay
+ */
+function removeTrackingOverlay() {
+  if (mouseTrackingOverlay) {
+    mouseTrackingOverlay.remove();
+    mouseTrackingOverlay = null;
+  }
+}
+
+/**
+ * Send extracted text to popup window
+ * @param {string} text - Text to send
+ * @param {boolean} confirm - Whether this is a confirmed selection (clicked)
+ */
+function sendTextToPopup(text, confirm = false) {
+  // Check if extension context is valid before attempting to send message
+  if (!chrome.runtime?.id) {
+    // Extension context invalidated - stop tracking silently
+    stopMouseTracking();
+    return;
+  }
+
+  try {
+    chrome.runtime.sendMessage({
+      action: 'mouseHoverText',
+      fieldId: currentTrackedFieldId,
+      text: text,
+      confirmed: confirm
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        // Extension context invalidated is expected when extension reloads - stop tracking silently
+        if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+          stopMouseTracking();
+        } else {
+          console.warn('[MouseTracking] Could not send message to popup:', chrome.runtime.lastError.message);
+        }
+      }
+    });
+  } catch (error) {
+    // Extension context invalidated - stop tracking silently
+    if (error.message && error.message.includes('Extension context invalidated')) {
+      stopMouseTracking();
+    }
+  }
+}
+
+/**
+ * Notify popup about mode change
+ * This allows the popup to update button states when mode changes via keyboard modifiers
+ * @param {string} mode - New mode: 'words', 'smart', 'chars'
+ */
+function notifyPopupModeChange(mode) {
+  // Check if extension context is valid before attempting to send message
+  if (!chrome.runtime?.id) {
+    // Extension context invalidated - ignore silently
+    return;
+  }
+
+  try {
+    chrome.runtime.sendMessage({
+      action: 'modeChanged',
+      mode: mode
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        // Extension context invalidated is expected when extension reloads - ignore silently
+        if (!chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+          console.warn('[MouseTracking] Could not notify popup of mode change:', chrome.runtime.lastError.message);
+        }
+      }
+    });
+  } catch (error) {
+    // Extension context invalidated - ignore silently
+    if (!error.message || !error.message.includes('Extension context invalidated')) {
+      console.warn('[MouseTracking] Extension context error during mode change notification:', error);
+    }
+  }
+}
+
+// ============ POPUP CONNECTION & CLEANUP ============
+
+/**
+ * Handle popup opened notification
+ * Sets up monitoring to detect when popup closes and cleanup overlays
+ */
+function handlePopupOpened() {
+  console.log('[PopupConnection] Popup opened, setting up connection');
+
+  // Clear any existing interval
+  if (popupAliveCheckInterval) {
+    clearInterval(popupAliveCheckInterval);
+    popupAliveCheckInterval = null;
+  }
+
+  // Periodically check if popup is still alive by testing runtime.id
+  popupAliveCheckInterval = setInterval(() => {
+    // Try to send a ping message to check if popup is still alive
+    chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
+      if (chrome.runtime.lastError) {
+        // Popup is closed or context invalidated
+        console.log('[PopupConnection] Popup appears to be closed, cleaning up');
+        handlePopupClosed();
+      }
+    });
+  }, 500); // Check every 500ms
+}
+
+/**
+ * Handle popup closed event
+ * Cleans up all overlays and highlights when popup is closed
+ */
+function handlePopupClosed() {
+  console.log('[PopupConnection] Popup closed, cleaning up overlays');
+
+  // Clear the alive check interval
+  if (popupAliveCheckInterval) {
+    clearInterval(popupAliveCheckInterval);
+    popupAliveCheckInterval = null;
+  }
+
+  // Add a short delay before cleanup to allow any in-progress clicks (like X button) to complete
+  // This prevents race condition where clicking X button triggers popup close before click handler executes
+  setTimeout(() => {
+    console.log('[PopupConnection] Executing delayed cleanup');
+
+    // Stop mouse tracking if active (this removes overlay and highlights)
+    if (mouseTrackingActive) {
+      stopMouseTracking();
+    }
+
+    // Clear any remaining highlights
+    removeHighlight();
+
+    // Remove any approval UI overlays from autofill
+    removeApprovalUI();
+
+    console.log('[PopupConnection] Cleanup complete');
+  }, 500); // 500ms delay to allow click handlers to complete
 }

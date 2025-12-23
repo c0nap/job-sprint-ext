@@ -4,20 +4,101 @@
  * Features: Clipboard macros, job data extraction, autofill
  */
 
+// Connection port for detecting popup closure
+let contentScriptPort = null;
+
+// Job data schema (loaded from storage)
+let jobDataSchema = null;
+
 // Initialize all popup features when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   initializeDebugConsole();
   log('JobSprint Popup loaded');
+
+  // Load mode colors early
+  await loadModeColors();
+
+  // Apply colors to mode buttons after loading
+  applyModeColorsToButtons();
 
   initializeClipboardMacros();
   initializeExtraction();
   initializeAutofill();
   initializeSettings();
   initializeManualEntryModal();
+  initializeMouseTracking();
 
   // Restore UI state from last session
   restoreUIState();
+
+  // Establish connection with content script for cleanup on popup close
+  initializeContentScriptConnection();
+
+  // Save extended UI state periodically to ensure it's captured before close
+  setInterval(saveExtendedUIState, 1000);
 });
+
+// Listen for ping messages from content script (used to detect popup alive)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'ping') {
+    sendResponse({ alive: true });
+    return false; // Synchronous response
+  }
+});
+
+/**
+ * Initialize connection with content script to detect popup closure
+ * Sends keepalive messages to maintain connection and cleanup on disconnect
+ */
+async function initializeContentScriptConnection() {
+  try {
+    const sourceTab = await getSourceTab();
+    if (!sourceTab) {
+      log('[Connection] No source tab found, skipping connection init');
+      return;
+    }
+
+    // Send a message to content script to establish connection
+    chrome.tabs.sendMessage(
+      sourceTab.id,
+      { action: 'popupOpened' },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          log('[Connection] Could not connect to content script:', chrome.runtime.lastError.message);
+        } else {
+          log('[Connection] Connected to content script');
+        }
+      }
+    );
+  } catch (error) {
+    log('[Connection] Error initializing connection:', error.message);
+  }
+}
+
+/**
+ * Save extended UI state including mouse tracking and modal state
+ */
+function saveExtendedUIState() {
+  // Get the modal state
+  const modal = document.getElementById('manualEntryModal');
+  const isModalOpen = modal && modal.style.display === 'flex';
+
+  // Save tracking state
+  const state = {
+    currentFolder,
+    navigationPath,
+    timestamp: Date.now(),
+    // Extended state for restoration
+    isModalOpen: isModalOpen,
+    currentMode: currentMode  // Mode for mouse tracking
+  };
+
+  chrome.storage.local.set({ jobsprint_ui_state: state }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('Failed to save extended UI state:', chrome.runtime.lastError);
+    }
+  });
+}
 
 // ============ DEBUG CONSOLE ============
 
@@ -428,6 +509,7 @@ function saveUIState() {
 /**
  * Restore UI state from chrome.storage.local
  * Reopens the last viewed folder if user was browsing clipboard macros
+ * Also restores modal state and mouse tracking mode if they were active
  */
 function restoreUIState() {
   chrome.storage.local.get(['jobsprint_ui_state'], (result) => {
@@ -444,6 +526,12 @@ function restoreUIState() {
     if (age > 5 * 60 * 1000) {
       chrome.storage.local.remove('jobsprint_ui_state');
       return;
+    }
+
+    // Restore mouse tracking mode if it was saved
+    if (state.currentMode) {
+      currentMode = state.currentMode;
+      log(`[UI] Restoring mouse tracking mode: ${currentMode}`);
     }
 
     // Restore folder view if user was in a folder
@@ -499,6 +587,10 @@ function restoreUIState() {
         );
       }, 100);
     }
+
+    // Note: We don't automatically reopen the modal because the form state
+    // is preserved by the browser, so the user's data is still there.
+    // When they focus a field again, mouse tracking will start automatically.
   });
 }
 
@@ -1046,6 +1138,7 @@ const EXTRACT_COOLDOWN_MS = 2000; // 2 seconds
  */
 function initializeExtraction() {
   const extractBtn = document.getElementById('extractBtn');
+  const manualEntryBtn = document.getElementById('manualEntryBtn');
   const statusDiv = document.getElementById('extractionStatus');
 
   if (!extractBtn || !statusDiv) return;
@@ -1053,6 +1146,12 @@ function initializeExtraction() {
   extractBtn.addEventListener('click', () => {
     handleExtractClick(extractBtn, statusDiv);
   });
+
+  if (manualEntryBtn) {
+    manualEntryBtn.addEventListener('click', () => {
+      handleManualEntryClick(manualEntryBtn, statusDiv);
+    });
+  }
 }
 
 /**
@@ -1144,32 +1243,105 @@ async function handleExtractClick(button, statusDiv) {
 }
 
 /**
+ * Handle manual entry button click
+ * Opens the manual entry modal directly without automatic extraction
+ * @param {HTMLButtonElement} button - Manual entry button element
+ * @param {HTMLElement} statusDiv - Status message display element
+ */
+async function handleManualEntryClick(button, statusDiv) {
+  log('[ManualEntry] Manual entry button clicked');
+
+  // Get the source tab
+  const activeTab = await getSourceTab();
+  if (!activeTab) {
+    logError('[ManualEntry] No source tab found');
+    showStatus(statusDiv, 'error', '✗ No active tab found. Please reopen the popup from the job page.');
+    return;
+  }
+
+  log(`[ManualEntry] Source tab found: ${activeTab.url}`);
+
+  // Check if tab URL is accessible
+  if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+    logError(`[ManualEntry] Invalid tab URL: ${activeTab.url}`);
+    showStatus(statusDiv, 'error', '✗ Cannot use this page. Chrome extension pages and settings are not supported.');
+    return;
+  }
+
+  // Create minimal job data with just the URL
+  const jobData = {
+    url: activeTab.url,
+    title: '',
+    company: '',
+    location: '',
+    role: '',
+    tailor: '',
+    description: '',
+    compensation: '',
+    pay: '',
+    source: ''
+  };
+
+  // Show manual entry modal
+  showManualEntryModal(button, statusDiv, jobData);
+  clearStatus(statusDiv);
+}
+
+/**
  * Log extracted job data via service worker
- * Checks if manual entry is needed before logging
+ * Checks for duplicates first, then submits
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Extracted job data
  */
-function logJobData(button, statusDiv, jobData) {
-  log('[Extract] Checking if manual entry needed...');
+async function logJobData(button, statusDiv, jobData) {
+  log('[Extract] Checking for duplicates before logging...');
+  showStatus(statusDiv, 'info', 'ℹ Checking for duplicates...');
 
-  // Check if manual entry is enabled and if data is missing
-  chrome.runtime.sendMessage({ action: 'getConfig' }, (configResponse) => {
-    const isManualEntryEnabled = configResponse?.config?.ENABLE_MANUAL_ENTRY !== false;
-    const hasMissingData = isMissingRequiredData(jobData);
+  // Search for duplicates by URL
+  chrome.runtime.sendMessage(
+    {
+      action: 'searchDuplicate',
+      url: jobData.url
+    },
+    (duplicateResponse) => {
+      if (duplicateResponse?.success) {
+        const duplicate = duplicateResponse.duplicate;
 
-    log(`[Extract] Manual entry enabled: ${isManualEntryEnabled}, Missing data: ${hasMissingData}`);
+        if (duplicate) {
+          log('[Extract] Duplicate found:', duplicate);
 
-    if (isManualEntryEnabled && hasMissingData) {
-      log('[Extract] Showing manual entry modal');
-      // Show manual entry modal
-      showManualEntryModal(button, statusDiv, jobData);
-    } else {
-      log('[Extract] Proceeding with automatic submission');
-      // Proceed with logging directly
-      submitJobData(button, statusDiv, jobData);
+          // Check if status is "Queued"
+          if (duplicate.status && duplicate.status.toLowerCase().includes('queued')) {
+            // Found with Queued status - skip appending
+            log('[Extract] Duplicate found with Queued status, skipping append');
+            showStatus(statusDiv, 'info', `ℹ Job already queued (Row ${duplicate.rowNumber}, added ${duplicate.appliedDate})`);
+            resetExtractButton(button);
+            return;
+          } else {
+            // Found with different status - show warning and still append
+            log('[Extract] Duplicate found with non-Queued status, appending anyway with warning');
+            showStatus(statusDiv, 'warning', `⚠ Job already exists (Row ${duplicate.rowNumber}, status: ${duplicate.status}). Adding new entry...`);
+
+            // Wait a bit to show the warning, then proceed
+            setTimeout(() => {
+              submitJobData(button, statusDiv, jobData);
+            }, 1500);
+            return;
+          }
+        } else {
+          // No duplicate found - proceed with logging
+          log('[Extract] No duplicate found, proceeding with logging');
+          submitJobData(button, statusDiv, jobData);
+        }
+      } else {
+        // Error checking for duplicates - log error but proceed with submission
+        logError('[Extract] Error checking for duplicates:', duplicateResponse?.error);
+        log('[Extract] Proceeding with logging despite duplicate check error');
+        submitJobData(button, statusDiv, jobData);
+      }
     }
-  });
+  );
 }
 
 /**
@@ -1177,25 +1349,88 @@ function logJobData(button, statusDiv, jobData) {
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Job data to submit
+ * @param {boolean} fromModal - Whether this submission is from the manual entry modal
  */
-function submitJobData(button, statusDiv, jobData) {
+function submitJobData(button, statusDiv, jobData, fromModal = false) {
   log('[Extract] Submitting job data to service worker...');
   showStatus(statusDiv, 'info', 'ℹ Logging to Google Sheets...');
 
   chrome.runtime.sendMessage(
     { action: 'logJobData', data: jobData },
-    (logResponse) => {
+    async (logResponse) => {
       if (logResponse?.success) {
         log('[Extract] Job data logged successfully');
         showStatus(statusDiv, 'success', '✓ Job data logged successfully!');
+
+        // Close modal if submission was from modal
+        if (fromModal) {
+          hideManualEntryModal();
+        }
       } else {
         const errorMsg = logResponse?.error || 'Unknown error occurred';
         logError(`[Extract] Failed to log: ${errorMsg}`);
-        showStatus(statusDiv, 'error', `✗ Failed to log data: ${errorMsg}`);
+
+        // If submission failed from modal, keep modal open and show error there
+        if (fromModal) {
+          const errorContainer = document.getElementById('manualEntryError');
+          if (errorContainer) {
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Extraction Failed', errorMsg)
+              );
+            } else {
+              errorContainer.textContent = `✗ Extraction Failed: ${errorMsg}`;
+            }
+            errorContainer.style.display = 'block';
+          }
+        } else {
+          showStatus(statusDiv, 'error', `✗ Failed to log data: ${errorMsg}`);
+        }
       }
       resetExtractButton(button);
     }
   );
+}
+
+/**
+ * Generate error message with links for modal display
+ * @param {string} errorMsg - Error message from submission
+ * @returns {Promise<string>} HTML error message with links
+ */
+async function generateModalErrorMessage(errorMsg) {
+  // Get configuration to create links
+  const config = await new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: 'getConfig' }, (response) => {
+      resolve(response?.config || {});
+    });
+  });
+
+  const spreadsheetId = config.SPREADSHEET_ID || '';
+  const appsScriptEditorUrl = config.APPS_SCRIPT_EDITOR_URL || '';
+
+  let errorHtml = `<strong>✗ Submission Failed</strong>`;
+  errorHtml += `<div style="margin-top: 8px;">${errorMsg}</div>`;
+
+  // Add helpful links for debugging
+  if (spreadsheetId || appsScriptEditorUrl) {
+    errorHtml += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #f5c6cb;">`;
+    errorHtml += `<strong>Quick Links for Debugging:</strong><br>`;
+
+    if (spreadsheetId) {
+      const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+      errorHtml += `• <a href="${sheetUrl}" target="_blank">Open Spreadsheet</a><br>`;
+    }
+
+    if (appsScriptEditorUrl) {
+      errorHtml += `• <a href="${appsScriptEditorUrl}" target="_blank">Open Apps Script Editor</a><br>`;
+    }
+
+    errorHtml += `</div>`;
+  }
+
+  return errorHtml;
 }
 
 /**
@@ -1226,11 +1461,16 @@ function handleExtractError(button, statusDiv, message) {
 
 /**
  * Reset extract button to default state
- * @param {HTMLButtonElement} button - Extract button element
+ * @param {HTMLButtonElement} button - Extract or manual entry button element
  */
 function resetExtractButton(button) {
   button.disabled = false;
-  button.textContent = 'Extract & Log Job Data';
+  // Reset to appropriate text based on button ID
+  if (button.id === 'manualEntryBtn') {
+    button.textContent = 'Manual Entry';
+  } else {
+    button.textContent = 'Quick Save (URL + Content)';
+  }
 }
 
 // ============ AUTOFILL ============
@@ -1344,13 +1584,195 @@ function initializeSettings() {
 /**
  * Initialize manual data entry modal event listeners
  */
+// ============ DYNAMIC SCHEMA FUNCTIONS ============
+
+/**
+ * Load job data schema from storage
+ * Falls back to default schema if not found
+ */
+async function loadJobDataSchema() {
+  try {
+    const result = await chrome.storage.sync.get(['JOB_DATA_SCHEMA']);
+    if (result.JOB_DATA_SCHEMA && result.JOB_DATA_SCHEMA.columns) {
+      jobDataSchema = result.JOB_DATA_SCHEMA;
+      log('[Schema] Loaded custom schema with ' + jobDataSchema.columns.length + ' columns');
+    } else {
+      // Use default schema from settings.js DEFAULT_SCHEMA
+      jobDataSchema = await getDefaultSchema();
+      log('[Schema] Using default schema with ' + jobDataSchema.columns.length + ' columns');
+    }
+
+    // Generate form fields from schema
+    generateDynamicFormFields();
+  } catch (error) {
+    logError('[Schema] Error loading schema: ' + error.message);
+    // Use fallback minimal schema
+    jobDataSchema = { columns: [] };
+    generateDynamicFormFields();
+  }
+}
+
+/**
+ * Get default schema (matches DEFAULT_SCHEMA in settings.js)
+ */
+async function getDefaultSchema() {
+  return {
+    columns: [
+      { id: 'company', label: 'Employer', type: 'text', placeholder: 'e.g., Google', tooltip: 'Company or organization name', required: false, readonly: false },
+      { id: 'title', label: 'Job Title', type: 'text', placeholder: 'e.g., Software Engineer', tooltip: 'Position or role title', required: false, readonly: false },
+      { id: 'location', label: 'Location', type: 'text', placeholder: 'e.g., San Francisco, CA', tooltip: 'Job location', required: false, readonly: false },
+      { id: 'role', label: 'Role', type: 'select', placeholder: '', tooltip: 'Job role category', required: false, readonly: false, options: ['CODE', 'DSCI', 'STAT', 'R&D'] },
+      { id: 'tailor', label: 'Tailor', type: 'select', placeholder: 'Same as Role', tooltip: 'Custom role tailoring', required: false, readonly: false, options: ['CODE', 'DSCI', 'STAT', 'R&D'] },
+      { id: 'description', label: 'Notes', type: 'textarea', placeholder: 'Additional notes or job description', tooltip: 'Job description or notes', required: false, readonly: false },
+      { id: 'compensation', label: 'Compensation', type: 'text', placeholder: 'e.g., $65.00 - $75.00 / hour', tooltip: 'Salary range', required: false, readonly: false },
+      { id: 'pay', label: 'Pay', type: 'text', placeholder: 'e.g., $70.00', tooltip: 'Specific pay amount', required: false, readonly: false },
+      { id: 'url', label: 'Portal Link', type: 'url', placeholder: 'https://...', tooltip: 'Job posting URL', required: false, readonly: true },
+      { id: 'source', label: 'Board', type: 'select', placeholder: 'Auto-detect from URL', tooltip: 'Job board or source', required: false, readonly: false, options: ['Indeed', 'Handshake', 'Symplicity', 'Google', 'LinkedIn', 'Website', 'Other'] }
+    ]
+  };
+}
+
+/**
+ * Generate dynamic form fields from schema
+ */
+function generateDynamicFormFields() {
+  const container = document.getElementById('dynamicFormFields');
+  if (!container) {
+    logError('[Schema] Dynamic form container not found');
+    return;
+  }
+
+  container.innerHTML = '';
+
+  if (!jobDataSchema || !jobDataSchema.columns || jobDataSchema.columns.length === 0) {
+    // CSP-compliant: Use DOM creation instead of innerHTML
+    const emptyMessage = document.createElement('p');
+    emptyMessage.textContent = 'No form fields configured. Please configure the schema in Settings.';
+    emptyMessage.style.textAlign = 'center';
+    emptyMessage.style.color = '#999';
+    emptyMessage.style.padding = '20px';
+    container.appendChild(emptyMessage);
+    return;
+  }
+
+  jobDataSchema.columns.forEach(column => {
+    const fieldDiv = document.createElement('div');
+    fieldDiv.className = 'form-field';
+
+    const label = document.createElement('label');
+    label.setAttribute('for', `manual_${column.id}`);
+    label.textContent = column.label + (column.required ? ' *' : '');
+    if (column.tooltip) {
+      label.title = column.tooltip;
+    }
+
+    let inputElement;
+
+    switch (column.type) {
+      case 'textarea':
+        inputElement = document.createElement('textarea');
+        inputElement.rows = 3;
+        break;
+
+      case 'select':
+        inputElement = document.createElement('select');
+        // Add empty option if placeholder exists
+        if (column.placeholder) {
+          const emptyOption = document.createElement('option');
+          emptyOption.value = '';
+          emptyOption.textContent = column.placeholder;
+          inputElement.appendChild(emptyOption);
+        }
+        // Add options
+        if (column.options && Array.isArray(column.options)) {
+          column.options.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt;
+            inputElement.appendChild(option);
+          });
+        }
+        break;
+
+      default:
+        inputElement = document.createElement('input');
+        inputElement.type = column.type || 'text';
+    }
+
+    inputElement.id = `manual_${column.id}`;
+    inputElement.setAttribute('data-field-id', column.id);
+    if (column.placeholder) {
+      inputElement.placeholder = column.placeholder;
+    }
+    if (column.required) {
+      inputElement.required = true;
+    }
+    if (column.readonly) {
+      inputElement.readOnly = true;
+    }
+
+    fieldDiv.appendChild(label);
+    fieldDiv.appendChild(inputElement);
+    container.appendChild(fieldDiv);
+  });
+
+  log('[Schema] Generated ' + jobDataSchema.columns.length + ' form fields');
+
+  // Re-setup mouse tracking for new fields
+  setupFieldMouseTracking();
+}
+
+/**
+ * Populate dynamic form fields with job data
+ * @param {Object} jobData - Job data to populate into form
+ */
+function populateDynamicFormFields(jobData) {
+  if (!jobData || !jobDataSchema || !jobDataSchema.columns) {
+    return;
+  }
+
+  jobDataSchema.columns.forEach(column => {
+    const field = document.getElementById(`manual_${column.id}`);
+    if (field && jobData[column.id] !== undefined) {
+      field.value = jobData[column.id] || '';
+    }
+  });
+}
+
+/**
+ * Collect form values from dynamic fields
+ * @returns {Object} Object with field values keyed by field ID
+ */
+function collectDynamicFormValues() {
+  const values = {};
+
+  if (!jobDataSchema || !jobDataSchema.columns) {
+    return values;
+  }
+
+  jobDataSchema.columns.forEach(column => {
+    const field = document.getElementById(`manual_${column.id}`);
+    if (field) {
+      values[column.id] = field.value.trim();
+    }
+  });
+
+  return values;
+}
+
+// ============ MANUAL ENTRY MODAL ============
+
 function initializeManualEntryModal() {
   const modal = document.getElementById('manualEntryModal');
   const closeBtn = document.getElementById('closeModal');
   const cancelBtn = document.getElementById('cancelModal');
   const form = document.getElementById('manualEntryForm');
+  const autoExtractBtn = document.getElementById('autoExtractBtn');
 
   if (!modal || !closeBtn || !cancelBtn || !form) return;
+
+  // Load schema and generate form fields
+  loadJobDataSchema();
 
   // Close modal on X button
   closeBtn.addEventListener('click', () => {
@@ -1374,11 +1796,256 @@ function initializeManualEntryModal() {
     e.preventDefault();
     handleManualEntrySubmit();
   });
+
+  // Handle auto-extract button
+  if (autoExtractBtn) {
+    autoExtractBtn.addEventListener('click', () => {
+      handleAutoExtractClick();
+    });
+  }
+
+  // Handle find row button
+  const findRowBtn = document.getElementById('findRowBtn');
+  if (findRowBtn) {
+    findRowBtn.addEventListener('click', () => {
+      handleFindRowClick();
+    });
+  }
+
+  // Add mode selector button handlers
+  setupModeSelectorButtons();
+}
+
+/**
+ * Handle auto-extract button click
+ * Reconnects to the current tab and extracts detailed job data to fill the form
+ */
+async function handleAutoExtractClick() {
+  const autoExtractBtn = document.getElementById('autoExtractBtn');
+  const errorContainer = document.getElementById('manualEntryError');
+
+  // Clear any previous error
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+    errorContainer.innerHTML = '';
+  }
+
+  // Set button to loading state
+  if (autoExtractBtn) {
+    autoExtractBtn.disabled = true;
+    autoExtractBtn.textContent = '⏳ Extracting...';
+  }
+
+  try {
+    // Step 1: Get the current active tab (reconnect)
+    log('[AutoExtract] Getting current active tab...');
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (!tabs || tabs.length === 0) {
+      throw new Error('No active tab found. Please make sure you have a job page open.');
+    }
+
+    const activeTab = tabs[0];
+    log(`[AutoExtract] Active tab found: ${activeTab.url}`);
+
+    // Update the stored source tab ID (reconnect)
+    await chrome.storage.local.set({ popupSourceTabId: activeTab.id });
+    log('[AutoExtract] Reconnected to active tab');
+
+    // Check if tab URL is accessible
+    if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+      throw new Error('Cannot extract from this page. Chrome extension pages and settings are not supported.');
+    }
+
+    // Step 2: Request detailed extraction from content script
+    log('[AutoExtract] Requesting detailed job data extraction...');
+
+    chrome.tabs.sendMessage(
+      activeTab.id,
+      { action: 'extractJobDataDetailed' },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          const errorMsg = chrome.runtime.lastError.message;
+          logError(`[AutoExtract] Runtime error: ${errorMsg}`);
+
+          if (errorMsg.includes('Receiving end does not exist')) {
+            showAutoExtractError('Please reload the page and try again. The extension needs to reinitialize.');
+          } else {
+            showAutoExtractError(`Error: ${errorMsg}`);
+          }
+
+          // Reset button
+          if (autoExtractBtn) {
+            autoExtractBtn.disabled = false;
+            autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+          }
+          return;
+        }
+
+        if (!response?.success) {
+          logError('[AutoExtract] Content script returned failure');
+          showAutoExtractError('Failed to extract job data from page');
+
+          // Reset button
+          if (autoExtractBtn) {
+            autoExtractBtn.disabled = false;
+            autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+          }
+          return;
+        }
+
+        log(`[AutoExtract] Data extracted successfully:`, response.data);
+
+        // Step 3: Fill the form fields with extracted data
+        populateDynamicFormFields(response.data);
+
+        // Show success feedback
+        if (autoExtractBtn) {
+          autoExtractBtn.textContent = '✓ Extracted!';
+          autoExtractBtn.style.background = '#28a745';
+
+          // Reset button after 2 seconds
+          setTimeout(() => {
+            autoExtractBtn.disabled = false;
+            autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+            autoExtractBtn.style.background = '#4CAF50';
+          }, 2000);
+        }
+
+        log('[AutoExtract] Form fields populated successfully');
+      }
+    );
+  } catch (error) {
+    logError(`[AutoExtract] Error: ${error.message}`);
+    showAutoExtractError(error.message);
+
+    // Reset button
+    if (autoExtractBtn) {
+      autoExtractBtn.disabled = false;
+      autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+    }
+  }
+}
+
+/**
+ * Show error message in auto-extract error container
+ * @param {string} message - Error message to display
+ */
+function showAutoExtractError(message) {
+  const errorContainer = document.getElementById('manualEntryError');
+  if (errorContainer) {
+    // CSP-compliant: Use DOM helpers instead of innerHTML
+    if (typeof window.DOMHelpers !== 'undefined') {
+      window.DOMHelpers.clearElement(errorContainer);
+      errorContainer.appendChild(
+        window.DOMHelpers.createErrorMessage('✗ Auto-Extract Failed', message)
+      );
+    } else {
+      // Fallback: Use textContent
+      errorContainer.textContent = `✗ Auto-Extract Failed: ${message}`;
+    }
+    errorContainer.style.display = 'block';
+  }
+}
+
+/**
+ * Setup mode selector buttons
+ * Allows user to manually select extraction mode via UI buttons
+ * Now activates on mouseover for instant feedback
+ */
+function setupModeSelectorButtons() {
+  const modeButtons = document.querySelectorAll('.mode-btn');
+
+  modeButtons.forEach(button => {
+    button.addEventListener('mouseenter', async () => {
+      const mode = button.getAttribute('data-mode');
+      log(`[ModeSelector] Manually selected mode: ${mode}`);
+
+      // Update the global current mode
+      currentMode = mode;
+
+      // Update button states
+      updateModeButtonStates(mode);
+
+      // Update the active field's border color to match mode
+      if (currentActiveFieldElement) {
+        updateFieldBorderColor(currentActiveFieldElement, mode);
+      }
+
+      // Send mode change to content script
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'changeExtractionMode', mode: mode },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[ModeSelector] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+    });
+  });
+}
+
+/**
+ * Setup mouse tracking for manual entry form fields
+ * When a field is focused, mouse tracking is activated on the source page
+ * Now works dynamically with schema-defined fields
+ */
+function setupFieldMouseTracking() {
+  // Get all dynamically generated fields
+  const dynamicFields = document.querySelectorAll('#dynamicFormFields input, #dynamicFormFields textarea');
+
+  log(`[MouseTracking] Setting up field tracking for ${dynamicFields.length} dynamic fields`);
+
+  dynamicFields.forEach(field => {
+    if (!field) {
+      return;
+    }
+
+    const fieldId = field.getAttribute('data-field-id') || field.id;
+    log(`[MouseTracking] Field found and listener added: ${fieldId}`);
+
+    // Start tracking on focus
+    field.addEventListener('focus', () => {
+      log(`[Field] Focused: ${fieldId}`);
+      currentActiveFieldElement = field; // Store the active field
+      startMouseTrackingForField(fieldId);
+
+      // Add visual indicator that tracking is active with current mode color
+      // Use the persisted currentMode instead of defaulting to 'words'
+      updateFieldBorderColor(field, currentMode);
+
+      // Also update button states to match current mode
+      updateModeButtonStates(currentMode);
+    });
+
+    // Stop tracking on blur
+    field.addEventListener('blur', () => {
+      log(`[Field] Blurred: ${fieldId}`);
+
+      // Small delay to allow click to register
+      setTimeout(() => {
+        if (currentlyFocusedField === fieldId) {
+          stopMouseTracking();
+        }
+      }, 100);
+
+      // Remove visual indicator
+      field.style.borderColor = '';
+      field.style.borderWidth = '';
+      field.style.boxShadow = '';
+      currentActiveFieldElement = null; // Clear the stored field
+    });
+  });
 }
 
 /**
  * Show manual entry modal with pre-filled data
- * @param {HTMLButtonElement} button - Extract button element
+ * Checks for duplicates and displays the information
+ * @param {HTMLButtonElement} button - Extract or manual entry button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Extracted job data to pre-fill
  */
@@ -1386,21 +2053,39 @@ function showManualEntryModal(button, statusDiv, jobData) {
   const modal = document.getElementById('manualEntryModal');
   if (!modal) return;
 
-  // Store references for later use
-  modal.dataset.button = 'extractBtn';
-  modal.dataset.status = 'extractionStatus';
+  // Clear any previous error message
+  const errorContainer = document.getElementById('manualEntryError');
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+    errorContainer.innerHTML = '';
+  }
 
-  // Pre-fill form fields with extracted data
-  document.getElementById('manualJobTitle').value = jobData.title || '';
-  document.getElementById('manualCompany').value = jobData.company || '';
-  document.getElementById('manualLocation').value = jobData.location || '';
-  document.getElementById('manualUrl').value = jobData.url || '';
-  document.getElementById('manualRole').value = jobData.role || '';
-  document.getElementById('manualTailor').value = jobData.tailor || '';
-  document.getElementById('manualNotes').value = jobData.description || '';
-  document.getElementById('manualCompensation').value = jobData.compensation || '';
-  document.getElementById('manualPay').value = jobData.pay || '';
-  document.getElementById('manualBoard').value = jobData.source || '';
+  // Hide duplicate info initially
+  const duplicateInfo = document.getElementById('duplicateInfo');
+  if (duplicateInfo) {
+    duplicateInfo.style.display = 'none';
+  }
+
+  // Store references for later use
+  modal.dataset.button = button.id;
+  modal.dataset.status = statusDiv.id;
+
+  // Update modal title and info based on the source button
+  const modalTitle = document.getElementById('modalTitle');
+  const modalInfo = document.getElementById('modalInfo');
+
+  if (button.id === 'manualEntryBtn') {
+    // Manual entry was requested directly
+    modalTitle.textContent = 'Add Job Details';
+    modalInfo.textContent = 'Please fill in the job details below:';
+  } else {
+    // Auto-extraction happened but data is missing
+    modalTitle.textContent = 'Review Job Data';
+    modalInfo.textContent = 'Some job details couldn\'t be extracted automatically. Please review and fill in the missing information:';
+  }
+
+  // Pre-fill form fields with extracted data (dynamic based on schema)
+  populateDynamicFormFields(jobData);
 
   // Store the full job data for later
   modal.dataset.jobData = JSON.stringify(jobData);
@@ -1408,8 +2093,62 @@ function showManualEntryModal(button, statusDiv, jobData) {
   // Show the modal
   modal.style.display = 'flex';
 
+  // Apply mode colors to buttons (in case they weren't applied yet or settings changed)
+  applyModeColorsToButtons();
+
   // Reset button state
   resetExtractButton(button);
+
+  // Check for duplicates and display results (no warning, just info)
+  if (jobData.url) {
+    checkAndDisplayDuplicate(jobData.url);
+  }
+}
+
+/**
+ * Check for duplicate and display results in modal
+ * @param {string} url - Job URL to check
+ */
+function checkAndDisplayDuplicate(url) {
+  chrome.runtime.sendMessage(
+    {
+      action: 'searchDuplicate',
+      url: url
+    },
+    (duplicateResponse) => {
+      if (duplicateResponse?.success && duplicateResponse.duplicate) {
+        const duplicate = duplicateResponse.duplicate;
+        const duplicateInfo = document.getElementById('duplicateInfo');
+        const duplicateDetails = document.getElementById('duplicateDetails');
+
+        if (duplicateInfo && duplicateDetails) {
+          // CSP-compliant: Use DOM helpers instead of innerHTML
+          if (typeof window.DOMHelpers !== 'undefined') {
+            window.DOMHelpers.clearElement(duplicateDetails);
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Row', duplicate.rowNumber.toString())
+            );
+            duplicateDetails.appendChild(document.createElement('br'));
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Status', duplicate.status || 'N/A')
+            );
+            duplicateDetails.appendChild(document.createElement('br'));
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Date Recorded', duplicate.appliedDate || 'N/A')
+            );
+          } else {
+            // Fallback: Use textContent
+            duplicateDetails.textContent = `Row: ${duplicate.rowNumber}, Status: ${duplicate.status || 'N/A'}, Date Recorded: ${duplicate.appliedDate || 'N/A'}`;
+          }
+          duplicateInfo.style.display = 'block';
+
+          log('[DuplicateCheck] Duplicate found and displayed:', duplicate);
+        }
+      } else {
+        log('[DuplicateCheck] No duplicate found or error occurred');
+      }
+    }
+  );
 }
 
 /**
@@ -1421,8 +2160,243 @@ function hideManualEntryModal() {
 
   modal.style.display = 'none';
 
+  // Stop any active mouse tracking
+  stopMouseTracking();
+
   // Clear form
   document.getElementById('manualEntryForm').reset();
+}
+
+/**
+ * Handle find row button click
+ * Retrieves row data by row number from the spreadsheet
+ */
+async function handleFindRowClick() {
+  const rowInput = document.getElementById('manualRowNumber');
+  const findRowBtn = document.getElementById('findRowBtn');
+  const duplicateInfo = document.getElementById('duplicateInfo');
+  const duplicateDetails = document.getElementById('duplicateDetails');
+  const errorContainer = document.getElementById('manualEntryError');
+
+  // Clear previous errors
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+  }
+  if (duplicateInfo) {
+    duplicateInfo.style.display = 'none';
+  }
+
+  const rowNumber = parseInt(rowInput.value);
+
+  // Validate row number
+  if (!rowNumber || rowNumber < 2) {
+    if (errorContainer) {
+      // CSP-compliant: Use DOM helpers instead of innerHTML
+      if (typeof window.DOMHelpers !== 'undefined') {
+        window.DOMHelpers.clearElement(errorContainer);
+        errorContainer.appendChild(
+          window.DOMHelpers.createErrorMessage('✗ Error', 'Please enter a valid row number (2 or greater)')
+        );
+      } else {
+        errorContainer.textContent = '✗ Error: Please enter a valid row number (2 or greater)';
+      }
+      errorContainer.style.display = 'block';
+    }
+    return;
+  }
+
+  try {
+    // Disable button while searching
+    if (findRowBtn) {
+      findRowBtn.disabled = true;
+      findRowBtn.textContent = '⏳ Finding...';
+    }
+
+    log(`[FindRow] Searching for row ${rowNumber}...`);
+
+    // Send request to service worker
+    chrome.runtime.sendMessage(
+      { action: 'getRowByNumber', rowNumber: rowNumber },
+      (response) => {
+        // Re-enable button
+        if (findRowBtn) {
+          findRowBtn.disabled = false;
+          findRowBtn.textContent = '🔍 Find';
+        }
+
+        if (chrome.runtime.lastError) {
+          logError(`[FindRow] Runtime error: ${chrome.runtime.lastError.message}`);
+          if (errorContainer) {
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Error', chrome.runtime.lastError.message)
+              );
+            } else {
+              errorContainer.textContent = `✗ Error: ${chrome.runtime.lastError.message}`;
+            }
+            errorContainer.style.display = 'block';
+          }
+          return;
+        }
+
+        if (!response || !response.success) {
+          const errorMsg = response?.error || 'Failed to retrieve row data';
+          logError(`[FindRow] Error: ${errorMsg}`);
+          if (errorContainer) {
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Error', errorMsg)
+              );
+            } else {
+              errorContainer.textContent = `✗ Error: ${errorMsg}`;
+            }
+            errorContainer.style.display = 'block';
+          }
+          return;
+        }
+
+        const rowData = response.rowData;
+        if (!rowData) {
+          if (errorContainer) {
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Error', `Row ${rowNumber} not found or is empty`)
+              );
+            } else {
+              errorContainer.textContent = `✗ Error: Row ${rowNumber} not found or is empty`;
+            }
+            errorContainer.style.display = 'block';
+          }
+          return;
+        }
+
+        log(`[FindRow] Row data retrieved:`, rowData);
+
+        // Display row info
+        if (duplicateInfo && duplicateDetails) {
+          const status = rowData['Status'] || 'Unknown';
+          const appliedDate = rowData['Applied'] || 'Not set';
+          const url = rowData['Portal Link'] || '';
+
+          // CSP-compliant: Use DOM helpers instead of innerHTML
+          if (typeof window.DOMHelpers !== 'undefined') {
+            window.DOMHelpers.clearElement(duplicateDetails);
+
+            // Row number
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Row', rowNumber.toString())
+            );
+
+            // Status
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Status', status)
+            );
+
+            // Date
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Date', appliedDate)
+            );
+
+            // URL (if present)
+            if (url) {
+              const urlContainer = document.createElement('div');
+              const urlLabel = document.createElement('strong');
+              urlLabel.textContent = 'URL: ';
+
+              const urlLink = window.DOMHelpers.createLink(
+                url,
+                url.substring(0, 60) + '...',
+                ['duplicate-url-link']
+              );
+              urlLink.target = '_blank';
+
+              urlContainer.appendChild(urlLabel);
+              urlContainer.appendChild(urlLink);
+              duplicateDetails.appendChild(urlContainer);
+            }
+          } else {
+            // Fallback: Use textContent
+            duplicateDetails.textContent = `Row: ${rowNumber}, Status: ${status}, Date: ${appliedDate}`;
+            if (url) {
+              duplicateDetails.textContent += `, URL: ${url}`;
+            }
+          }
+          duplicateInfo.style.display = 'block';
+        }
+
+        // Populate form fields with row data
+        // Prompt 4 Fix: Use correct field IDs with 'manual_' prefix
+        if (rowData['Employer']) {
+          const field = document.getElementById('manual_company');
+          if (field) field.value = rowData['Employer'];
+        }
+        if (rowData['Job Title']) {
+          const field = document.getElementById('manual_title');
+          if (field) field.value = rowData['Job Title'];
+        }
+        if (rowData['Location']) {
+          const field = document.getElementById('manual_location');
+          if (field) field.value = rowData['Location'];
+        }
+        if (rowData['Role']) {
+          const field = document.getElementById('manual_role');
+          if (field) field.value = rowData['Role'];
+        }
+        if (rowData['Tailor']) {
+          const field = document.getElementById('manual_tailor');
+          if (field) field.value = rowData['Tailor'];
+        }
+        if (rowData['Notes']) {
+          const field = document.getElementById('manual_description');
+          if (field) field.value = rowData['Notes'];
+        }
+        if (rowData['Compensation']) {
+          const field = document.getElementById('manual_compensation');
+          if (field) field.value = rowData['Compensation'];
+        }
+        if (rowData['Pay']) {
+          const field = document.getElementById('manual_pay');
+          if (field) field.value = rowData['Pay'];
+        }
+        if (rowData['Portal Link']) {
+          const field = document.getElementById('manual_url');
+          if (field) field.value = rowData['Portal Link'];
+        }
+        if (rowData['Board']) {
+          const field = document.getElementById('manual_source');
+          if (field) field.value = rowData['Board'];
+        }
+
+        log('[FindRow] Form fields populated with row data');
+      }
+    );
+  } catch (error) {
+    logError(`[FindRow] Error: ${error.message}`);
+    if (errorContainer) {
+      // CSP-compliant: Use DOM helpers instead of innerHTML
+      if (typeof window.DOMHelpers !== 'undefined') {
+        window.DOMHelpers.clearElement(errorContainer);
+        errorContainer.appendChild(
+          window.DOMHelpers.createErrorMessage('✗ Error', error.message)
+        );
+      } else {
+        errorContainer.textContent = `✗ Error: ${error.message}`;
+      }
+      errorContainer.style.display = 'block';
+    }
+
+    // Reset button
+    if (findRowBtn) {
+      findRowBtn.disabled = false;
+      findRowBtn.textContent = '🔍 Find';
+    }
+  }
 }
 
 /**
@@ -1433,19 +2407,15 @@ function handleManualEntrySubmit() {
   const button = document.getElementById(modal.dataset.button);
   const statusDiv = document.getElementById(modal.dataset.status);
 
-  // Get form values
-  const manualData = {
-    title: document.getElementById('manualJobTitle').value.trim(),
-    company: document.getElementById('manualCompany').value.trim(),
-    location: document.getElementById('manualLocation').value.trim(),
-    url: document.getElementById('manualUrl').value.trim(),
-    role: document.getElementById('manualRole').value.trim(),
-    tailor: document.getElementById('manualTailor').value.trim(),
-    description: document.getElementById('manualNotes').value.trim(),
-    compensation: document.getElementById('manualCompensation').value.trim(),
-    pay: document.getElementById('manualPay').value.trim(),
-    source: document.getElementById('manualBoard').value.trim()
-  };
+  // Clear any previous error message
+  const errorContainer = document.getElementById('manualEntryError');
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+    errorContainer.innerHTML = '';
+  }
+
+  // Get form values (dynamic based on schema)
+  const manualData = collectDynamicFormValues();
 
   // Get original job data to preserve other fields
   const originalData = JSON.parse(modal.dataset.jobData || '{}');
@@ -1456,11 +2426,8 @@ function handleManualEntrySubmit() {
     ...manualData
   };
 
-  // Hide modal
-  hideManualEntryModal();
-
-  // Submit the data
-  submitJobData(button, statusDiv, finalData);
+  // Submit the data (modal will stay open on error, close on success)
+  submitJobData(button, statusDiv, finalData, true);
 }
 
 // ============ UTILITY FUNCTIONS ============
@@ -1511,4 +2478,387 @@ function showError(message) {
  */
 function showSuccess(message) {
   log(`✓ ${message}`);
+}
+
+// ============ INTERACTIVE MOUSE TRACKING ============
+
+// Track currently focused field for mouse tracking
+let currentlyFocusedField = null;
+let currentActiveFieldElement = null; // Track the actual field DOM element
+let currentMode = 'words'; // Track the current mode globally (persists across fields)
+
+// Mode colors (loaded from storage)
+let popupModeColors = {
+  disabled: '#6c757d',
+  words: '#2ecc71',
+  chars: '#9b59b6'
+};
+
+/**
+ * Load mode colors from chrome storage
+ */
+async function loadModeColors() {
+  try {
+    const result = await chrome.storage.sync.get([
+      'DISABLED_MODE_COLOR',
+      'WORD_MODE_COLOR',
+      'CHAR_MODE_COLOR'
+    ]);
+
+    popupModeColors = {
+      disabled: result.DISABLED_MODE_COLOR || '#6c757d',
+      words: result.WORD_MODE_COLOR || '#2ecc71',
+      chars: result.CHAR_MODE_COLOR || '#9b59b6'
+    };
+
+    log('[Popup] Mode colors loaded:', popupModeColors);
+  } catch (error) {
+    logError('[Popup] Error loading mode colors:', error);
+  }
+}
+
+/**
+ * Get border color for a specific mode
+ * @param {string} mode - Mode name: 'disabled', 'words', 'chars'
+ * @returns {string} Border color for the mode
+ */
+function getModeBorderColor(mode) {
+  switch (mode) {
+    case 'disabled':
+      return popupModeColors.disabled;
+    case 'chars':
+      return popupModeColors.chars;
+    case 'words':
+      return popupModeColors.words;
+    default:
+      return '#FF6B6B'; // Red (default)
+  }
+}
+
+/**
+ * Apply loaded mode colors to mode buttons
+ * Updates button border and background colors to match settings
+ */
+function applyModeColorsToButtons() {
+  const modeButtons = document.querySelectorAll('.mode-btn');
+
+  modeButtons.forEach(btn => {
+    const mode = btn.getAttribute('data-mode');
+    const color = getModeBorderColor(mode);
+
+    // Update border color
+    btn.style.borderColor = color;
+
+    // If this is the active mode (smart is default), apply background color
+    if (mode === currentMode) {
+      btn.style.backgroundColor = color;
+      btn.style.color = 'white';
+    } else {
+      btn.style.backgroundColor = '#fff';
+      btn.style.color = color;
+    }
+  });
+
+  log('[Popup] Mode button colors applied:', popupModeColors);
+}
+
+/**
+ * Update mode button states to reflect current mode
+ * @param {string} mode - Mode name
+ */
+function updateModeButtonStates(mode) {
+  const modeButtons = document.querySelectorAll('.mode-btn');
+  modeButtons.forEach(btn => {
+    const btnMode = btn.getAttribute('data-mode');
+    const color = getModeBorderColor(btnMode);
+
+    // Always update border color to match settings
+    btn.style.borderColor = color;
+
+    if (btnMode === mode) {
+      // Selected state - use loaded color
+      btn.style.backgroundColor = color;
+      btn.style.color = '#fff';
+    } else {
+      // Unselected state - white background with colored text
+      btn.style.backgroundColor = '#fff';
+      btn.style.color = color;
+    }
+  });
+}
+
+/**
+ * Update field border color based on mode
+ * @param {HTMLElement} field - Field element to update
+ * @param {string} mode - Mode name
+ */
+function updateFieldBorderColor(field, mode) {
+  const color = getModeBorderColor(mode);
+  field.style.borderColor = color;
+  field.style.borderWidth = '2px';
+  field.style.boxShadow = `0 0 0 1px ${color}`;
+}
+
+/**
+ * Initialize mouse tracking message listener
+ * Listens for text extracted from page elements during mouse tracking
+ */
+function initializeMouseTracking() {
+  // Listen for messages from content script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'mouseHoverText') {
+      handleMouseHoverText(message.fieldId, message.text, message.confirmed);
+      sendResponse({ success: true });
+      return true;
+    }
+
+    // Listen for mode changes from content script (when using Shift/Ctrl modifiers)
+    if (message.action === 'modeChanged') {
+      log(`[ModeSync] Mode changed to: ${message.mode}`);
+      currentMode = message.mode;
+      updateModeButtonStates(message.mode);
+
+      // Also update active field border if there is one
+      if (currentActiveFieldElement) {
+        updateFieldBorderColor(currentActiveFieldElement, message.mode);
+      }
+
+      // Immediately save the mode change to storage
+      // This ensures disabled mode (from X button) is persisted before popup closes
+      saveExtendedUIState();
+
+      sendResponse({ success: true });
+      return true;
+    }
+  });
+
+  log('[MouseTracking] Listener initialized');
+}
+
+/**
+ * Handle text received from mouse hover on page
+ * @param {string} fieldId - ID of the field to fill
+ * @param {string} text - Text extracted from hovered element
+ * @param {boolean} confirmed - Whether user clicked to confirm
+ */
+function handleMouseHoverText(fieldId, text, confirmed) {
+  const field = document.getElementById(fieldId);
+
+  if (!field) {
+    logError(`[MouseTracking] Field not found: ${fieldId}`);
+    return;
+  }
+
+  // Update field value
+  field.value = text;
+
+  // Show visual feedback
+  if (confirmed) {
+    log(`[MouseTracking] Auto-filled ${fieldId}: ${text.substring(0, 50)}...`);
+
+    // Flash field to indicate successful fill
+    flashFieldSuccess(field);
+
+    // Clear focus to allow selecting next field
+    currentlyFocusedField = null;
+  } else {
+    // Just preview, don't log
+    // Add preview styling
+    field.style.backgroundColor = '#fff9e6';
+  }
+}
+
+/**
+ * Flash field with success color
+ * @param {HTMLElement} field - Field to flash
+ */
+function flashFieldSuccess(field) {
+  const originalBg = field.style.backgroundColor;
+
+  field.style.backgroundColor = '#d4edda';
+  field.style.transition = 'background-color 0.3s';
+
+  setTimeout(() => {
+    field.style.backgroundColor = originalBg;
+  }, 1000);
+}
+
+/**
+ * Start mouse tracking for a specific field
+ * @param {string} fieldId - ID of the field to track for
+ */
+async function startMouseTrackingForField(fieldId) {
+  log(`[MouseTracking] Starting tracking for field: ${fieldId}`);
+
+  currentlyFocusedField = fieldId;
+
+  // Get source tab
+  const sourceTab = await getSourceTab();
+  if (!sourceTab) {
+    logError('[MouseTracking] No source tab found');
+    return;
+  }
+
+  // Send message to content script to start tracking with current mode
+  chrome.tabs.sendMessage(
+    sourceTab.id,
+    { action: 'startMouseTracking', fieldId: fieldId, mode: currentMode },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        logError(`[MouseTracking] Error: ${chrome.runtime.lastError.message}`);
+      } else {
+        log('[MouseTracking] Tracking started on page');
+      }
+    }
+  );
+
+  // Start keyboard event relay (popup captures keys and forwards to content script)
+  startKeyboardRelay();
+}
+
+/**
+ * Stop mouse tracking
+ */
+async function stopMouseTracking() {
+  if (!currentlyFocusedField) return;
+
+  log('[MouseTracking] Stopping tracking');
+
+  // Get source tab
+  const sourceTab = await getSourceTab();
+  if (!sourceTab) return;
+
+  // Send message to content script to stop tracking
+  chrome.tabs.sendMessage(
+    sourceTab.id,
+    { action: 'stopMouseTracking' },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        logError(`[MouseTracking] Error: ${chrome.runtime.lastError.message}`);
+      }
+    }
+  );
+
+  // Stop keyboard event relay
+  stopKeyboardRelay();
+
+  currentlyFocusedField = null;
+}
+
+// Keyboard relay state
+let keyboardRelayActive = false;
+let keyboardRelayHandler = null;
+
+/**
+ * Start keyboard event relay from popup to content script
+ * Captures keyboard events in popup and forwards them to content script
+ */
+function startKeyboardRelay() {
+  if (keyboardRelayActive) return;
+
+  log('[KeyboardRelay] Starting keyboard event relay');
+
+  keyboardRelayHandler = async (event) => {
+    // Only relay specific keys that are used for mouse tracking
+    const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key);
+    const isEscape = event.key === 'Escape';
+    const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key);
+    const hasModifier = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
+
+    // Relay if it's an arrow key, escape, modifier key press, or if modifiers are active
+    if (isArrowKey || isEscape || isModifierKey || hasModifier) {
+      log(`[KeyboardRelay] Relaying key: ${event.key}, modifiers: Shift=${event.shiftKey}, Ctrl=${event.ctrlKey}, Alt=${event.altKey}`);
+
+      // Get source tab
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      // Create a serializable representation of the keyboard event
+      const keyEventData = {
+        key: event.key,
+        code: event.code,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        type: event.type // 'keydown' or 'keyup'
+      };
+
+      // Send to content script
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'relayKeyboardEvent', event: keyEventData },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[KeyboardRelay] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+
+      // For arrow keys WITHOUT Shift/Ctrl modifiers, prevent default to allow granularity adjustment
+      // When Shift/Ctrl are held, allow default behavior (cursor movement) but still relay for text mirroring
+      if (isArrowKey && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+      }
+      // For escape, always prevent default
+      if (isEscape) {
+        event.preventDefault();
+      }
+    }
+  };
+
+  // Also relay keyup events for modifiers
+  keyboardRelayHandlerUp = async (event) => {
+    const isModifierKey = ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key);
+
+    if (isModifierKey) {
+      log(`[KeyboardRelay] Relaying keyup: ${event.key}`);
+
+      const sourceTab = await getSourceTab();
+      if (!sourceTab) return;
+
+      const keyEventData = {
+        key: event.key,
+        code: event.code,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        type: 'keyup'
+      };
+
+      chrome.tabs.sendMessage(
+        sourceTab.id,
+        { action: 'relayKeyboardEvent', event: keyEventData },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            logError(`[KeyboardRelay] Error: ${chrome.runtime.lastError.message}`);
+          }
+        }
+      );
+    }
+  };
+
+  // Add event listeners to document (both keydown and keyup)
+  document.addEventListener('keydown', keyboardRelayHandler, true);
+  document.addEventListener('keyup', keyboardRelayHandlerUp, true);
+  keyboardRelayActive = true;
+
+  log('[KeyboardRelay] Keyboard relay active (keydown + keyup)');
+}
+
+/**
+ * Stop keyboard event relay
+ */
+function stopKeyboardRelay() {
+  if (!keyboardRelayActive) return;
+
+  log('[KeyboardRelay] Stopping keyboard event relay');
+
+  if (keyboardRelayHandler) {
+    document.removeEventListener('keydown', keyboardRelayHandler, true);
+    keyboardRelayHandler = null;
+  }
+
+  keyboardRelayActive = false;
 }

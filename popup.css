@@ -473,6 +473,75 @@ button {
   border: 1px solid #bee5eb;
 }
 
+.status-message.warning {
+  display: block;
+  background-color: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeaa7;
+}
+
+/* CSP-Compliant Error Container */
+.error-container {
+  padding: 12px;
+  margin: 12px 0;
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  color: #721c24;
+  font-size: 13px;
+}
+
+.error-title {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.error-message {
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+/* CSP-Compliant Duplicate Info Container */
+.duplicate-info-container {
+  margin: 12px 0;
+  padding: 12px;
+  background: #d1ecf1;
+  border: 1px solid #bee5eb;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.duplicate-info-title {
+  color: #0c5460;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.duplicate-info-details {
+  margin-top: 8px;
+  color: #0c5460;
+}
+
+.duplicate-info-details > div {
+  margin: 4px 0;
+}
+
+.duplicate-url-link {
+  color: #0c5460;
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.duplicate-url-link:hover {
+  color: #04313d;
+}
+
+/* Utility Classes */
+.hidden {
+  display: none !important;
+}
+
 /* Footer */
 footer {
   text-align: center;
@@ -560,6 +629,34 @@ footer a:hover {
   color: #856404;
 }
 
+.modal-error {
+  margin-bottom: 20px;
+  padding: 16px;
+  background-color: #f8d7da;
+  border: 2px solid #f5c6cb;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #721c24;
+  line-height: 1.6;
+}
+
+.modal-error strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #721c24;
+}
+
+.modal-error a {
+  color: #0056b3;
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+.modal-error a:hover {
+  color: #004085;
+}
+
 .form-field {
   margin-bottom: 16px;
 }
@@ -572,7 +669,9 @@ footer a:hover {
   font-size: 14px;
 }
 
-.form-field input {
+.form-field input,
+.form-field textarea,
+.form-field select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid #cbd5e0;
@@ -581,7 +680,9 @@ footer a:hover {
   font-family: inherit;
 }
 
-.form-field input:focus {
+.form-field input:focus,
+.form-field textarea:focus,
+.form-field select:focus {
   outline: none;
   border-color: #007bff;
   box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
@@ -590,6 +691,11 @@ footer a:hover {
 .form-field input[readonly] {
   background-color: #f5f5f5;
   cursor: not-allowed;
+}
+
+.form-field textarea {
+  resize: vertical;
+  min-height: 80px;
 }
 
 .modal-actions {
