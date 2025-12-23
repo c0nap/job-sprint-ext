@@ -22,6 +22,8 @@ const DEFAULT_SCHEMA = {
   columns: [
     {
       id: 'company',
+      extractorType: 'company',
+      sheetColumn: 'Employer',
       label: 'Employer',
       type: 'text',
       placeholder: 'e.g., Google',
@@ -31,6 +33,8 @@ const DEFAULT_SCHEMA = {
     },
     {
       id: 'title',
+      extractorType: 'jobTitle',
+      sheetColumn: 'Job Title',
       label: 'Job Title',
       type: 'text',
       placeholder: 'e.g., Software Engineer',
@@ -40,6 +44,8 @@ const DEFAULT_SCHEMA = {
     },
     {
       id: 'location',
+      extractorType: 'location',
+      sheetColumn: 'Location',
       label: 'Location',
       type: 'text',
       placeholder: 'e.g., San Francisco, CA',
@@ -49,6 +55,8 @@ const DEFAULT_SCHEMA = {
     },
     {
       id: 'role',
+      extractorType: 'role',
+      sheetColumn: 'Role',
       label: 'Role',
       type: 'select',
       placeholder: '',
@@ -59,6 +67,8 @@ const DEFAULT_SCHEMA = {
     },
     {
       id: 'tailor',
+      extractorType: 'tailor',
+      sheetColumn: 'Tailor',
       label: 'Tailor',
       type: 'select',
       placeholder: 'Same as Role',
@@ -69,6 +79,8 @@ const DEFAULT_SCHEMA = {
     },
     {
       id: 'description',
+      extractorType: 'notes',
+      sheetColumn: 'Notes',
       label: 'Notes',
       type: 'textarea',
       placeholder: 'Additional notes or job description',
@@ -78,6 +90,8 @@ const DEFAULT_SCHEMA = {
     },
     {
       id: 'compensation',
+      extractorType: 'compensation',
+      sheetColumn: 'Compensation',
       label: 'Compensation',
       type: 'text',
       placeholder: 'e.g., $65.00 - $75.00 / hour',
@@ -87,6 +101,8 @@ const DEFAULT_SCHEMA = {
     },
     {
       id: 'pay',
+      extractorType: 'pay',
+      sheetColumn: 'Pay',
       label: 'Pay',
       type: 'text',
       placeholder: 'e.g., $70.00',
@@ -96,6 +112,8 @@ const DEFAULT_SCHEMA = {
     },
     {
       id: 'url',
+      extractorType: 'url',
+      sheetColumn: 'Portal Link',
       label: 'Portal Link',
       type: 'url',
       placeholder: 'https://...',
@@ -105,6 +123,8 @@ const DEFAULT_SCHEMA = {
     },
     {
       id: 'source',
+      extractorType: 'board',
+      sheetColumn: 'Board',
       label: 'Board',
       type: 'select',
       placeholder: 'Auto-detect from URL',
@@ -1090,6 +1110,8 @@ async function saveSchema() {
     columnElements.forEach((el) => {
       const column = {
         id: el.querySelector('[data-field="id"]').value.trim(),
+        extractorType: el.querySelector('[data-field="extractorType"]').value,
+        sheetColumn: el.querySelector('[data-field="sheetColumn"]').value.trim(),
         label: el.querySelector('[data-field="label"]').value.trim(),
         type: el.querySelector('[data-field="type"]').value,
         placeholder: el.querySelector('[data-field="placeholder"]').value.trim(),
@@ -1173,10 +1195,31 @@ function createSchemaColumnElement(column, index) {
 
   const showOptionsField = column.type === 'select';
 
+  // Build extractor type options
+  const extractorOptions = Object.entries({
+    'company': { label: 'Company/Employer', category: 'basic' },
+    'jobTitle': { label: 'Job Title', category: 'basic' },
+    'location': { label: 'Location', category: 'basic' },
+    'url': { label: 'Portal Link/URL', category: 'basic' },
+    'rawDescription': { label: 'Raw Job Description', category: 'content' },
+    'notes': { label: 'Notes', category: 'content' },
+    'status': { label: 'Status', category: 'tracking' },
+    'appliedDate': { label: 'Applied Date', category: 'tracking' },
+    'decision': { label: 'Decision', category: 'tracking' },
+    'role': { label: 'Role Category', category: 'classification' },
+    'tailor': { label: 'Tailor Category', category: 'classification' },
+    'compensation': { label: 'Compensation Range', category: 'compensation' },
+    'pay': { label: 'Specific Pay', category: 'compensation' },
+    'board': { label: 'Job Board', category: 'source' },
+    'none': { label: 'None (Ignore)', category: 'special' }
+  }).map(([id, info]) =>
+    `<option value="${id}" ${column.extractorType === id ? 'selected' : ''}>${info.label}</option>`
+  ).join('');
+
   div.innerHTML = `
     <div class="schema-column-header">
       <span class="schema-drag-handle" title="Drag to reorder">☰</span>
-      <span class="schema-column-title">${column.label || 'New Column'}</span>
+      <span class="schema-column-title">${column.sheetColumn || column.label || 'New Column'}</span>
       <div class="schema-column-controls">
         <button class="schema-btn toggle-details">
           ${index === 0 ? '▼' : '▶'} Details
@@ -1185,14 +1228,19 @@ function createSchemaColumnElement(column, index) {
       </div>
     </div>
     <div class="schema-column-details" style="display: ${index === 0 ? 'grid' : 'none'}">
-      <div class="schema-field">
-        <label>ID (internal key)</label>
-        <input type="text" data-field="id" value="${column.id || ''}" placeholder="e.g., company">
+      <!-- PRIMARY FIELDS (Most Critical) -->
+      <div class="schema-field schema-field-full" style="grid-column: 1 / -1;">
+        <label><strong>Extractor Type</strong> <span style="color: #666; font-weight: normal;">(What data to extract)</span></label>
+        <select data-field="extractorType" style="font-weight: 500;">
+          ${extractorOptions}
+        </select>
       </div>
-      <div class="schema-field">
-        <label>Label (display name)</label>
-        <input type="text" data-field="label" value="${column.label || ''}" placeholder="e.g., Employer">
+      <div class="schema-field schema-field-full" style="grid-column: 1 / -1;">
+        <label><strong>Sheet Column Name</strong> <span style="color: #666; font-weight: normal;">(Column header in spreadsheet)</span></label>
+        <input type="text" data-field="sheetColumn" value="${column.sheetColumn || ''}" placeholder="e.g., Employer" style="font-weight: 500;">
       </div>
+
+      <!-- FIELD CONFIGURATION -->
       <div class="schema-field">
         <label>Field Type</label>
         <select data-field="type">
@@ -1203,14 +1251,6 @@ function createSchemaColumnElement(column, index) {
           <option value="number" ${column.type === 'number' ? 'selected' : ''}>Number</option>
           <option value="date" ${column.type === 'date' ? 'selected' : ''}>Date</option>
         </select>
-      </div>
-      <div class="schema-field">
-        <label>Placeholder</label>
-        <input type="text" data-field="placeholder" value="${column.placeholder || ''}" placeholder="e.g., Enter company name">
-      </div>
-      <div class="schema-field schema-field-full">
-        <label>Tooltip (help text)</label>
-        <textarea data-field="tooltip" placeholder="Description shown on hover">${column.tooltip || ''}</textarea>
       </div>
       <div class="schema-field schema-field-full" style="display: ${showOptionsField ? 'flex' : 'none'}" data-options-field>
         <label>Options (one per line, for select type only)</label>
@@ -1228,6 +1268,31 @@ function createSchemaColumnElement(column, index) {
           Read-only (auto-filled)
         </label>
       </div>
+
+      <!-- ADVANCED SECTION (Collapsible) -->
+      <div class="schema-field schema-field-full" style="grid-column: 1 / -1; margin-top: 12px;">
+        <button type="button" class="schema-btn toggle-advanced" style="width: 100%; text-align: left; background: #f0f0f0; padding: 8px 12px;">
+          ▶ Advanced (Label, Placeholder, Tooltip, ID)
+        </button>
+      </div>
+      <div class="schema-advanced-section" style="display: none; grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; background: #f8f9fa; border-radius: 4px;">
+        <div class="schema-field">
+          <label>Internal ID <span style="color: #999; font-size: 11px;">(read-only)</span></label>
+          <input type="text" data-field="id" value="${column.id || ''}" placeholder="e.g., company" readonly style="background: #f0f0f0; cursor: not-allowed;">
+        </div>
+        <div class="schema-field">
+          <label>Label (display name in form)</label>
+          <input type="text" data-field="label" value="${column.label || ''}" placeholder="e.g., Company Name">
+        </div>
+        <div class="schema-field schema-field-full" style="grid-column: 1 / -1;">
+          <label>Placeholder</label>
+          <input type="text" data-field="placeholder" value="${column.placeholder || ''}" placeholder="e.g., Enter company name">
+        </div>
+        <div class="schema-field schema-field-full" style="grid-column: 1 / -1;">
+          <label>Tooltip (help text)</label>
+          <textarea data-field="tooltip" placeholder="Description shown on hover" rows="2">${column.tooltip || ''}</textarea>
+        </div>
+      </div>
     </div>
   `;
 
@@ -1236,8 +1301,11 @@ function createSchemaColumnElement(column, index) {
   const detailsDiv = div.querySelector('.schema-column-details');
   const deleteBtn = div.querySelector('.delete');
   const typeSelect = div.querySelector('[data-field="type"]');
+  const sheetColumnInput = div.querySelector('[data-field="sheetColumn"]');
   const labelInput = div.querySelector('[data-field="label"]');
   const titleSpan = div.querySelector('.schema-column-title');
+  const toggleAdvancedBtn = div.querySelector('.toggle-advanced');
+  const advancedSection = div.querySelector('.schema-advanced-section');
 
   toggleBtn.addEventListener('click', () => {
     const isVisible = detailsDiv.style.display === 'grid';
@@ -1246,7 +1314,7 @@ function createSchemaColumnElement(column, index) {
   });
 
   deleteBtn.addEventListener('click', () => {
-    if (confirm(`Delete column "${column.label}"?`)) {
+    if (confirm(`Delete column "${column.sheetColumn || column.label}"?`)) {
       div.remove();
       // Update indices
       document.querySelectorAll('.schema-column').forEach((el, idx) => {
@@ -1255,9 +1323,23 @@ function createSchemaColumnElement(column, index) {
     }
   });
 
-  // Update title when label changes
+  // Toggle advanced section
+  toggleAdvancedBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const isVisible = advancedSection.style.display === 'grid';
+    advancedSection.style.display = isVisible ? 'none' : 'grid';
+    toggleAdvancedBtn.textContent = isVisible ? '▶ Advanced (Label, Placeholder, Tooltip, ID)' : '▼ Advanced (Label, Placeholder, Tooltip, ID)';
+  });
+
+  // Update title when sheet column or label changes
+  sheetColumnInput.addEventListener('input', () => {
+    titleSpan.textContent = sheetColumnInput.value || labelInput.value || 'New Column';
+  });
+
   labelInput.addEventListener('input', () => {
-    titleSpan.textContent = labelInput.value || 'New Column';
+    if (!sheetColumnInput.value) {
+      titleSpan.textContent = labelInput.value || 'New Column';
+    }
   });
 
   // Show/hide options field based on type
@@ -1276,6 +1358,8 @@ function createSchemaColumnElement(column, index) {
 function addSchemaColumn() {
   const newColumn = {
     id: 'new_field_' + Date.now(),
+    extractorType: 'none',
+    sheetColumn: 'New Column',
     label: 'New Column',
     type: 'text',
     placeholder: '',
