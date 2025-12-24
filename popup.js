@@ -2162,7 +2162,7 @@ function initializeMouseTracking() {
  * @param {boolean} confirmed - Whether user clicked to confirm
  */
 function handleMouseHoverText(fieldId, text, confirmed) {
-  const field = document.getElementById(fieldId);
+  const field = document.getElementById(`manual_${fieldId}`);
 
   if (!field) {
     logError(`[MouseTracking] Field not found: ${fieldId}`);
