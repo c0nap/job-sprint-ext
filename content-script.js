@@ -1504,7 +1504,9 @@ function handleGranularityChange(event) {
 
   // Re-extract text with new granularity if we have a last mouse position
   if (lastMouseEvent && lastHighlightedElement) {
-    const extractionResult = extractTextFromElement(lastHighlightedElement, lastMouseEvent, mode);
+    const element = lastHighlightedElement;  // Save before removeHighlight() clears it
+
+    const extractionResult = extractTextFromElement(element, lastMouseEvent, mode);
     const text = typeof extractionResult === 'string' ? extractionResult : extractionResult.text;
     const sourceNode = extractionResult.sourceNode || null;
     const sourceOffset = extractionResult.sourceOffset || null;
@@ -1516,7 +1518,7 @@ function handleGranularityChange(event) {
     if (text && text.trim()) {
       sendTextToPopup(text.trim());
       // Update the highlight to reflect the new extraction
-      highlightElement(lastHighlightedElement, text.trim(), lastMouseEvent, sourceNode, sourceOffset, sourceOffsetEnd);
+      highlightElement(element, text.trim(), lastMouseEvent, sourceNode, sourceOffset, sourceOffsetEnd);
     }
   }
 }
