@@ -1510,6 +1510,9 @@ function handleGranularityChange(event) {
     const sourceOffset = extractionResult.sourceOffset || null;
     const sourceOffsetEnd = extractionResult.sourceOffsetEnd || null;
 
+    // Remove old highlight before redrawing with new granularity
+    removeHighlight();
+
     if (text && text.trim()) {
       sendTextToPopup(text.trim());
       // Update the highlight to reflect the new extraction
