@@ -787,7 +787,7 @@ function injectJobSprintStyles() {
       font-weight: 600;
       z-index: 999998;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-      pointer-events: auto;
+      pointer-events: none;
       animation: slideInFromRight 0.3s ease-out;
       display: flex;
       align-items: center;
@@ -1504,11 +1504,21 @@ function handleGranularityChange(event) {
 
   // Re-extract text with new granularity if we have a last mouse position
   if (lastMouseEvent && lastHighlightedElement) {
-    const text = extractTextFromElement(lastHighlightedElement, lastMouseEvent, mode);
+    const element = lastHighlightedElement;  // Save before removeHighlight() clears it
+
+    const extractionResult = extractTextFromElement(element, lastMouseEvent, mode);
+    const text = typeof extractionResult === 'string' ? extractionResult : extractionResult.text;
+    const sourceNode = extractionResult.sourceNode || null;
+    const sourceOffset = extractionResult.sourceOffset || null;
+    const sourceOffsetEnd = extractionResult.sourceOffsetEnd || null;
+
+    // Remove old highlight before redrawing with new granularity
+    removeHighlight();
+
     if (text && text.trim()) {
       sendTextToPopup(text.trim());
       // Update the highlight to reflect the new extraction
-      highlightElement(lastHighlightedElement, text.trim(), lastMouseEvent);
+      highlightElement(element, text.trim(), lastMouseEvent, sourceNode, sourceOffset, sourceOffsetEnd);
     }
   }
 }
