@@ -355,6 +355,173 @@
             visibility: visible;
             opacity: 1;
         }
+
+        /* Schema Editor styles */
+        .schema-editor {
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            background: white;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .schema-column {
+            border-bottom: 1px solid #e0e0e0;
+            padding: 15px;
+            background: white;
+            transition: background-color 0.2s;
+        }
+
+        .schema-column:last-child {
+            border-bottom: none;
+        }
+
+        .schema-column:hover {
+            background: #f8f9fa;
+        }
+
+        .schema-column-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .schema-drag-handle {
+            cursor: grab;
+            color: #999;
+            font-size: 18px;
+            user-select: none;
+        }
+
+        .schema-drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .schema-column-title {
+            flex: 1;
+            font-weight: 600;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .schema-column-controls {
+            display: flex;
+            gap: 5px;
+        }
+
+        .schema-btn {
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .schema-btn:hover {
+            background: #f0f0f0;
+            border-color: #999;
+        }
+
+        .schema-btn.delete:hover {
+            background: #fee;
+            border-color: #f88;
+            color: #c00;
+        }
+
+        .schema-column-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .schema-field {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .schema-field label {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 3px;
+            font-weight: 500;
+        }
+
+        .schema-field input,
+        .schema-field select,
+        .schema-field textarea {
+            padding: 6px 8px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: inherit;
+        }
+
+        .schema-field textarea {
+            resize: vertical;
+            min-height: 40px;
+        }
+
+        .schema-field input:focus,
+        .schema-field select:focus,
+        .schema-field textarea:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
+        }
+
+        .schema-field-full {
+            grid-column: 1 / -1;
+        }
+
+        .schema-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .schema-checkbox input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+        }
+
+        .schema-empty {
+            padding: 40px;
+            text-align: center;
+            color: #999;
+            font-style: italic;
+        }
+
+        .status-message {
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .status-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -535,6 +702,18 @@
                 <small>Your Google Cloud numeric project ID (for Apps Script configuration and logging)</small>
             </div>
 
+            <div class="form-group">
+                <label for="appsScriptEditorUrl">
+                    Apps Script Editor URL (Optional)
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Direct link to your Apps Script editor for debugging. Open your script in the editor and copy the URL. Format: https://script.google.com/home/projects/YOUR_SCRIPT_ID/edit</span>
+                    </span>
+                </label>
+                <input type="url" id="appsScriptEditorUrl" placeholder="https://script.google.com/home/projects/...">
+                <small>Used for quick debugging access from error messages (optional)</small>
+            </div>
+
             <div class="sheet-connection">
                 <div id="connectionStatus" class="connection-status disconnected">
                     Not connected to Google Sheets
@@ -572,6 +751,215 @@
                     </label>
                 </div>
                 <small style="margin-left: 28px;">When enabled, you can manually fill in missing job data before submitting</small>
+            </div>
+        </div>
+
+        <!-- Job Data Schema Editor -->
+        <div class="settings-section">
+            <h3>
+                Job Data Schema Editor
+                <span class="tooltip">
+                    <span class="help-icon">?</span>
+                    <span class="tooltip-text">Configure which fields appear in the manual entry form and how they're sent to Google Sheets. The schema is flexible - fields can be in any order, and incomplete data is allowed.</span>
+                </span>
+            </h3>
+
+            <div class="alert alert-info">
+                Define custom columns for job data. Each column becomes a field in the manual entry form and a column in your Google Sheet. Drag to reorder, edit properties, or add new columns.
+            </div>
+
+            <div id="schemaEditor" class="schema-editor">
+                <!-- Schema columns will be dynamically inserted here -->
+            </div>
+
+            <div style="margin-top: 15px; display: flex; gap: 10px;">
+                <button id="addSchemaColumn" class="btn-primary" style="flex: 0 0 auto;">
+                    ➕ Add Column
+                </button>
+                <button id="resetSchema" class="btn-secondary" style="flex: 0 0 auto;">
+                    Reset to Default
+                </button>
+                <button id="saveSchema" class="btn-primary" style="flex: 1;">
+                    Save Schema
+                </button>
+            </div>
+            <div id="schemaSaveStatus" class="status-message" style="margin-top: 10px;"></div>
+        </div>
+
+        <!-- Mouse Tracking Settings -->
+        <div class="settings-section">
+            <h3>
+                Mouse Tracking Settings
+                <span class="tooltip">
+                    <span class="help-icon">?</span>
+                    <span class="tooltip-text">Configure keyboard modifiers for text extraction modes and overlay positioning during interactive mouse tracking when filling job data fields.</span>
+                </span>
+            </h3>
+
+            <div class="alert alert-info">
+                Configure keyboard shortcuts for the interactive mouse tracking feature. Press these modifier keys while hovering over text to control extraction scope.
+            </div>
+
+            <div class="form-group">
+                <label for="sentenceModifier">
+                    Smart Extraction Modifier
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Modifier key that activates smart field-aware extraction. Default: Shift key uses intelligent extraction based on the field being filled.</span>
+                    </span>
+                </label>
+                <select id="sentenceModifier" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
+                    <option value="shift">Shift</option>
+                    <option value="ctrl">Ctrl/Cmd</option>
+                    <option value="alt">Alt</option>
+                    <option value="none">None (Default mode)</option>
+                </select>
+                <small>Press this key to activate smart field-aware extraction mode</small>
+            </div>
+
+            <div class="form-group">
+                <label for="charModifier">
+                    Character Extraction Modifier
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Modifier key that activates character-based extraction. Default: Ctrl/Cmd key extracts characters around the cursor.</span>
+                    </span>
+                </label>
+                <select id="charModifier" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
+                    <option value="shift">Shift</option>
+                    <option value="ctrl">Ctrl/Cmd</option>
+                    <option value="alt">Alt</option>
+                    <option value="none">None (Default mode)</option>
+                </select>
+                <small>Hold this key while hovering to extract individual characters</small>
+            </div>
+
+            <div class="form-group">
+                <label for="wordModifier">
+                    Word Extraction Modifier (Field-Aware)
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Modifier key for word-based extraction with intelligent field awareness. Default: No modifier (default mode) extracts words and uses smart detection for pay, location, etc.</span>
+                    </span>
+                </label>
+                <select id="wordModifier" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
+                    <option value="shift">Shift</option>
+                    <option value="ctrl">Ctrl/Cmd</option>
+                    <option value="alt">Alt</option>
+                    <option value="none">None (Default mode)</option>
+                </select>
+                <small>Default mode with intelligent field-aware extraction (e.g., auto-detects pay amounts, locations)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="overlayMoveModifier">
+                    Overlay Repositioning Modifier
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Modifier key for moving the tracking overlay with arrow keys. Default: Alt + Arrow keys move the overlay to prevent it from blocking content.</span>
+                    </span>
+                </label>
+                <select id="overlayMoveModifier" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
+                    <option value="shift">Shift</option>
+                    <option value="ctrl">Ctrl/Cmd</option>
+                    <option value="alt">Alt</option>
+                </select>
+                <small>Hold this key + Arrow keys to move the tracking overlay on the page</small>
+            </div>
+
+            <div class="form-group">
+                <label for="overlayMoveStep">
+                    Overlay Move Distance (pixels)
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">How far the overlay moves with each arrow key press. Default: 20 pixels. Increase for faster repositioning, decrease for fine control.</span>
+                    </span>
+                </label>
+                <input type="number" id="overlayMoveStep" min="5" max="100" step="5" value="20" style="width: 100px;">
+                <small>Distance in pixels per arrow key press (5-100)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="smartModeStrength">
+                    Smart Mode Aggressiveness
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Controls how aggressively smart mode searches for patterns using existing field extractors. Level 1 searches only the hovered element, levels 2-3 include parent elements, level 4 adds siblings, and level 5 searches grandparents. Higher levels find patterns even when the mouse is far away.</span>
+                    </span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <input type="range" id="smartModeStrength" min="1" max="5" step="1" value="2" style="flex: 1;">
+                    <span id="smartModeStrengthValue" style="font-weight: 600; min-width: 80px;">Medium (2)</span>
+                </div>
+                <small>
+                    <strong>Minimal (1):</strong> Only hovered element &nbsp;|&nbsp;
+                    <strong>Low (2-3):</strong> + Parent element &nbsp;|&nbsp;
+                    <strong>High (4):</strong> + Sibling elements &nbsp;|&nbsp;
+                    <strong>Maximum (5):</strong> + Grandparent element
+                </small>
+            </div>
+
+            <div class="alert alert-warning">
+                <strong>⚠️ Note:</strong> Ensure each modifier is assigned to a different mode to avoid conflicts. If conflicts exist, the extension will use default settings.
+            </div>
+
+            <!-- Mode Colors Configuration -->
+            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+                <h4 style="margin-bottom: 10px; font-size: 14px;">
+                    Extraction Mode Colors
+                    <span class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltip-text">Configure the colors used for visual feedback in each extraction mode. These colors appear in the tracking overlay, element highlights, and text field borders.</span>
+                    </span>
+                </h4>
+
+                <div class="form-group">
+                    <label for="wordModeColor">
+                        Word Mode Color
+                        <span class="tooltip">
+                            <span class="help-icon">?</span>
+                            <span class="tooltip-text">Color for word extraction mode (field-aware intelligent extraction)</span>
+                        </span>
+                    </label>
+                    <input type="color" id="wordModeColor" value="#2ecc71" style="width: 60px; height: 40px; border: 1px solid #cbd5e0; border-radius: 4px; cursor: pointer;">
+                    <small style="margin-left: 10px; vertical-align: middle;">Default: Green (#2ecc71)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="sentenceModeColor">
+                        Smart Mode Color
+                        <span class="tooltip">
+                            <span class="help-icon">?</span>
+                            <span class="tooltip-text">Color for smart field-aware extraction mode</span>
+                        </span>
+                    </label>
+                    <input type="color" id="sentenceModeColor" value="#3498db" style="width: 60px; height: 40px; border: 1px solid #cbd5e0; border-radius: 4px; cursor: pointer;">
+                    <small style="margin-left: 10px; vertical-align: middle;">Default: Blue (#3498db)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="charModeColor">
+                        Character Mode Color
+                        <span class="tooltip">
+                            <span class="help-icon">?</span>
+                            <span class="tooltip-text">Color for character extraction mode</span>
+                        </span>
+                    </label>
+                    <input type="color" id="charModeColor" value="#9b59b6" style="width: 60px; height: 40px; border: 1px solid #cbd5e0; border-radius: 4px; cursor: pointer;">
+                    <small style="margin-left: 10px; vertical-align: middle;">Default: Purple (#9b59b6)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="disabledModeColor">
+                        Disabled Mode Color
+                        <span class="tooltip">
+                            <span class="help-icon">?</span>
+                            <span class="tooltip-text">Color shown when tracking is disabled (after clicking X button)</span>
+                        </span>
+                    </label>
+                    <input type="color" id="disabledModeColor" value="#6c757d" style="width: 60px; height: 40px; border: 1px solid #cbd5e0; border-radius: 4px; cursor: pointer;">
+                    <small style="margin-left: 10px; vertical-align: middle;">Default: Grey (#6c757d)</small>
+                </div>
             </div>
         </div>
 
