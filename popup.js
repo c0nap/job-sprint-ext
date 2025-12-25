@@ -1289,31 +1289,59 @@ async function handleManualEntryClick(button, statusDiv) {
 
 /**
  * Log extracted job data via service worker
- * Checks if manual entry is needed before logging
+ * Checks for duplicates first, then submits
  * @param {HTMLButtonElement} button - Extract button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Extracted job data
  */
-function logJobData(button, statusDiv, jobData) {
-  log('[Extract] Checking if manual entry needed...');
+async function logJobData(button, statusDiv, jobData) {
+  log('[Extract] Checking for duplicates before logging...');
+  showStatus(statusDiv, 'info', 'ℹ Checking for duplicates...');
 
-  // Check if manual entry is enabled and if data is missing
-  chrome.runtime.sendMessage({ action: 'getConfig' }, (configResponse) => {
-    const isManualEntryEnabled = configResponse?.config?.ENABLE_MANUAL_ENTRY !== false;
-    const hasMissingData = isMissingRequiredData(jobData);
+  // Search for duplicates by URL
+  chrome.runtime.sendMessage(
+    {
+      action: 'searchDuplicate',
+      url: jobData.url
+    },
+    (duplicateResponse) => {
+      if (duplicateResponse?.success) {
+        const duplicate = duplicateResponse.duplicate;
 
-    log(`[Extract] Manual entry enabled: ${isManualEntryEnabled}, Missing data: ${hasMissingData}`);
+        if (duplicate) {
+          log('[Extract] Duplicate found:', duplicate);
 
-    if (isManualEntryEnabled && hasMissingData) {
-      log('[Extract] Showing manual entry modal');
-      // Show manual entry modal
-      showManualEntryModal(button, statusDiv, jobData);
-    } else {
-      log('[Extract] Proceeding with automatic submission');
-      // Proceed with logging directly
-      submitJobData(button, statusDiv, jobData);
+          // Check if status is "Queued"
+          if (duplicate.status && duplicate.status.toLowerCase().includes('queued')) {
+            // Found with Queued status - skip appending
+            log('[Extract] Duplicate found with Queued status, skipping append');
+            showStatus(statusDiv, 'info', `ℹ Job already queued (Row ${duplicate.rowNumber}, added ${duplicate.appliedDate})`);
+            resetExtractButton(button);
+            return;
+          } else {
+            // Found with different status - show warning and still append
+            log('[Extract] Duplicate found with non-Queued status, appending anyway with warning');
+            showStatus(statusDiv, 'warning', `⚠ Job already exists (Row ${duplicate.rowNumber}, status: ${duplicate.status}). Adding new entry...`);
+
+            // Wait a bit to show the warning, then proceed
+            setTimeout(() => {
+              submitJobData(button, statusDiv, jobData);
+            }, 1500);
+            return;
+          }
+        } else {
+          // No duplicate found - proceed with logging
+          log('[Extract] No duplicate found, proceeding with logging');
+          submitJobData(button, statusDiv, jobData);
+        }
+      } else {
+        // Error checking for duplicates - log error but proceed with submission
+        logError('[Extract] Error checking for duplicates:', duplicateResponse?.error);
+        log('[Extract] Proceeding with logging despite duplicate check error');
+        submitJobData(button, statusDiv, jobData);
+      }
     }
-  });
+  );
 }
 
 /**
@@ -1346,7 +1374,15 @@ function submitJobData(button, statusDiv, jobData, fromModal = false) {
         if (fromModal) {
           const errorContainer = document.getElementById('manualEntryError');
           if (errorContainer) {
-            errorContainer.innerHTML = await generateModalErrorMessage(errorMsg);
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Extraction Failed', errorMsg)
+              );
+            } else {
+              errorContainer.textContent = `✗ Extraction Failed: ${errorMsg}`;
+            }
             errorContainer.style.display = 'block';
           }
         } else {
@@ -1433,7 +1469,7 @@ function resetExtractButton(button) {
   if (button.id === 'manualEntryBtn') {
     button.textContent = 'Manual Entry';
   } else {
-    button.textContent = 'Extract & Log Job Data';
+    button.textContent = 'Quick Save (URL + Content)';
   }
 }
 
@@ -1609,7 +1645,13 @@ function generateDynamicFormFields() {
   container.innerHTML = '';
 
   if (!jobDataSchema || !jobDataSchema.columns || jobDataSchema.columns.length === 0) {
-    container.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">No form fields configured. Please configure the schema in Settings.</p>';
+    // CSP-compliant: Use DOM creation instead of innerHTML
+    const emptyMessage = document.createElement('p');
+    emptyMessage.textContent = 'No form fields configured. Please configure the schema in Settings.';
+    emptyMessage.style.textAlign = 'center';
+    emptyMessage.style.color = '#999';
+    emptyMessage.style.padding = '20px';
+    container.appendChild(emptyMessage);
     return;
   }
 
@@ -1725,6 +1767,7 @@ function initializeManualEntryModal() {
   const closeBtn = document.getElementById('closeModal');
   const cancelBtn = document.getElementById('cancelModal');
   const form = document.getElementById('manualEntryForm');
+  const autoExtractBtn = document.getElementById('autoExtractBtn');
 
   if (!modal || !closeBtn || !cancelBtn || !form) return;
 
@@ -1754,8 +1797,155 @@ function initializeManualEntryModal() {
     handleManualEntrySubmit();
   });
 
+  // Handle auto-extract button
+  if (autoExtractBtn) {
+    autoExtractBtn.addEventListener('click', () => {
+      handleAutoExtractClick();
+    });
+  }
+
+  // Handle find row button
+  const findRowBtn = document.getElementById('findRowBtn');
+  if (findRowBtn) {
+    findRowBtn.addEventListener('click', () => {
+      handleFindRowClick();
+    });
+  }
+
   // Add mode selector button handlers
   setupModeSelectorButtons();
+}
+
+/**
+ * Handle auto-extract button click
+ * Reconnects to the current tab and extracts detailed job data to fill the form
+ */
+async function handleAutoExtractClick() {
+  const autoExtractBtn = document.getElementById('autoExtractBtn');
+  const errorContainer = document.getElementById('manualEntryError');
+
+  // Clear any previous error
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+    errorContainer.innerHTML = '';
+  }
+
+  // Set button to loading state
+  if (autoExtractBtn) {
+    autoExtractBtn.disabled = true;
+    autoExtractBtn.textContent = '⏳ Extracting...';
+  }
+
+  try {
+    // Step 1: Get the current active tab (reconnect)
+    log('[AutoExtract] Getting current active tab...');
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (!tabs || tabs.length === 0) {
+      throw new Error('No active tab found. Please make sure you have a job page open.');
+    }
+
+    const activeTab = tabs[0];
+    log(`[AutoExtract] Active tab found: ${activeTab.url}`);
+
+    // Update the stored source tab ID (reconnect)
+    await chrome.storage.local.set({ popupSourceTabId: activeTab.id });
+    log('[AutoExtract] Reconnected to active tab');
+
+    // Check if tab URL is accessible
+    if (!activeTab.url || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
+      throw new Error('Cannot extract from this page. Chrome extension pages and settings are not supported.');
+    }
+
+    // Step 2: Request detailed extraction from content script
+    log('[AutoExtract] Requesting detailed job data extraction...');
+
+    chrome.tabs.sendMessage(
+      activeTab.id,
+      { action: 'extractJobDataDetailed' },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          const errorMsg = chrome.runtime.lastError.message;
+          logError(`[AutoExtract] Runtime error: ${errorMsg}`);
+
+          if (errorMsg.includes('Receiving end does not exist')) {
+            showAutoExtractError('Please reload the page and try again. The extension needs to reinitialize.');
+          } else {
+            showAutoExtractError(`Error: ${errorMsg}`);
+          }
+
+          // Reset button
+          if (autoExtractBtn) {
+            autoExtractBtn.disabled = false;
+            autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+          }
+          return;
+        }
+
+        if (!response?.success) {
+          logError('[AutoExtract] Content script returned failure');
+          showAutoExtractError('Failed to extract job data from page');
+
+          // Reset button
+          if (autoExtractBtn) {
+            autoExtractBtn.disabled = false;
+            autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+          }
+          return;
+        }
+
+        log(`[AutoExtract] Data extracted successfully:`, response.data);
+
+        // Step 3: Fill the form fields with extracted data
+        populateDynamicFormFields(response.data);
+
+        // Show success feedback
+        if (autoExtractBtn) {
+          autoExtractBtn.textContent = '✓ Extracted!';
+          autoExtractBtn.style.background = '#28a745';
+
+          // Reset button after 2 seconds
+          setTimeout(() => {
+            autoExtractBtn.disabled = false;
+            autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+            autoExtractBtn.style.background = '#4CAF50';
+          }, 2000);
+        }
+
+        log('[AutoExtract] Form fields populated successfully');
+      }
+    );
+  } catch (error) {
+    logError(`[AutoExtract] Error: ${error.message}`);
+    showAutoExtractError(error.message);
+
+    // Reset button
+    if (autoExtractBtn) {
+      autoExtractBtn.disabled = false;
+      autoExtractBtn.textContent = '🔄 Auto-Extract from Page';
+    }
+  }
+}
+
+/**
+ * Show error message in auto-extract error container
+ * @param {string} message - Error message to display
+ */
+function showAutoExtractError(message) {
+  const errorContainer = document.getElementById('manualEntryError');
+  if (errorContainer) {
+    // CSP-compliant: Use DOM helpers instead of innerHTML
+    if (typeof window.DOMHelpers !== 'undefined') {
+      window.DOMHelpers.clearElement(errorContainer);
+      errorContainer.appendChild(
+        window.DOMHelpers.createErrorMessage('✗ Auto-Extract Failed', message)
+      );
+    } else {
+      // Fallback: Use textContent
+      errorContainer.textContent = `✗ Auto-Extract Failed: ${message}`;
+    }
+    errorContainer.style.display = 'block';
+  }
 }
 
 /**
@@ -1854,6 +2044,7 @@ function setupFieldMouseTracking() {
 
 /**
  * Show manual entry modal with pre-filled data
+ * Checks for duplicates and displays the information
  * @param {HTMLButtonElement} button - Extract or manual entry button element
  * @param {HTMLElement} statusDiv - Status message display element
  * @param {Object} jobData - Extracted job data to pre-fill
@@ -1867,6 +2058,12 @@ function showManualEntryModal(button, statusDiv, jobData) {
   if (errorContainer) {
     errorContainer.style.display = 'none';
     errorContainer.innerHTML = '';
+  }
+
+  // Hide duplicate info initially
+  const duplicateInfo = document.getElementById('duplicateInfo');
+  if (duplicateInfo) {
+    duplicateInfo.style.display = 'none';
   }
 
   // Store references for later use
@@ -1901,6 +2098,57 @@ function showManualEntryModal(button, statusDiv, jobData) {
 
   // Reset button state
   resetExtractButton(button);
+
+  // Check for duplicates and display results (no warning, just info)
+  if (jobData.url) {
+    checkAndDisplayDuplicate(jobData.url);
+  }
+}
+
+/**
+ * Check for duplicate and display results in modal
+ * @param {string} url - Job URL to check
+ */
+function checkAndDisplayDuplicate(url) {
+  chrome.runtime.sendMessage(
+    {
+      action: 'searchDuplicate',
+      url: url
+    },
+    (duplicateResponse) => {
+      if (duplicateResponse?.success && duplicateResponse.duplicate) {
+        const duplicate = duplicateResponse.duplicate;
+        const duplicateInfo = document.getElementById('duplicateInfo');
+        const duplicateDetails = document.getElementById('duplicateDetails');
+
+        if (duplicateInfo && duplicateDetails) {
+          // CSP-compliant: Use DOM helpers instead of innerHTML
+          if (typeof window.DOMHelpers !== 'undefined') {
+            window.DOMHelpers.clearElement(duplicateDetails);
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Row', duplicate.rowNumber.toString())
+            );
+            duplicateDetails.appendChild(document.createElement('br'));
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Status', duplicate.status || 'N/A')
+            );
+            duplicateDetails.appendChild(document.createElement('br'));
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Date Recorded', duplicate.appliedDate || 'N/A')
+            );
+          } else {
+            // Fallback: Use textContent
+            duplicateDetails.textContent = `Row: ${duplicate.rowNumber}, Status: ${duplicate.status || 'N/A'}, Date Recorded: ${duplicate.appliedDate || 'N/A'}`;
+          }
+          duplicateInfo.style.display = 'block';
+
+          log('[DuplicateCheck] Duplicate found and displayed:', duplicate);
+        }
+      } else {
+        log('[DuplicateCheck] No duplicate found or error occurred');
+      }
+    }
+  );
 }
 
 /**
@@ -1917,6 +2165,238 @@ function hideManualEntryModal() {
 
   // Clear form
   document.getElementById('manualEntryForm').reset();
+}
+
+/**
+ * Handle find row button click
+ * Retrieves row data by row number from the spreadsheet
+ */
+async function handleFindRowClick() {
+  const rowInput = document.getElementById('manualRowNumber');
+  const findRowBtn = document.getElementById('findRowBtn');
+  const duplicateInfo = document.getElementById('duplicateInfo');
+  const duplicateDetails = document.getElementById('duplicateDetails');
+  const errorContainer = document.getElementById('manualEntryError');
+
+  // Clear previous errors
+  if (errorContainer) {
+    errorContainer.style.display = 'none';
+  }
+  if (duplicateInfo) {
+    duplicateInfo.style.display = 'none';
+  }
+
+  const rowNumber = parseInt(rowInput.value);
+
+  // Validate row number
+  if (!rowNumber || rowNumber < 2) {
+    if (errorContainer) {
+      // CSP-compliant: Use DOM helpers instead of innerHTML
+      if (typeof window.DOMHelpers !== 'undefined') {
+        window.DOMHelpers.clearElement(errorContainer);
+        errorContainer.appendChild(
+          window.DOMHelpers.createErrorMessage('✗ Error', 'Please enter a valid row number (2 or greater)')
+        );
+      } else {
+        errorContainer.textContent = '✗ Error: Please enter a valid row number (2 or greater)';
+      }
+      errorContainer.style.display = 'block';
+    }
+    return;
+  }
+
+  try {
+    // Disable button while searching
+    if (findRowBtn) {
+      findRowBtn.disabled = true;
+      findRowBtn.textContent = '⏳ Finding...';
+    }
+
+    log(`[FindRow] Searching for row ${rowNumber}...`);
+
+    // Send request to service worker
+    chrome.runtime.sendMessage(
+      { action: 'getRowByNumber', rowNumber: rowNumber },
+      (response) => {
+        // Re-enable button
+        if (findRowBtn) {
+          findRowBtn.disabled = false;
+          findRowBtn.textContent = '🔍 Find';
+        }
+
+        if (chrome.runtime.lastError) {
+          logError(`[FindRow] Runtime error: ${chrome.runtime.lastError.message}`);
+          if (errorContainer) {
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Error', chrome.runtime.lastError.message)
+              );
+            } else {
+              errorContainer.textContent = `✗ Error: ${chrome.runtime.lastError.message}`;
+            }
+            errorContainer.style.display = 'block';
+          }
+          return;
+        }
+
+        if (!response || !response.success) {
+          const errorMsg = response?.error || 'Failed to retrieve row data';
+          logError(`[FindRow] Error: ${errorMsg}`);
+          if (errorContainer) {
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Error', errorMsg)
+              );
+            } else {
+              errorContainer.textContent = `✗ Error: ${errorMsg}`;
+            }
+            errorContainer.style.display = 'block';
+          }
+          return;
+        }
+
+        const rowData = response.rowData;
+        if (!rowData) {
+          if (errorContainer) {
+            // CSP-compliant: Use DOM helpers instead of innerHTML
+            if (typeof window.DOMHelpers !== 'undefined') {
+              window.DOMHelpers.clearElement(errorContainer);
+              errorContainer.appendChild(
+                window.DOMHelpers.createErrorMessage('✗ Error', `Row ${rowNumber} not found or is empty`)
+              );
+            } else {
+              errorContainer.textContent = `✗ Error: Row ${rowNumber} not found or is empty`;
+            }
+            errorContainer.style.display = 'block';
+          }
+          return;
+        }
+
+        log(`[FindRow] Row data retrieved:`, rowData);
+
+        // Display row info
+        if (duplicateInfo && duplicateDetails) {
+          const status = rowData['Status'] || 'Unknown';
+          const appliedDate = rowData['Applied'] || 'Not set';
+          const url = rowData['Portal Link'] || '';
+
+          // CSP-compliant: Use DOM helpers instead of innerHTML
+          if (typeof window.DOMHelpers !== 'undefined') {
+            window.DOMHelpers.clearElement(duplicateDetails);
+
+            // Row number
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Row', rowNumber.toString())
+            );
+
+            // Status
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Status', status)
+            );
+
+            // Date
+            duplicateDetails.appendChild(
+              window.DOMHelpers.createLabeledValue('Date', appliedDate)
+            );
+
+            // URL (if present)
+            if (url) {
+              const urlContainer = document.createElement('div');
+              const urlLabel = document.createElement('strong');
+              urlLabel.textContent = 'URL: ';
+
+              const urlLink = window.DOMHelpers.createLink(
+                url,
+                url.substring(0, 60) + '...',
+                ['duplicate-url-link']
+              );
+              urlLink.target = '_blank';
+
+              urlContainer.appendChild(urlLabel);
+              urlContainer.appendChild(urlLink);
+              duplicateDetails.appendChild(urlContainer);
+            }
+          } else {
+            // Fallback: Use textContent
+            duplicateDetails.textContent = `Row: ${rowNumber}, Status: ${status}, Date: ${appliedDate}`;
+            if (url) {
+              duplicateDetails.textContent += `, URL: ${url}`;
+            }
+          }
+          duplicateInfo.style.display = 'block';
+        }
+
+        // Populate form fields with row data
+        // Prompt 4 Fix: Use correct field IDs with 'manual_' prefix
+        if (rowData['Employer']) {
+          const field = document.getElementById('manual_company');
+          if (field) field.value = rowData['Employer'];
+        }
+        if (rowData['Job Title']) {
+          const field = document.getElementById('manual_title');
+          if (field) field.value = rowData['Job Title'];
+        }
+        if (rowData['Location']) {
+          const field = document.getElementById('manual_location');
+          if (field) field.value = rowData['Location'];
+        }
+        if (rowData['Role']) {
+          const field = document.getElementById('manual_role');
+          if (field) field.value = rowData['Role'];
+        }
+        if (rowData['Tailor']) {
+          const field = document.getElementById('manual_tailor');
+          if (field) field.value = rowData['Tailor'];
+        }
+        if (rowData['Notes']) {
+          const field = document.getElementById('manual_description');
+          if (field) field.value = rowData['Notes'];
+        }
+        if (rowData['Compensation']) {
+          const field = document.getElementById('manual_compensation');
+          if (field) field.value = rowData['Compensation'];
+        }
+        if (rowData['Pay']) {
+          const field = document.getElementById('manual_pay');
+          if (field) field.value = rowData['Pay'];
+        }
+        if (rowData['Portal Link']) {
+          const field = document.getElementById('manual_url');
+          if (field) field.value = rowData['Portal Link'];
+        }
+        if (rowData['Board']) {
+          const field = document.getElementById('manual_source');
+          if (field) field.value = rowData['Board'];
+        }
+
+        log('[FindRow] Form fields populated with row data');
+      }
+    );
+  } catch (error) {
+    logError(`[FindRow] Error: ${error.message}`);
+    if (errorContainer) {
+      // CSP-compliant: Use DOM helpers instead of innerHTML
+      if (typeof window.DOMHelpers !== 'undefined') {
+        window.DOMHelpers.clearElement(errorContainer);
+        errorContainer.appendChild(
+          window.DOMHelpers.createErrorMessage('✗ Error', error.message)
+        );
+      } else {
+        errorContainer.textContent = `✗ Error: ${error.message}`;
+      }
+      errorContainer.style.display = 'block';
+    }
+
+    // Reset button
+    if (findRowBtn) {
+      findRowBtn.disabled = false;
+      findRowBtn.textContent = '🔍 Find';
+    }
+  }
 }
 
 /**
@@ -2005,12 +2485,12 @@ function showSuccess(message) {
 // Track currently focused field for mouse tracking
 let currentlyFocusedField = null;
 let currentActiveFieldElement = null; // Track the actual field DOM element
-let currentMode = 'smart'; // Track the current mode globally (persists across fields)
+let currentMode = 'words'; // Track the current mode globally (persists across fields)
 
 // Mode colors (loaded from storage)
 let popupModeColors = {
+  disabled: '#6c757d',
   words: '#2ecc71',
-  smart: '#3498db',
   chars: '#9b59b6'
 };
 
@@ -2020,14 +2500,14 @@ let popupModeColors = {
 async function loadModeColors() {
   try {
     const result = await chrome.storage.sync.get([
+      'DISABLED_MODE_COLOR',
       'WORD_MODE_COLOR',
-      'SENTENCE_MODE_COLOR',
       'CHAR_MODE_COLOR'
     ]);
 
     popupModeColors = {
+      disabled: result.DISABLED_MODE_COLOR || '#6c757d',
       words: result.WORD_MODE_COLOR || '#2ecc71',
-      smart: result.SENTENCE_MODE_COLOR || '#3498db',
       chars: result.CHAR_MODE_COLOR || '#9b59b6'
     };
 
@@ -2039,13 +2519,13 @@ async function loadModeColors() {
 
 /**
  * Get border color for a specific mode
- * @param {string} mode - Mode name: 'words', 'smart', 'chars'
+ * @param {string} mode - Mode name: 'disabled', 'words', 'chars'
  * @returns {string} Border color for the mode
  */
 function getModeBorderColor(mode) {
   switch (mode) {
-    case 'smart':
-      return popupModeColors.smart;
+    case 'disabled':
+      return popupModeColors.disabled;
     case 'chars':
       return popupModeColors.chars;
     case 'words':
