@@ -373,7 +373,10 @@ function handleSaveClipboardMacro(key, value, sendResponse) {
  *
  * @param {Function} sendResponse - Response callback
  */
-function testConnection(sendResponse) {
+async function testConnection(sendResponse) {
+  // Ensure configuration is loaded (service worker may have restarted)
+  await loadConfiguration();
+
   const endpoint = getAppsScriptEndpoint();
   const spreadsheetId = getSpreadsheetId();
   const projectId = getProjectId();
@@ -532,7 +535,10 @@ async function fetchWithRetry(url, options, maxRetries = 2) {
  * @param {Object} data - Job data to log
  * @param {Function} sendResponse - Response callback
  */
-function handleLogJobData(data, sendResponse) {
+async function handleLogJobData(data, sendResponse) {
+  // Ensure configuration is loaded (service worker may have restarted)
+  await loadConfiguration();
+
   // Configuration: Set APPS_SCRIPT_URL in extension settings or replace here
   const endpoint = getAppsScriptEndpoint();
 
