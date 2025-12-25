@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resume Parser Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        .input-box, .output-box {
+            margin: 10px 0;
+        }
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 10px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        .success {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .error {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Resume Parser Test Suite</h1>
+
+    <!-- Demographics Test -->
+    <div class="test-section">
+        <h2>👤 Demographics Parser</h2>
+        <div class="input-box">
+            <label><strong>Input:</strong></label>
+            <textarea id="demographics-input">Patrick Conan
+Rochester, New York | (845)-645-8158 | conap910@gmail.com
+linkedin.com/in/patrick-conan — github.com/c0nap
+Objective: Recent graduate seeking full-time software developer role building scalable, data-driven systems.
+Available Winter 2025 (December 31st)</textarea>
+        </div>
+        <button onclick="testDemographics()">Test Demographics Parser</button>
+        <div class="output-box">
+            <label><strong>Output:</strong></label>
+            <pre id="demographics-output"></pre>
+        </div>
+    </div>
+
+    <!-- Education Test -->
+    <div class="test-section">
+        <h2>🎓 Education Parser</h2>
+        <div class="input-box">
+            <label><strong>Input:</strong></label>
+            <textarea id="education-input">SUNY College at Oneonta B.S. Statistics – 2024 (summa cum laude) GPA – 3.97
+Coursework: Theory of Computation, Linear Algebra, Data Analytics (R), Econometrics, Operations Research</textarea>
+        </div>
+        <button onclick="testEducation()">Test Education Parser</button>
+        <div class="output-box">
+            <label><strong>Output:</strong></label>
+            <pre id="education-output"></pre>
+        </div>
+    </div>
+
+    <!-- Employment Test -->
+    <div class="test-section">
+        <h2>💼 Employment Parser</h2>
+        <div class="input-box">
+            <label><strong>Input:</strong></label>
+            <textarea id="employment-input">Office Assistant                   Montefiore St. Luke's Hospital – Cornwall, NY                                                     Apr '20 - May '20
+Assisted in the hospital's transition to a new medical records and patient billing system.
+Managed sensitive billing information to ensure appeals and insurance response forms transferred correctly.</textarea>
+        </div>
+        <button onclick="testEmployment()">Test Employment Parser</button>
+        <div class="output-box">
+            <label><strong>Output:</strong></label>
+            <pre id="employment-output"></pre>
+        </div>
+    </div>
+
+    <!-- Projects Test -->
+    <div class="test-section">
+        <h2>🚀 Projects Parser</h2>
+        <div class="input-box">
+            <label><strong>Input:</strong></label>
+            <textarea id="projects-input">E-commerce Platform - 2023
+Built with React, Node.js, PostgreSQL
+Full-stack web application for online shopping with payment processing and inventory management.
+
+Machine Learning Classifier - 2024
+Tech: Python, scikit-learn, pandas
+Developed a classification model for predicting customer churn with 85% accuracy.</textarea>
+        </div>
+        <button onclick="testProjects()">Test Projects Parser</button>
+        <div class="output-box">
+            <label><strong>Output:</strong></label>
+            <pre id="projects-output"></pre>
+        </div>
+    </div>
+
+    <!-- Skills Test -->
+    <div class="test-section">
+        <h2>💡 Skills Parser</h2>
+        <div class="input-box">
+            <label><strong>Input:</strong></label>
+            <textarea id="skills-input">Python, JavaScript, React, Node.js, SQL, PostgreSQL, Git, Docker, AWS, Linux, Machine Learning, Data Analysis</textarea>
+        </div>
+        <button onclick="testSkills()">Test Skills Parser</button>
+        <div class="output-box">
+            <label><strong>Output:</strong></label>
+            <pre id="skills-output"></pre>
+        </div>
+    </div>
+
+    <!-- References Test -->
+    <div class="test-section">
+        <h2>📋 References Parser</h2>
+        <div class="input-box">
+            <label><strong>Input:</strong></label>
+            <textarea id="references-input">Dr. Jane Smith
+Professor of Computer Science, MIT
+jane.smith@mit.edu | (617) 555-1234
+
+John Doe
+Senior Engineer at Google
+john.doe@google.com | (650) 555-5678</textarea>
+        </div>
+        <button onclick="testReferences()">Test References Parser</button>
+        <div class="output-box">
+            <label><strong>Output:</strong></label>
+            <pre id="references-output"></pre>
+        </div>
+    </div>
+
+    <script src="resume-parser.js"></script>
+    <script>
+        function testDemographics() {
+            const input = document.getElementById('demographics-input').value;
+            const output = document.getElementById('demographics-output');
+            try {
+                const result = parseDemographics(input);
+                output.textContent = JSON.stringify(result, null, 2);
+                output.className = 'success';
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message;
+                output.className = 'error';
+            }
+        }
+
+        function testEducation() {
+            const input = document.getElementById('education-input').value;
+            const output = document.getElementById('education-output');
+            try {
+                const result = parseEducation(input);
+                output.textContent = JSON.stringify(result, null, 2);
+                output.className = 'success';
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message;
+                output.className = 'error';
+            }
+        }
+
+        function testEmployment() {
+            const input = document.getElementById('employment-input').value;
+            const output = document.getElementById('employment-output');
+            try {
+                const result = parseEmployment(input);
+                output.textContent = JSON.stringify(result, null, 2);
+                output.className = 'success';
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message;
+                output.className = 'error';
+            }
+        }
+
+        function testProjects() {
+            const input = document.getElementById('projects-input').value;
+            const output = document.getElementById('projects-output');
+            try {
+                const result = parseProjects(input);
+                output.textContent = JSON.stringify(result, null, 2);
+                output.className = 'success';
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message;
+                output.className = 'error';
+            }
+        }
+
+        function testSkills() {
+            const input = document.getElementById('skills-input').value;
+            const output = document.getElementById('skills-output');
+            try {
+                const result = parseSkills(input);
+                output.textContent = JSON.stringify(result, null, 2);
+                output.className = 'success';
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message;
+                output.className = 'error';
+            }
+        }
+
+        function testReferences() {
+            const input = document.getElementById('references-input').value;
+            const output = document.getElementById('references-output');
+            try {
+                const result = parseReferences(input);
+                output.textContent = JSON.stringify(result, null, 2);
+                output.className = 'success';
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message;
+                output.className = 'error';
+            }
+        }
+    </script>
+</body>
+</html>

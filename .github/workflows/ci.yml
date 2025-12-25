@@ -262,11 +262,42 @@ jobs:
           echo "✅ extractCompanyName tested"
           echo "✅ extractLargeTextBlock tested"
 
-  # Job 10: Run all tests with coverage (depends on validation)
+  # Job 10: Test Resume Parser (parallel)
+  test-resume-parser:
+    name: Test Resume Parser
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run resume parser tests
+        run: npm test -- tests/resume-parser.test.js
+
+      - name: Test summary
+        if: always()
+        run: |
+          echo "📊 Resume Parser Tests Complete"
+          echo "✅ Demographics parser tested"
+          echo "✅ Education parser tested"
+          echo "✅ Employment parser tested"
+          echo "✅ Projects parser tested"
+          echo "✅ Skills parser tested"
+          echo "✅ References parser tested"
+
+  # Job 11: Run all tests with coverage (depends on validation)
   test-coverage:
     name: Full Test Suite with Coverage
     runs-on: ubuntu-latest
-    needs: [validate-manifest, compile-check, test-clipboard, test-extraction, test-autofill, test-service-worker-autofill, test-local-endpoint, test-field-extractors]
+    needs: [validate-manifest, compile-check, test-clipboard, test-extraction, test-autofill, test-service-worker-autofill, test-local-endpoint, test-field-extractors, test-resume-parser]
 
     steps:
       - name: Checkout code
@@ -333,7 +364,7 @@ jobs:
   ci-success:
     name: CI Pipeline Success
     runs-on: ubuntu-latest
-    needs: [validate-manifest, compile-check, test-utils, test-clipboard, test-extraction, test-autofill, test-service-worker-autofill, test-local-endpoint, test-field-extractors, test-coverage, code-quality]
+    needs: [validate-manifest, compile-check, test-utils, test-clipboard, test-extraction, test-autofill, test-service-worker-autofill, test-local-endpoint, test-field-extractors, test-resume-parser, test-coverage, code-quality]
 
     steps:
       - name: All checks passed
@@ -348,5 +379,6 @@ jobs:
           echo "✅ Service worker autofill tests passed (Feature 3 MVP)"
           echo "✅ Local GAS endpoint tests passed"
           echo "✅ Field extractor tests passed (6 intelligent extractors)"
+          echo "✅ Resume parser tests passed (6 section parsers, 41 tests)"
           echo "✅ Coverage generated"
           echo "✅ Code quality checked"

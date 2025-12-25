@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resume Parser - Comprehensive Test Suite</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .test-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .test-case {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .test-case h3 {
+            margin-top: 0;
+            font-size: 14px;
+            color: #555;
+        }
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            resize: vertical;
+        }
+        pre {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 11px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            margin: 5px 5px 5px 0;
+            font-size: 12px;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        button.test-all {
+            background: #27ae60;
+            padding: 12px 24px;
+            font-size: 14px;
+        }
+        button.test-all:hover {
+            background: #229954;
+        }
+        .success {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .error {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        .warning {
+            color: #f39c12;
+            font-weight: bold;
+        }
+        .issue-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        .issue-badge.missing {
+            background: #e74c3c;
+            color: white;
+        }
+        .issue-badge.partial {
+            background: #f39c12;
+            color: white;
+        }
+        .summary {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .summary h2 {
+            margin-top: 0;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+        }
+        .stat {
+            flex: 1;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #3498db;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Resume Parser - Comprehensive Test Suite</h1>
+
+    <div class="summary">
+        <h2>Test Results Summary</h2>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value" id="totalTests">0</div>
+                <div class="stat-label">Total Tests</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="passedTests">0</div>
+                <div class="stat-label">Passed</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="failedTests">0</div>
+                <div class="stat-label">Failed</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="partialTests">0</div>
+                <div class="stat-label">Partial</div>
+            </div>
+        </div>
+        <button class="test-all" onclick="runAllTests()">Run All Tests</button>
+    </div>
+
+    <div class="test-grid">
+        <!-- Demographics Tests -->
+        <div class="test-section">
+            <h2>👤 Demographics Parser</h2>
+
+            <div class="test-case">
+                <h3>Test 1: Standard Format with Pipe Delimiters</h3>
+                <textarea id="demo-1">Patrick Conan
+Rochester, New York | (845)-645-8158 | conap910@gmail.com
+linkedin.com/in/patrick-conan — github.com/c0nap
+Objective: Recent graduate seeking full-time software developer role building scalable, data-driven systems.
+Available Winter 2025 (December 31st)</textarea>
+                <button onclick="testCase('demo-1', 'demographics')">Test</button>
+                <pre id="demo-1-output"></pre>
+            </div>
+
+            <div class="test-case">
+                <h3>Test 2: Format with Name Title</h3>
+                <textarea id="demo-2">Sarah Chen, Ph.D.
+Senior Software Engineer
+123 Main Street, San Francisco, CA 94102
+sarah.chen@email.com
+(415) 555-1234
+https://sarahchen.dev
+LinkedIn: linkedin.com/in/sarah-chen
+GitHub: github.com/sarahchen
+Summary: Experienced engineer with 10+ years in distributed systems</textarea>
+                <button onclick="testCase('demo-2', 'demographics')">Test</button>
+                <pre id="demo-2-output"></pre>
+            </div>
+
+            <div class="test-case">
+                <h3>Test 3: Compact Format with Slashes</h3>
+                <textarea id="demo-3">JOHN DOE
+Austin, TX / 512-555-9876 / john.doe@gmail.com / linkedin.com/in/johndoe</textarea>
+                <button onclick="testCase('demo-3', 'demographics')">Test</button>
+                <pre id="demo-3-output"></pre>
+            </div>
+
+            <div class="test-case">
+                <h3>Test 4: Multiple Lines, No Delimiters</h3>
+                <textarea id="demo-4">Maria Rodriguez
+1234 Oak Avenue
+Boston, Massachusetts 02101
+Phone: 617-555-4321
+Email: maria.r@company.com
+Portfolio: www.mariarodriguez.com
+Available: Immediately</textarea>
+                <button onclick="testCase('demo-4', 'demographics')">Test</button>
+                <pre id="demo-4-output"></pre>
+            </div>
+        </div>
+
+        <!-- Education Tests -->
+        <div class="test-section">
+            <h2>🎓 Education Parser</h2>
+
+            <div class="test-case">
+                <h3>Test 1: Multiple Degrees</h3>
+                <textarea id="edu-1">Master of Science in Computer Science
+Stanford University, Stanford, CA | 2022 - 2024 | GPA: 3.95/4.0
+Relevant Coursework: Machine Learning, Distributed Systems, Advanced Algorithms
+
+Bachelor of Science in Computer Engineering
+University of California, Berkeley | 2018 - 2022 | GPA: 3.87
+Dean's List all semesters | Summa Cum Laude</textarea>
+                <button onclick="testCase('edu-1', 'education')">Test</button>
+                <pre id="edu-1-output"></pre>
+            </div>
+
+            <div class="test-case">
+                <h3>Test 2: Compact Single Line</h3>
+                <textarea id="edu-2">B.S. Computer Science, MIT, Cambridge MA, Class of 2023, GPA 3.9, Honors: Magna Cum Laude</textarea>
+                <button onclick="testCase('edu-2', 'education')">Test</button>
+                <pre id="edu-2-output"></pre>
+            </div>
+
+            <div class="test-case">
+                <h3>Test 3: With Concentration</h3>
+                <textarea id="edu-3">University of Washington - Seattle, WA
+Bachelor of Arts in Computer Science, Minor in Mathematics
+Graduation: June 2024 | Cumulative GPA: 3.78/4.0
+Concentration: Artificial Intelligence and Data Science
+Awards: Dean's List (Fall 2021, Spring 2022)</textarea>
+                <button onclick="testCase('edu-3', 'education')">Test</button>
+                <pre id="edu-3-output"></pre>
+            </div>
+        </div>
+
+        <!-- Employment Tests -->
+        <div class="test-section">
+            <h2>💼 Employment Parser</h2>
+
+            <div class="test-case">
+                <h3>Test 1: Multiple Positions Same Company</h3>
+                <textarea id="emp-1">Senior Software Engineer | Google LLC | Mountain View, CA | Jan 2022 - Present
+• Led team of 5 engineers in developing cloud infrastructure solutions
+• Reduced system latency by 40% through optimization initiatives
+• Mentored 3 junior engineers and conducted code reviews
+
+Software Engineer II | Google LLC | Mountain View, CA | Jun 2019 - Dec 2021
+• Developed microservices using Go and Kubernetes
+• Implemented CI/CD pipelines reducing deployment time by 60%</textarea>
+                <button onclick="testCase('emp-1', 'employment')">Test</button>
+                <pre id="emp-1-output"></pre>
+            </div>
+
+            <div class="test-case">
+                <h3>Test 2: Remote Position</h3>
+                <textarea id="emp-2">Full Stack Developer                    TechStartup Inc. (Remote)                    March 2020 - Present
+Built and maintained React/Node.js web applications serving 50K+ users
+Collaborated with distributed team across 3 time zones</textarea>
+                <button onclick="testCase('emp-2', 'employment')">Test</button>
+                <pre id="emp-2-output"></pre>
+            </div>
+
+            <div class="test-case">
+                <h3>Test 3: Bullet Points with Different Symbols</h3>
+                <textarea id="emp-3">Data Scientist – Amazon Web Services – Seattle, WA – 2021-2024
+▪ Developed ML models for recommendation systems
+▪ Improved model accuracy by 25% using ensemble methods
+○ Technologies: Python, TensorFlow, AWS SageMaker
+○ Presented findings to executive leadership quarterly</textarea>
+                <button onclick="testCase('emp-3', 'employment')">Test</button>
+                <pre id="emp-3-output"></pre>
+            </div>
+        </div>
+
+        <!-- Projects Tests -->
+        <div class="test-section">
+            <h2>🚀 Projects Parser</h2>
+
+            <div class="test-case">
+                <h3>Test 1: Projects with Links</h3>
+                <textarea id="proj-1">E-Commerce Platform | 2023 | github.com/user/ecommerce
+Full-stack web application built with MERN stack (MongoDB, Express, React, Node.js)
+Implemented secure payment processing with Stripe API
+Deployed on AWS with CI/CD pipeline, serving 1000+ daily users
+Tech Stack: React, Node.js, MongoDB, Docker, AWS
+
+Machine Learning Image Classifier | Summer 2023 | kaggle.com/user/project
+Built CNN model achieving 94% accuracy on CIFAR-10 dataset
+Technologies: Python, TensorFlow, Keras, Jupyter
+Won 2nd place in university ML competition</textarea>
+                <button onclick="testCase('proj-1', 'projects')">Test</button>
+                <pre id="proj-1-output"></pre>
+            </div>
+
+            <div class="test-case">
+                <h3>Test 2: Single Line Projects</h3>
+                <textarea id="proj-2">• Weather App - React Native mobile app with geolocation and API integration (2024)
+• Portfolio Website - Personal site built with Next.js and Tailwind CSS
+• Discord Bot - Python bot with 50+ commands for server management (2023)</textarea>
+                <button onclick="testCase('proj-2', 'projects')">Test</button>
+                <pre id="proj-2-output"></pre>
+            </div>
+        </div>
+
+        <!-- Skills Tests -->
+        <div class="test-section">
+            <h2>💡 Skills Parser</h2>
+
+            <div class="test-case">
+                <h3>Test 1: Categorized Skills</h3>
+                <textarea id="skills-1">Languages: Python, JavaScript, Java, C++, SQL, TypeScript
+Frameworks: React, Node.js, Express, Django, Flask, Spring Boot
+Tools: Git, Docker, Kubernetes, Jenkins, AWS, Azure
+Databases: PostgreSQL, MongoDB, Redis, MySQL</textarea>
+                <button onclick="testCase('skills-1', 'skills')">Test</button>
+                <pre id="skills-1-output"></pre>
+            </div>
+
+            <div class="test-case">
+                <h3>Test 2: Bullet Point Skills</h3>
+                <textarea id="skills-2">• Python (Expert) • JavaScript • React.js • Node.js
+• Machine Learning • TensorFlow • PyTorch
+• AWS • Docker • Kubernetes • CI/CD
+• Agile/Scrum • Team Leadership</textarea>
+                <button onclick="testCase('skills-2', 'skills')">Test</button>
+                <pre id="skills-2-output"></pre>
+            </div>
+
+            <div class="test-case">
+                <h3>Test 3: Skills with Proficiency</h3>
+                <textarea id="skills-3">Technical Skills:
+- Python (Advanced): NumPy, Pandas, Scikit-learn
+- Web Development (Intermediate): HTML/CSS, JavaScript, React
+- Databases (Proficient): SQL, PostgreSQL, MongoDB
+- Cloud (Familiar): AWS EC2, S3, Lambda</textarea>
+                <button onclick="testCase('skills-3', 'skills')">Test</button>
+                <pre id="skills-3-output"></pre>
+            </div>
+        </div>
+
+        <!-- References Tests -->
+        <div class="test-section">
+            <h2>📋 References Parser</h2>
+
+            <div class="test-case">
+                <h3>Test 1: Standard Format</h3>
+                <textarea id="ref-1">Dr. Jane Smith
+Professor of Computer Science
+Massachusetts Institute of Technology
+Email: jane.smith@mit.edu
+Phone: (617) 555-1234
+
+John Anderson
+Senior Engineering Manager at Google
+john.anderson@google.com | 650-555-7890
+
+Maria Garcia, Ph.D.
+Research Scientist, Microsoft Research
+maria.garcia@microsoft.com / (425) 555-3456</textarea>
+                <button onclick="testCase('ref-1', 'references')">Test</button>
+                <pre id="ref-1-output"></pre>
+            </div>
+
+            <div class="test-case">
+                <h3>Test 2: Compact Format</h3>
+                <textarea id="ref-2">Robert Chen - CTO at TechCorp - robert@techcorp.com - 415-555-9999
+Sarah Johnson - Engineering Manager, Amazon - sarah.j@amazon.com - 206-555-1111</textarea>
+                <button onclick="testCase('ref-2', 'references')">Test</button>
+                <pre id="ref-2-output"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script src="resume-parser.js"></script>
+    <script>
+        let testResults = {
+            total: 0,
+            passed: 0,
+            failed: 0,
+            partial: 0
+        };
+
+        function testCase(inputId, sectionType) {
+            const input = document.getElementById(inputId).value;
+            const output = document.getElementById(inputId + '-output');
+
+            try {
+                const result = parseResumeSection(sectionType, input);
+                output.textContent = JSON.stringify(result, null, 2);
+
+                // Analyze result quality
+                const analysis = analyzeResult(result, sectionType);
+                output.className = analysis.status;
+
+                // Add analysis comment
+                const comment = document.createElement('div');
+                comment.style.cssText = 'margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 4px; font-size: 11px;';
+                comment.innerHTML = `<strong>Analysis:</strong> ${analysis.message}`;
+
+                // Clear previous analysis
+                const existingComment = output.parentElement.querySelector('.analysis-comment');
+                if (existingComment) {
+                    existingComment.remove();
+                }
+                comment.className = 'analysis-comment';
+                output.parentElement.appendChild(comment);
+
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message + '\n\n' + error.stack;
+                output.className = 'error';
+            }
+        }
+
+        function analyzeResult(result, sectionType) {
+            let emptyFields = 0;
+            let totalFields = 0;
+            let issues = [];
+
+            function countFields(obj, path = '') {
+                for (const [key, value] of Object.entries(obj)) {
+                    if (typeof value === 'string') {
+                        totalFields++;
+                        if (value === '') {
+                            emptyFields++;
+                            issues.push(`Empty: ${path}${key}`);
+                        }
+                    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                        countFields(value, path + key + '.');
+                    }
+                }
+            }
+
+            if (sectionType === 'skills') {
+                // For skills, check if array is populated
+                if (Array.isArray(result)) {
+                    if (result.length === 0) {
+                        return { status: 'error', message: 'No skills extracted' };
+                    } else if (result.length < 3) {
+                        return { status: 'warning', message: `Only ${result.length} skills extracted - might be under-parsing` };
+                    } else {
+                        return { status: 'success', message: `Successfully extracted ${result.length} skills` };
+                    }
+                }
+            } else {
+                countFields(result);
+
+                if (totalFields === 0) {
+                    return { status: 'error', message: 'No data extracted' };
+                }
+
+                const completeness = ((totalFields - emptyFields) / totalFields * 100).toFixed(0);
+
+                if (emptyFields === 0) {
+                    return { status: 'success', message: `100% complete - all ${totalFields} fields extracted` };
+                } else if (emptyFields / totalFields < 0.3) {
+                    return { status: 'warning', message: `${completeness}% complete - ${emptyFields} empty fields: ${issues.join(', ')}` };
+                } else {
+                    return { status: 'error', message: `${completeness}% complete - ${emptyFields} empty fields: ${issues.join(', ')}` };
+                }
+            }
+        }
+
+        function runAllTests() {
+            testResults = { total: 0, passed: 0, failed: 0, partial: 0 };
+
+            // Get all test cases
+            const testInputs = document.querySelectorAll('textarea[id]');
+
+            testInputs.forEach(input => {
+                const id = input.id;
+                const sectionType = id.split('-')[0];
+
+                // Map short names to full section names
+                const typeMap = {
+                    'demo': 'demographics',
+                    'edu': 'education',
+                    'emp': 'employment',
+                    'proj': 'projects',
+                    'skills': 'skills',
+                    'ref': 'references'
+                };
+
+                testCase(id, typeMap[sectionType]);
+                testResults.total++;
+
+                // Check result
+                const output = document.getElementById(id + '-output');
+                if (output.className === 'success') {
+                    testResults.passed++;
+                } else if (output.className === 'warning') {
+                    testResults.partial++;
+                } else {
+                    testResults.failed++;
+                }
+            });
+
+            // Update summary
+            document.getElementById('totalTests').textContent = testResults.total;
+            document.getElementById('passedTests').textContent = testResults.passed;
+            document.getElementById('failedTests').textContent = testResults.failed;
+            document.getElementById('partialTests').textContent = testResults.partial;
+        }
+    </script>
+</body>
+</html>

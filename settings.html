@@ -657,6 +657,78 @@
             </div>
         </div>
 
+        <!-- Resume Parser -->
+        <div class="settings-section">
+            <h3>Resume Parser</h3>
+
+            <div class="alert alert-info">
+                Parse sections from your resume into structured data for the Clipboard feature. Paste a section below, choose the type, and the parser will extract the information automatically.
+            </div>
+
+            <div class="form-group">
+                <label for="resumeSectionType">Section Type</label>
+                <select id="resumeSectionType" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
+                    <option value="demographics">👤 Demographics</option>
+                    <option value="references">📋 References</option>
+                    <option value="education">🎓 Education</option>
+                    <option value="employment">💼 Employment</option>
+                    <option value="projects">🚀 Projects</option>
+                    <option value="skills">💡 Skills</option>
+                </select>
+                <small>Choose what type of resume section you're parsing</small>
+            </div>
+
+            <div class="form-group">
+                <label for="resumeInputText">Resume Section Text</label>
+                <textarea id="resumeInputText" placeholder="Paste your resume section here..." style="width: 100%; min-height: 150px; padding: 10px; border: 1px solid #cbd5e0; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 12px; resize: vertical;"></textarea>
+                <small>Paste the section from your resume that you want to parse</small>
+            </div>
+
+            <div class="button-group">
+                <button id="parseResumeBtn" class="btn-primary">Parse Section</button>
+                <button id="clearParserBtn" class="btn-secondary">Clear</button>
+            </div>
+
+            <!-- Parser Output -->
+            <div id="parserOutput" style="display: none; margin-top: 20px;">
+                <h4 style="margin-bottom: 10px; font-size: 14px;">Parsed Result</h4>
+                <div id="parserResultDisplay" style="background: white; padding: 12px; border: 1px solid #cbd5e0; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 300px; overflow-y: auto;"></div>
+
+                <!-- Skills Review UI (only for skills section) -->
+                <div id="skillsReviewUI" style="display: none; margin-top: 15px;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px;">Review Skills</h4>
+                    <div style="margin-bottom: 10px;">
+                        <input type="text" id="skillSearchInput" placeholder="Search skills..." style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px;">
+                    </div>
+                    <div id="skillsListContainer" style="max-height: 200px; overflow-y: auto; border: 1px solid #cbd5e0; border-radius: 4px; background: white; padding: 8px;"></div>
+                </div>
+
+                <!-- Missing Fields Dialog (for other sections) -->
+                <div id="missingFieldsDialog" style="display: none; margin-top: 15px;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px;">Fill Missing Fields</h4>
+                    <div id="missingFieldsContainer" style="background: #fff3cd; padding: 12px; border: 1px solid #ffeaa7; border-radius: 4px;"></div>
+                </div>
+
+                <div class="button-group" style="margin-top: 15px;">
+                    <button id="addToClipboardBtn" class="btn-primary">Add to Clipboard Macros</button>
+                    <button id="discardResultBtn" class="btn-secondary">Discard</button>
+                </div>
+                <div id="parserStatus" style="margin-top: 10px;"></div>
+            </div>
+
+            <!-- Parser Configuration (Advanced) -->
+            <details style="margin-top: 20px; border-top: 1px solid #e0e0e0; padding-top: 20px;">
+                <summary style="cursor: pointer; font-weight: 500; font-size: 14px; margin-bottom: 10px;">Advanced Parser Configuration</summary>
+                <div class="alert alert-warning">
+                    Configure parsing heuristics. Edit delimiters and keywords used by the parser. Default settings work for most resumes.
+                </div>
+                <textarea id="parserConfigEditor" style="width: 100%; min-height: 200px; padding: 10px; border: 1px solid #cbd5e0; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 11px; resize: vertical;"></textarea>
+                <div id="parserConfigError" style="color: #e74c3c; margin-top: 8px; display: none;"></div>
+                <button id="saveParserConfig" class="btn-secondary" style="margin-top: 10px;">Save Parser Config</button>
+                <button id="resetParserConfig" class="btn-secondary" style="margin-top: 10px; margin-left: 10px;">Reset to Defaults</button>
+            </details>
+        </div>
+
         <!-- Google Sheets Configuration -->
         <div class="settings-section">
             <h3>Google Sheets Configuration</h3>
@@ -1035,6 +1107,7 @@
         <div id="saveStatus" class="status-message" style="margin-top: 15px;"></div>
     </div>
 
+    <script src="resume-parser.js"></script>
     <script src="settings.js"></script>
 </body>
 </html>
